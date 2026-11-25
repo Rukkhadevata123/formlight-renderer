@@ -16,23 +16,42 @@ export struct RayHit
     double t;
 };
 
-// Start on the side of the geometric surface that the outgoing world-space direction points into.
-export [[nodiscard]] Ray spawn_surface_ray(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
-                                           Vec3 direction)
+// Cache both sides of a hit when several light samples share the same receiver.
+export class SurfaceRayOrigin
+{
+  public:
+    SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights);
+    [[nodiscard]] Vec3 position() const noexcept
+    {
+        return position_;
+    }
+
+    [[nodiscard]] Ray along(Vec3 direction) const noexcept
+    {
+        return {dot(normal_, direction) < 0 ? negative_ : positive_, direction};
+    }
+
+    // The sampled endpoint is at t = 1 even after offsetting the origin.
+    [[nodiscard]] Ray to(Vec3 endpoint) const noexcept
+    {
+        const Vec3 origin = along(endpoint - position_).origin;
+        return {origin, endpoint - origin};
+    }
+
+  private:
+    Vec3 position_, normal_, positive_{}, negative_{};
+};
+
+SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights)
+    : position_(instance.transform.to_world_point(face.position_at(weights))),
+      normal_(instance.transform.to_world_normal(face.geometric_normal()))
 {
     const auto &[a, b, c] = face.vertices;
     const Vec3 local_magnitudes = abs_components(a.position) + abs_components(b.position - a.position) * weights.b +
                                   abs_components(c.position - a.position) * weights.c;
-    const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
-    Vec3 normal = instance.transform.to_world_normal(face.geometric_normal());
-    if (dot(normal, direction) < 0)
-    {
-        normal = normal * -1;
-    }
-
     // Project a roundoff allowance onto the normal so distant tangential coordinates do not widen thin gaps.
-    const double scale = dot(abs_components(normal), instance.transform.world_point_magnitudes(local_magnitudes));
-    const Vec3 origin = world + normal * (32 * std::numeric_limits<double>::epsilon() * scale);
+    const double scale = dot(abs_components(normal_), instance.transform.world_point_magnitudes(local_magnitudes));
+    const Vec3 offset = normal_ * (32 * std::numeric_limits<double>::epsilon() * scale);
     const auto outward = [](double value, double component)
     {
         if (component == 0)
@@ -41,7 +60,9 @@ export [[nodiscard]] Ray spawn_surface_ray(const MeshInstance &instance, const T
         }
         return std::nextafter(value, std::copysign(std::numeric_limits<double>::infinity(), component));
     };
-    return {{outward(origin.x, normal.x), outward(origin.y, normal.y), outward(origin.z, normal.z)}, direction};
+    const Vec3 p = position_ + offset, n = position_ - offset;
+    positive_ = {outward(p.x, normal_.x), outward(p.y, normal_.y), outward(p.z, normal_.z)};
+    negative_ = {outward(n.x, -normal_.x), outward(n.y, -normal_.y), outward(n.z, -normal_.z)};
 }
 
 // Two-sided Möller–Trumbore intersection in the open interval (min, max).

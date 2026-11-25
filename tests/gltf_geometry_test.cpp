@@ -11,7 +11,7 @@ bool check_diffuse_box(const formlight::GltfScene &scene)
     using namespace formlight;
     const auto view = frame_scene(scene, {64, 48});
     const auto base = render_preview(scene, view);
-    const auto lit = render_preview(scene, view, PreviewLighting{DirectionalLight{{-2, 2, 1}}});
+    const auto lit = render_preview(scene, view, DirectionalLighting{DirectionalLight{{-2, 2, 1}}});
     const auto check_face = [&](Vec3 center, float cosine)
     {
         const auto point = view.camera.project(center).value().image;
@@ -23,6 +23,39 @@ bool check_diffuse_box(const formlight::GltfScene &scene)
     // The three visible face normals in world space are +X, +Y and +Z.
     return check_face({0.5, 0, 0}, 0) && check_face({0, 0.5, 0}, 2.0f / 3) && check_face({0, 0, 0.5}, 1.0f / 3);
 }
+bool check_area_light()
+{
+    using namespace formlight;
+    // Power = 4 pi^2 gives a unit Lambertian weight at the center, two units below the light.
+    const RectangleLight light{{0, 2, 0}, {2, 0, 0}, {0, 0, 2}, 4 * std::numbers::pi * std::numbers::pi};
+    const Vec3 up{0, 1, 0};
+    const Vec3 center = light.sample(0.5, 0.5);
+    if (std::abs(light.diffuse_weight({}, up, center) - 1) > 1e-12 ||
+        std::abs(light.diffuse_weight({}, up, light.sample(1, 0.5)) - 16.0 / 25) > 1e-12 ||
+        light.diffuse_weight({0, 4, 0}, {0, -1, 0}, center) != 0)
+    {
+        std::cerr << "Rectangle emission or diffuse geometry term disagrees with the analytic weight\n";
+        return false;
+    }
+
+    const std::array mesh{
+        Triangle{.vertices = {TriangleVertex{{-8, 0, -8}}, TriangleVertex{{0, 0, 8}}, TriangleVertex{{8, 0, -8}}}}};
+    const MeshInstance floor{InstanceId{0}, mesh};
+    const SurfaceRayOrigin receiver{floor, mesh.front(), {0.25, 0.5, 0.25}};
+    const auto with_panel = [&](double height)
+    {
+        const std::array panels{MeshInstance{InstanceId{1}, mesh, {Basis3{}, {0, height, 0}}}};
+        return sample_area_diffuse(light, receiver, up, {16, 7}, 0, panels);
+    };
+    const double unobstructed = sample_area_diffuse(light, receiver, up, {16, 7}, 0, {});
+    if (!(unobstructed > 0 && with_panel(1) == 0 && with_panel(3) == unobstructed))
+    {
+        std::cerr << "Only the panel between the receiver and rectangle should cast a shadow\n";
+        return false;
+    }
+    return true;
+}
+
 bool check_ground_shadow(formlight::GltfScene &scene)
 {
     using namespace formlight;
@@ -34,7 +67,7 @@ bool check_ground_shadow(formlight::GltfScene &scene)
                                   .vertical_fov_radians = std::numbers::pi / 3},
                                  {128, 128}};
     const PreviewView view{overhead, {1, 6}};
-    const auto lit = render_preview(scene, view, PreviewLighting{});
+    const auto lit = render_preview(scene, view, DirectionalLighting{});
     const auto check = [&](const ColorImage &shadowed, Vec3 world, bool blocked)
     {
         const auto p = overhead.project(world).value().image;
@@ -46,7 +79,7 @@ bool check_ground_shadow(formlight::GltfScene &scene)
     // At floor height the top of the unit box projects by (-1/4, 0, -3/4).
     for (const auto method : {ShadowMethod::Map, ShadowMethod::Ray})
     {
-        const auto shadowed = render_preview(scene, view, PreviewLighting{.shadows = method});
+        const auto shadowed = render_preview(scene, view, DirectionalLighting{.shadows = method});
         if (!check(shadowed, {0, -0.5, -0.55}, true) || !check(shadowed, {0, -0.5, -0.8}, true) ||
             !check(shadowed, {0, -0.5, -1.45}, false) || !check(shadowed, {0, 0.5, 0}, false))
         {
@@ -54,6 +87,21 @@ bool check_ground_shadow(formlight::GltfScene &scene)
                       << " disagrees with the box footprint or shadows a lit surface\n";
             return false;
         }
+    }
+    // From this floor point the top edge of the box cuts through the center of the light.
+    const PinholeCamera probe{{.position = {0, 1, -1.5},
+                               .target = {0, 0, -1.5},
+                               .up = {0, 0, -1},
+                               .vertical_fov_radians = std::numbers::pi / 3},
+                              {1, 1}};
+    AreaLighting area{RectangleLight{{0, 2.5, 1.5}, {1, 0, 0}, {0, 0, 1}, 240}, {64, 7}};
+    const float partial = render_preview(scene, {probe, {0.1, 3}}, area)[0, 0].r;
+    area.shadows = false;
+    const float full = render_preview(scene, {probe, {0.1, 3}}, area)[0, 0].r;
+    if (!(partial > 0.3f * full && partial < 0.7f * full))
+    {
+        std::cerr << "Expected partial area-light visibility at the edge of the box shadow\n";
+        return false;
     }
     return true;
 }
@@ -165,7 +213,7 @@ auto main(int argc, char **argv) -> int
         std::cerr << "Bilinear repeat failed across the negative U boundary\n";
         return 1;
     }
-    if (!check_ground_shadow(*scene))
+    if (!check_ground_shadow(*scene) || !check_area_light())
     {
         return 1;
     }

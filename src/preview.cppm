@@ -3,6 +3,7 @@ export module formlight.preview;
 import std;
 export import formlight.gltf;
 export import formlight.lighting;
+export import formlight.direct_lighting;
 export import formlight.raster;
 import formlight.ray_query;
 import formlight.shadow_map;
@@ -22,11 +23,20 @@ export enum class ShadowMethod
     Ray
 };
 
-export struct PreviewLighting
+export struct DirectionalLighting
 {
     DirectionalLight light{{1, 4, 3}};
     ShadowMethod shadows{ShadowMethod::None};
 };
+
+export struct AreaLighting
+{
+    RectangleLight light;
+    LightSampling sampling{};
+    bool shadows{true};
+};
+
+export using PreviewLighting = std::variant<DirectionalLighting, AreaLighting>;
 
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
 {
@@ -71,10 +81,12 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
     {
         triangle.rasterize(visible);
     }
+    const auto *directional = lighting ? std::get_if<DirectionalLighting>(&*lighting) : nullptr;
+    const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
     std::optional<DirectionalShadowMap> shadow_map;
-    if (lighting && lighting->shadows == ShadowMethod::Map)
+    if (directional && directional->shadows == ShadowMethod::Map)
     {
-        shadow_map.emplace(scene.instances(), lighting->light);
+        shadow_map.emplace(scene.instances(), directional->light);
     }
     const auto in_shadow = [&](const MeshInstance &instance, const Triangle &face, Barycentrics weights)
     {
@@ -84,9 +96,9 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
             const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
             return !shadow_map->visible(world, geometric_normal);
         }
-        if (lighting && lighting->shadows == ShadowMethod::Ray)
+        if (directional && directional->shadows == ShadowMethod::Ray)
         {
-            const Ray ray = spawn_surface_ray(instance, face, weights, lighting->light.toward_light());
+            const Ray ray = SurfaceRayOrigin{instance, face, weights}.along(directional->light.toward_light());
             return occluded(ray, scene.instances(), {0, std::numeric_limits<double>::infinity()});
         }
         return false;
@@ -102,10 +114,20 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
                 const auto &instance = scene.instance(id.instance);
                 const auto &face = instance.triangles[std::to_underlying(id.primitive)];
                 auto color = scene.base_color(face, weights);
-                if (lighting)
+                if (area)
+                {
+                    const auto pixel = static_cast<std::uint64_t>(y) * extent.width + x;
+                    const auto blockers = area->shadows ? scene.instances() : std::span<const MeshInstance>{};
+                    const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
+                    const double weight = sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights},
+                                                              normal, area->sampling, pixel, blockers);
+                    color = {static_cast<float>(color.r * weight), static_cast<float>(color.g * weight),
+                             static_cast<float>(color.b * weight), color.a};
+                }
+                else if (directional)
                 {
                     const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
-                    color = lighting->light.diffuse(color, normal);
+                    color = directional->light.diffuse(color, normal);
                     if ((color.r > 0 || color.g > 0 || color.b > 0) && in_shadow(instance, face, weights))
                     {
                         color = {0, 0, 0, color.a};

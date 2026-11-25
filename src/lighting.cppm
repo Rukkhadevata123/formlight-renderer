@@ -29,4 +29,52 @@ class DirectionalLight
   private:
     Vec3 toward_light_;
 };
+
+// One-sided white Lambertian emitter. The two full edge vectors determine size and emitting side.
+class RectangleLight
+{
+  public:
+    RectangleLight(Vec3 center, Vec3 edge_u, Vec3 edge_v, double power);
+    [[nodiscard]] Vec3 sample(double u, double v) const noexcept
+    {
+        return center_ + edge_u_ * (u - 0.5) + edge_v_ * (v - 0.5);
+    }
+    [[nodiscard]] double diffuse_weight(Vec3 receiver, Vec3 unit_normal, Vec3 light_point) const noexcept;
+
+  private:
+    Vec3 center_, edge_u_, edge_v_, normal_{};
+    double diffuse_scale_;
+};
+
+RectangleLight::RectangleLight(Vec3 center, Vec3 edge_u, Vec3 edge_v, double power)
+    : center_(center), edge_u_(edge_u), edge_v_(edge_v), diffuse_scale_(power / (std::numbers::pi * std::numbers::pi))
+{
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z) || !std::isfinite(power) ||
+        power < 0)
+    {
+        throw std::invalid_argument("Rectangle light requires a finite center and finite nonnegative power");
+    }
+    const Vec3 u = unit_vector(edge_u, "Rectangle light width must be finite and nonzero");
+    const Vec3 v = unit_vector(edge_v, "Rectangle light height must be finite and nonzero");
+    if (std::abs(dot(u, v)) > 1e-10)
+    {
+        throw std::invalid_argument("Rectangle light edges must be perpendicular");
+    }
+    normal_ = unit_vector(cross(u, v), "Invalid rectangle light normal");
+}
+
+double RectangleLight::diffuse_weight(Vec3 receiver, Vec3 unit_normal, Vec3 light_point) const noexcept
+{
+    const Vec3 delta = light_point - receiver;
+    const double distance_squared = dot(delta, delta);
+    if (!(distance_squared > 0) || !std::isfinite(distance_squared))
+    {
+        return 0;
+    }
+    // Uniform area sampling cancels the A in Le = power / (pi * A). Lambert's BRDF adds the second 1/pi.
+    // Each dot uses an unnormalized direction, so their product contains another factor of distance squared.
+    const double receiver_cos_over_r = std::max(0.0, dot(unit_normal, delta)) / distance_squared;
+    const double emitter_cos_over_r = std::max(0.0, -dot(normal_, delta)) / distance_squared;
+    return diffuse_scale_ * receiver_cos_over_r * emitter_cos_over_r;
+}
 } // namespace formlight

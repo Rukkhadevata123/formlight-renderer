@@ -128,7 +128,7 @@ bool check_shadow_ray_interval()
         const double gap = 1e-9 * scale;
         const std::array sheets{MeshInstance{InstanceId{0}, mesh, {axes, position}},
                                 MeshInstance{InstanceId{1}, mesh, {axes, position - Vec3{0, 0, gap}}}};
-        const Ray ray = spawn_surface_ray(sheets.front(), mesh.front(), {0.25, 0.25, 0.5}, {0, 0, -1});
+        const Ray ray = SurfaceRayOrigin{sheets.front(), mesh.front(), {0.25, 0.25, 0.5}}.along({0, 0, -1});
         const auto hit = intersect(ray, sheets, {0, 2 * gap});
         if (!(ray.origin.z < position.z && hit && hit->surface.id.instance == sheets.back().id &&
               occluded(ray, sheets, {0, 2 * gap}) && !occluded(ray, sheets, {0, hit->t}) &&

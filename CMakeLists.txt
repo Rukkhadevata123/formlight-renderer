@@ -17,6 +17,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/triangle.cppm
         src/mesh_instance.cppm
         src/lighting.cppm
+        src/lighting/direct_lighting.cppm
         src/raster/coverage.cppm
         src/raster/shadow_map.cppm
         src/raster/raster.cppm
@@ -40,6 +41,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIAN
 endif()
 
 add_executable(formlight-renderer src/main.cpp)
+target_sources(formlight-renderer PRIVATE FILE_SET CXX_MODULES FILES src/cli/render_options.cppm)
 target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_image_io)
 
 include(CTest)
