@@ -9,6 +9,9 @@ target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
         src/camera.cppm
+        src/triangle.cppm
+        src/raster.cppm
+        src/ray_query.cppm
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
 
@@ -23,4 +26,8 @@ if(BUILD_TESTING)
     add_executable(camera_test tests/camera_test.cpp)
     target_link_libraries(camera_test PRIVATE formlight_renderer_core)
     add_test(NAME pinhole_camera COMMAND camera_test)
+
+    add_executable(triangle_visibility_test tests/triangle_visibility_test.cpp)
+    target_link_libraries(triangle_visibility_test PRIVATE formlight_renderer_core)
+    add_test(NAME triangle_visibility COMMAND triangle_visibility_test)
 endif()
