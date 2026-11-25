@@ -34,6 +34,7 @@ export class GltfScene
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
     [[nodiscard]] LinearColor base_color(const Triangle &face, Barycentrics weights) const;
+    void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
     {
         return instances_.at(node_instance_slots_.at(std::to_underlying(id)).value());

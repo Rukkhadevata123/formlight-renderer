@@ -15,6 +15,11 @@ class DirectionalLight
     {
     }
 
+    [[nodiscard]] Vec3 toward_light() const noexcept
+    {
+        return toward_light_;
+    }
+
     [[nodiscard]] LinearColor diffuse(LinearColor base_color, Vec3 unit_world_normal) const noexcept
     {
         const auto cosine = static_cast<float>(std::max(0.0, dot(unit_world_normal, toward_light_)));

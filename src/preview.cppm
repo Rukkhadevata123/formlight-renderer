@@ -4,6 +4,7 @@ import std;
 export import formlight.gltf;
 export import formlight.lighting;
 export import formlight.raster;
+import formlight.shadow_map;
 
 namespace formlight
 {
@@ -13,46 +14,48 @@ export struct PreviewView
     ViewDepthRange depth{};
 };
 
-// Fit the transformed scene bounds in a perspective view with world +Y up.
-export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent extent)
+export enum class ShadowMethod
 {
-    const double infinity = std::numeric_limits<double>::infinity();
-    Vec3 lo{infinity, infinity, infinity}, hi{-infinity, -infinity, -infinity};
-    for (const auto &instance : scene.instances())
-    {
-        for (const auto &triangle : instance.triangles)
-        {
-            for (const auto &vertex : triangle.vertices)
-            {
-                const auto p = instance.transform.to_world_point(vertex.position);
-                lo = {std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)};
-                hi = {std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)};
-            }
-        }
-    }
-    if (lo.x > hi.x)
-    {
-        throw std::invalid_argument("The scene has no triangles to render");
-    }
-    const Vec3 center{std::midpoint(lo.x, hi.x), std::midpoint(lo.y, hi.y), std::midpoint(lo.z, hi.z)};
-    const Vec3 half = hi - center;
-    const double radius = std::hypot(half.x, half.y, half.z);
-    if (!(radius > 0) || !std::isfinite(radius))
-    {
-        throw std::invalid_argument("The scene has no finite spatial extent");
-    }
+    None,
+    Map
+};
 
+export struct PreviewLighting
+{
+    DirectionalLight light{{1, 4, 3}};
+    ShadowMethod shadows{ShadowMethod::None};
+};
+
+export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
+{
+    const auto center = subject.center();
+    const double half = 3 * subject.radius(), y = subject.low.y;
+    const TriangleVertex a{{center.x - half, y, center.z - half}}, b{{center.x - half, y, center.z + half}},
+        c{{center.x + half, y, center.z + half}}, d{{center.x + half, y, center.z - half}};
+    scene.add_solid_mesh({Triangle{.vertices = {a, b, c}}, Triangle{.vertices = {a, c, d}}}, {0.4f, 0.4f, 0.4f, 1});
+}
+
+// Frame the subject, but include all scene geometry in the camera's depth range.
+export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent extent,
+                                             std::optional<Bounds3> subject = {})
+{
+    const auto bounds = world_bounds(scene.instances());
+    const auto framing = subject.value_or(bounds);
+    const auto center = framing.center();
+    const double radius = framing.radius();
     constexpr double fov = std::numbers::pi / 4;
     const double half_angle =
         std::atan(std::tan(fov / 2) * std::min(1.0, static_cast<double>(extent.width) / extent.height));
     const double distance = 1.05 * radius / std::sin(half_angle);
     const Vec3 direction = Vec3{1.1, 0.8, 1.5} / std::hypot(1.1, 0.8, 1.5);
-    return {PinholeCamera{{center + direction * distance, center, {0, 1, 0}, fov}, extent},
-            {distance - radius, distance + radius}};
+    const PinholeCamera camera{{center + direction * distance, center, {0, 1, 0}, fov}, extent};
+    const double scene_depth = camera.to_view(bounds.center()).depth;
+    const double scene_radius = bounds.radius();
+    return {camera, {std::max(distance * 1e-5, scene_depth - scene_radius), scene_depth + scene_radius}};
 }
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
-                                               std::optional<DirectionalLight> light = std::nullopt)
+                                               std::optional<PreviewLighting> lighting = std::nullopt)
 {
     const ImageExtent extent = view.camera.extent();
     if (extent.width > std::numeric_limits<int>::max() / extent.height)
@@ -66,6 +69,11 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
     {
         triangle.rasterize(visible);
     }
+    std::optional<DirectionalShadowMap> shadow_map;
+    if (lighting && lighting->shadows == ShadowMethod::Map)
+    {
+        shadow_map.emplace(scene.instances(), lighting->light);
+    }
     for (int y = 0; y < extent.height; ++y)
     {
         for (int x = 0; x < extent.width; ++x)
@@ -76,10 +84,20 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
                 const auto &instance = scene.instance(id.instance);
                 const auto &face = instance.triangles[std::to_underlying(id.primitive)];
                 auto color = scene.base_color(face, weights);
-                if (light)
+                if (lighting)
                 {
-                    const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
-                    color = light->diffuse(color, normal);
+                    const bool sunlit =
+                        !shadow_map || shadow_map->visible(instance.transform.to_world_point(face.position_at(weights)),
+                                                           instance.transform.to_world_normal(face.geometric_normal()));
+                    if (sunlit)
+                    {
+                        const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
+                        color = lighting->light.diffuse(color, normal);
+                    }
+                    else
+                    {
+                        color = {0, 0, 0, color.a};
+                    }
                 }
                 image[y, x] = color;
             }

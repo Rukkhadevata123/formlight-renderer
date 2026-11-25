@@ -33,6 +33,12 @@ struct Triangle
     std::array<TriangleVertex, 3> vertices{};
     std::size_t material_index{}; // Slot zero is the default material.
 
+    [[nodiscard]] constexpr Vec3 position_at(Barycentrics weights) const noexcept
+    {
+        const auto &[a, b, c] = vertices;
+        return a.position + (b.position - a.position) * weights.b + (c.position - a.position) * weights.c;
+    }
+
     [[nodiscard]] constexpr TexCoord uv_at(Barycentrics weights) const noexcept
     {
         const auto &[a, b, c] = vertices;
@@ -42,6 +48,12 @@ struct Triangle
         };
     }
 
+    [[nodiscard]] constexpr Vec3 geometric_normal() const noexcept
+    {
+        const auto &[a, b, c] = vertices;
+        return cross(b.position - a.position, c.position - a.position);
+    }
+
     // Normalize after the instance's inverse transpose has taken the result to world space.
     [[nodiscard]] constexpr Vec3 normal_at(Barycentrics weights) const noexcept
     {
@@ -49,7 +61,7 @@ struct Triangle
         const Vec3 n = a.normal * weights.a + b.normal * weights.b + c.normal * weights.c;
         if (n.x == 0 && n.y == 0 && n.z == 0)
         {
-            return cross(b.position - a.position, c.position - a.position);
+            return geometric_normal();
         }
         return n;
     }

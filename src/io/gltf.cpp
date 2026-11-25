@@ -322,6 +322,33 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
     }
 }
 
+void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
+{
+    if (materials_.empty() || mesh.empty())
+    {
+        throw std::invalid_argument("Adding a solid mesh requires triangles and a scene with materials");
+    }
+    if (!std::in_range<std::uint32_t>(node_instance_slots_.size()) || !std::in_range<std::uint32_t>(mesh.size() - 1))
+    {
+        throw std::length_error("Mesh exceeds the instance or primitive ID range");
+    }
+    const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
+    for (std::size_t i = 0; i < mesh.size(); ++i)
+    {
+        mesh[i].id = PrimitiveId{static_cast<std::uint32_t>(i)};
+        mesh[i].material_index = materials_.size();
+    }
+    // Reserve all four slots before publishing the new material, mesh and instance.
+    materials_.reserve(materials_.size() + 1);
+    meshes_.reserve(meshes_.size() + 1);
+    node_instance_slots_.reserve(node_instance_slots_.size() + 1);
+    instances_.reserve(instances_.size() + 1);
+    materials_.emplace_back(BaseColorMaterial{color, {}});
+    meshes_.push_back(std::move(mesh));
+    node_instance_slots_.push_back(instances_.size());
+    instances_.push_back({id, meshes_.back(), {}});
+}
+
 LinearColor GltfScene::base_color(const Triangle &face, Barycentrics weights) const
 {
     const auto &material = materials_.at(face.material_index).value();

@@ -17,6 +17,8 @@ target_sources(formlight_renderer_core PUBLIC
         src/triangle.cppm
         src/mesh_instance.cppm
         src/lighting.cppm
+        src/raster/coverage.cppm
+        src/raster/shadow_map.cppm
         src/raster/raster.cppm
         src/ray_query.cppm
 )

@@ -110,4 +110,45 @@ export struct MeshInstance
     std::span<const Triangle> triangles;
     AffineTransform transform{};
 };
+
+export struct Bounds3
+{
+    Vec3 low, high;
+
+    [[nodiscard]] Vec3 center() const noexcept
+    {
+        return {std::midpoint(low.x, high.x), std::midpoint(low.y, high.y), std::midpoint(low.z, high.z)};
+    }
+
+    [[nodiscard]] double radius() const noexcept
+    {
+        const Vec3 half = high - center();
+        return std::hypot(half.x, half.y, half.z);
+    }
+};
+
+export [[nodiscard]] Bounds3 world_bounds(std::span<const MeshInstance> instances)
+{
+    constexpr double infinity = std::numeric_limits<double>::infinity();
+    Bounds3 bounds{{infinity, infinity, infinity}, {-infinity, -infinity, -infinity}};
+    for (const auto &instance : instances)
+    {
+        for (const auto &triangle : instance.triangles)
+        {
+            for (const auto &vertex : triangle.vertices)
+            {
+                const auto p = instance.transform.to_world_point(vertex.position);
+                auto &[lo, hi] = bounds;
+                lo = {std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)};
+                hi = {std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)};
+            }
+        }
+    }
+    const double radius = bounds.radius();
+    if (!(radius > 0) || !std::isfinite(radius))
+    {
+        throw std::invalid_argument("The scene has no finite spatial extent");
+    }
+    return bounds;
+}
 } // namespace formlight

@@ -11,7 +11,7 @@ bool check_diffuse_box(const formlight::GltfScene &scene)
     using namespace formlight;
     const auto view = frame_scene(scene, {64, 48});
     const auto base = render_preview(scene, view);
-    const auto lit = render_preview(scene, view, DirectionalLight{{-2, 2, 1}});
+    const auto lit = render_preview(scene, view, PreviewLighting{DirectionalLight{{-2, 2, 1}}});
     const auto check_face = [&](Vec3 center, float cosine)
     {
         const auto point = view.camera.project(center).value().image;
@@ -23,6 +23,27 @@ bool check_diffuse_box(const formlight::GltfScene &scene)
     // The three visible face normals in world space are +X, +Y and +Z.
     return check_face({0.5, 0, 0}, 0) && check_face({0, 0.5, 0}, 2.0f / 3) && check_face({0, 0, 0.5}, 1.0f / 3);
 }
+bool check_ground_shadow(formlight::GltfScene &scene)
+{
+    using namespace formlight;
+    add_preview_ground(scene, world_bounds(scene.instances()));
+    const PinholeCamera overhead{
+        {.position = {0, 4, 0}, .target = {}, .up = {0, 0, -1}, .vertical_fov_radians = std::numbers::pi / 3},
+        {128, 128}};
+    const PreviewView view{overhead, {1, 6}};
+    const auto lit = render_preview(scene, view, PreviewLighting{});
+    const auto shadowed = render_preview(scene, view, PreviewLighting{.shadows = ShadowMethod::Map});
+    const auto check = [&](Vec3 world, bool blocked)
+    {
+        const auto p = overhead.project(world).value().image;
+        const int x = static_cast<int>(p.x), y = static_cast<int>(p.y);
+        const auto plain = lit[y, x], mapped = shadowed[y, x];
+        return plain.r > 0 && (blocked ? mapped.r == 0 && mapped.g == 0 && mapped.b == 0
+                                       : mapped.r == plain.r && mapped.g == plain.g && mapped.b == plain.b);
+    };
+    // At floor height the top of the unit box projects by (-1/4, 0, -3/4).
+    return check({0, -0.5, -0.8}, true) && check({0, -0.5, -1.45}, false) && check({0, 0.5, 0}, false);
+}
 } // namespace
 
 auto main(int argc, char **argv) -> int
@@ -33,7 +54,7 @@ auto main(int argc, char **argv) -> int
         std::cerr << "Expected the BoxTextured.glb fixture path\n";
         return 1;
     }
-    const auto scene = GltfScene::load_glb(argv[1], GltfContent::BaseColor);
+    auto scene = GltfScene::load_glb(argv[1], GltfContent::BaseColor);
     if (!scene)
     {
         std::cerr << scene.error() << '\n';
@@ -129,6 +150,11 @@ auto main(int argc, char **argv) -> int
     if (sample_texture(seam, {-1, 0.5}, {}).r != 0.5f)
     {
         std::cerr << "Bilinear repeat failed across the negative U boundary\n";
+        return 1;
+    }
+    if (!check_ground_shadow(*scene))
+    {
+        std::cerr << "Shadow map disagrees with the box footprint or shadows a lit surface\n";
         return 1;
     }
     return 0;
