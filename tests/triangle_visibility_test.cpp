@@ -73,6 +73,85 @@ bool compare(const PinholeCamera &camera, const Triangle &triangle, ViewDepthRan
                  expected_coverage, max_depth_error, max_uv_error);
     return covered == expected_coverage;
 }
+
+bool check_ground_and_panel()
+{
+    const PinholeCamera camera{
+        {.position = {0, 3, 0}, .target = {0, 0, 0}, .up = {0, 0, -1}, .vertical_fov_radians = std::numbers::pi / 2},
+        extent};
+    constexpr TriangleVertex nw{{-2, 0, -2}, {0, 0}}, ne{{2, 0, -2}, {1, 0}}, se{{2, 0, 2}, {1, 1}},
+        sw{{-2, 0, 2}, {0, 1}};
+    constexpr PrimitiveId upper{31}, lower{7}, panel{45};
+    std::array scene{
+        Triangle{upper, {nw, ne, se}},
+        Triangle{lower, {nw, se, sw}},
+        Triangle{panel,
+                 {TriangleVertex{{-0.25, 1.5, -0.75}, {0, 0}}, TriangleVertex{{1, 1, -1}, {1, 0}},
+                  TriangleVertex{{1.25, 0.5, 0}, {0, 1}}}},
+    };
+    for (int pass = 0; pass < 2; ++pass)
+    {
+        const auto pieces = RasterTriangle::prepare(camera, scene, {1, 5});
+        std::vector<std::optional<RasterHit>> pixels(extent.width * extent.height);
+        const VisibilityBuffer buffer{pixels.data(), extent.height, extent.width};
+        for (const auto &piece : pieces)
+        {
+            piece.rasterize(buffer);
+        }
+        const auto covered = std::ranges::count_if(pixels, &std::optional<RasterHit>::has_value);
+        if (covered != 32 * 32)
+        {
+            std::cerr << std::format("Ground covers {} pixels, expected 1024\n", covered);
+            return false;
+        }
+
+        // The ground spans [16,48] x [8,40]. The panel projects to (28,12), (44,12), (44,24).
+        int panel_pixels = 0;
+        for (int row = 8; row < 40; ++row)
+        {
+            for (int column = 16; column < 48; ++column)
+            {
+                const auto point = pixel_center(column, row);
+                const bool on_seam = row == column - 8;
+                const bool on_panel = point.x < 44 && point.y > 12 && 4 * (point.y - 12) < 3 * (point.x - 28);
+                auto expected = row <= column - 8 ? upper : lower;
+                if (on_panel)
+                {
+                    expected = panel;
+                    ++panel_pixels;
+                }
+                // Check raw coverage, since a depth test could hide two owners of the same edge.
+                if (on_seam && !sample_pieces(pieces, point))
+                {
+                    std::cerr << std::format("Gap on the shared edge at ({}, {})\n", column, row);
+                    return false;
+                }
+                const auto &pixel = buffer[row, column];
+                const auto ray = camera.ray_for_sample(point);
+                const auto hit = intersect(ray, scene, {0.0, std::numeric_limits<double>::infinity()});
+                if (!pixel || pixel->surface.primitive != expected || !hit ||
+                    !(hit->surface.primitive == expected || (on_seam && hit->surface.primitive == lower)) ||
+                    !(std::abs(pixel->view_depth - camera.to_view(ray.at(hit->t)).depth) <= tolerance))
+                {
+                    std::cerr << std::format("Wrong visible surface at ({}, {}) in draw order {}\n", column, row, pass);
+                    return false;
+                }
+            }
+        }
+        const auto ray = camera.ray_for_sample(pixel_center(40, 15));
+        const RayInterval behind_panel{2.75 / -ray.direction.y, std::numeric_limits<double>::infinity()};
+        const auto ground = intersect(ray, scene, behind_panel);
+        if (!ground || ground->surface.primitive != upper)
+        {
+            std::cerr << "The ray interval behind the panel must still hit the ground\n";
+            return false;
+        }
+        std::println("Draw order {}: {} visible pixels, {} on the panel, 32 shared-edge samples", pass, covered,
+                     panel_pixels);
+        std::ranges::reverse(scene);
+    }
+    return true;
+}
 } // namespace
 
 auto main() -> int
@@ -105,6 +184,7 @@ auto main() -> int
                      TriangleVertex{{1, -1.5, -3}, {0, 1}}},
     };
     const bool passed = compare(camera, triangle, full, 672) && compare(camera, crosses_eye, full, 600) &&
-                        compare(camera, triangle, {2.5, 3.5}, 471) && compare(camera, triangle, {5, 6}, 0);
+                        compare(camera, triangle, {2.5, 3.5}, 471) && compare(camera, triangle, {5, 6}, 0) &&
+                        check_ground_and_panel();
     return passed ? 0 : 1;
 }

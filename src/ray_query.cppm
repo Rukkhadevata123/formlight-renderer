@@ -49,4 +49,21 @@ struct RayHit
     }
     return RayHit{.surface = {triangle.id, {1.0 - weight_b - weight_c, weight_b, weight_c}}, .t = t};
 }
+
+// Brute-force nearest hit in (min, max). Exact distance ties use the smaller primitive ID.
+[[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<const Triangle> triangles,
+                                              RayInterval interval) noexcept
+{
+    std::optional<RayHit> nearest;
+    for (const auto &triangle : triangles)
+    {
+        const auto hit = intersect(ray, triangle, interval);
+        if (hit &&
+            (!nearest || std::tie(hit->t, hit->surface.primitive) < std::tie(nearest->t, nearest->surface.primitive)))
+        {
+            nearest = hit;
+        }
+    }
+    return nearest;
+}
 } // namespace formlight

@@ -12,6 +12,9 @@ export struct RasterHit
     double view_depth;
 };
 
+// Row-major [row, column] view of caller-owned pixels. An empty cell is background.
+export using VisibilityBuffer = std::mdspan<std::optional<RasterHit>, std::dextents<int, 2>>;
+
 struct EdgeEquation
 {
     double x, y;
@@ -49,6 +52,8 @@ export class RasterTriangle
     [[nodiscard]] static std::vector<RasterTriangle> prepare(const PinholeCamera &camera,
                                                              std::span<const Triangle> triangles, ViewDepthRange range);
     [[nodiscard]] std::optional<RasterHit> sample(ImagePoint point) const noexcept;
+    // Keep the nearest pixel-center hit. Exact depth ties use the smaller primitive ID.
+    void rasterize(VisibilityBuffer target) const noexcept;
 
   private:
     RasterTriangle(PrimitiveId primitive, const RasterVertex &a, const RasterVertex &b, const RasterVertex &c);
@@ -57,6 +62,7 @@ export class RasterTriangle
     std::array<double, 3> inverse_depths_;
     std::array<Barycentrics, 3> source_weights_;
     double twice_area_;
+    ImagePoint min_corner_, max_corner_;
 };
 
 RasterTriangle::RasterTriangle(PrimitiveId primitive, const RasterVertex &a, const RasterVertex &b,
@@ -65,7 +71,11 @@ RasterTriangle::RasterTriangle(PrimitiveId primitive, const RasterVertex &a, con
       edges_{EdgeEquation{b.point.image, c.point.image}, EdgeEquation{c.point.image, a.point.image},
              EdgeEquation{a.point.image, b.point.image}},
       inverse_depths_{1.0 / a.point.view_depth, 1.0 / b.point.view_depth, 1.0 / c.point.view_depth},
-      source_weights_{a.source_weights, b.source_weights, c.source_weights}, twice_area_(edges_[0].at(a.point.image))
+      source_weights_{a.source_weights, b.source_weights, c.source_weights}, twice_area_(edges_[0].at(a.point.image)),
+      min_corner_{std::min({a.point.image.x, b.point.image.x, c.point.image.x}),
+                  std::min({a.point.image.y, b.point.image.y, c.point.image.y})},
+      max_corner_{std::max({a.point.image.x, b.point.image.x, c.point.image.x}),
+                  std::max({a.point.image.y, b.point.image.y, c.point.image.y})}
 {
     // Orient the edges inward for either winding; their indices still match the input vertices.
     if (twice_area_ < 0.0)
@@ -104,5 +114,29 @@ std::optional<RasterHit> RasterTriangle::sample(ImagePoint point) const noexcept
         (wa * v0.c + wb * v1.c + wc * v2.c) / sum,
     };
     return RasterHit{.surface = {primitive_, source}, .view_depth = twice_area_ / sum};
+}
+
+void RasterTriangle::rasterize(VisibilityBuffer target) const noexcept
+{
+    // Clamp before converting off-screen coordinates to integer indices.
+    const auto bound = [](double position, int extent)
+    { return static_cast<int>(std::clamp(position, 0.0, static_cast<double>(extent))); };
+    const int left = bound(std::floor(min_corner_.x), target.extent(1));
+    const int right = bound(std::ceil(max_corner_.x), target.extent(1));
+    const int top = bound(std::floor(min_corner_.y), target.extent(0));
+    const int bottom = bound(std::ceil(max_corner_.y), target.extent(0));
+    for (int row = top; row < bottom; ++row)
+    {
+        for (int column = left; column < right; ++column)
+        {
+            const auto hit = sample(pixel_center(column, row));
+            auto &pixel = target[row, column];
+            if (hit && (!pixel || std::tie(hit->view_depth, hit->surface.primitive) <
+                                      std::tie(pixel->view_depth, pixel->surface.primitive)))
+            {
+                pixel = hit;
+            }
+        }
+    }
 }
 } // namespace formlight
