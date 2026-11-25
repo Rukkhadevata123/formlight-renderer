@@ -40,6 +40,12 @@ export class AffineTransform
         return translation_ + (axes_.x * point.x + axes_.y * point.y + axes_.z * point.z);
     }
 
+    [[nodiscard]] Vec3 to_world_normal(Vec3 normal) const
+    {
+        const Vec3 world = inverse_rows_.x * normal.x + inverse_rows_.y * normal.y + inverse_rows_.z * normal.z;
+        return unit_vector(world, "Surface normal must define a finite direction");
+    }
+
     [[nodiscard]] Ray to_local_ray(const Ray &world) const noexcept
     {
         // Applying the inverse linear map without normalizing preserves world.at(t) for the same t.

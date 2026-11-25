@@ -225,8 +225,8 @@ auto main() -> int
         extent};
     constexpr Triangle triangle{
         .id = PrimitiveId{17},
-        .vertices = {TriangleVertex{{-2, 0, -2}, {0, 0}}, TriangleVertex{{2, -2, 2}, {1, 0}},
-                     TriangleVertex{{-1, 6, -2}, {0, 1}}},
+        .vertices = {TriangleVertex{{-2, 0, -2}, {0, 0}, {1, 0, 0}}, TriangleVertex{{2, -2, 2}, {1, 0}, {0, 1, 0}},
+                     TriangleVertex{{-1, 6, -2}, {0, 1}, {0, 0, 1}}},
     };
     // A 45-degree rotation and unequal axis lengths give world corners (-2,-1,-2), (4,-2,-4), (-1,2,-3).
     const MeshInstance tilted{InstanceId{1},
@@ -242,6 +242,15 @@ auto main() -> int
           std::abs(uv.v - 368.0 / 909) <= tolerance))
     {
         std::cerr << "Reference depth/UV differs from the analytic result\n";
+        return 1;
+    }
+    // A^-T maps the weighted local normal (290,251,368)/909 to (513,502,223)/909.
+    const Vec3 normal = tilted.transform.to_world_normal(triangle.normal_at(reference.surface.weights));
+    const Vec3 expected = Vec3{513, 502, 223} / std::hypot(513.0, 502.0, 223.0);
+    const Vec3 error = normal - expected;
+    if (!(std::hypot(error.x, error.y, error.z) <= tolerance))
+    {
+        std::cerr << "Interpolated world normal differs under nonuniform scaling\n";
         return 1;
     }
 

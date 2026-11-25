@@ -79,6 +79,17 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
                 }
                 vertices[i].position = {p[0], p[1], p[2]};
             });
+        if (const auto normal = primitive.findAttribute("NORMAL"); normal != primitive.attributes.end())
+        {
+            const auto &normals = geometry_accessor(asset, normal->accessorIndex);
+            if (normals.count != positions.count || normals.type != fastgltf::AccessorType::Vec3)
+            {
+                throw std::runtime_error("NORMAL must supply one VEC3 per position");
+            }
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
+                asset, normals, [&](auto n, std::size_t i)
+                { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
+        }
         const auto texcoord = primitive.findAttribute("TEXCOORD_0");
         const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
         if (content == GltfContent::BaseColor && texcoord == primitive.attributes.end() && primitive.materialIndex &&
@@ -263,7 +274,7 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
             pending.push_back({root, fastgltf::math::nmat4x4{}});
         }
         GltfScene result;
-        result.node_mesh_slots_.resize(asset.nodes.size());
+        result.node_instance_slots_.resize(asset.nodes.size());
         std::vector<std::optional<std::size_t>> mesh_slots(asset.meshes.size());
         std::vector<bool> visited(asset.nodes.size());
         while (!pending.empty())
@@ -289,7 +300,7 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
                     slot = result.meshes_.size();
                     result.meshes_.push_back(read_mesh(asset, asset.meshes.at(*node.meshIndex), content));
                 }
-                result.node_mesh_slots_[index] = *slot;
+                result.node_instance_slots_[index] = result.instances_.size();
                 result.instances_.push_back(
                     {InstanceId{static_cast<std::uint32_t>(index)}, result.meshes_[*slot], instance_transform(world)});
             }
@@ -311,15 +322,13 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
     }
 }
 
-LinearColor GltfScene::base_color(const TrianglePoint &point) const
+LinearColor GltfScene::base_color(const Triangle &face, Barycentrics weights) const
 {
-    const auto mesh = node_mesh_slots_.at(std::to_underlying(point.id.instance)).value();
-    const auto &face = meshes_[mesh].at(std::to_underlying(point.id.primitive));
     const auto &material = materials_.at(face.material_index).value();
     auto color = material.factor;
     if (const auto &binding = material.texture)
     {
-        const auto texel = sample_texture(images_[binding->image].value(), face.uv_at(point.weights), binding->sampler);
+        const auto texel = sample_texture(images_[binding->image].value(), face.uv_at(weights), binding->sampler);
         color = {color.r * texel.r, color.g * texel.g, color.b * texel.b, color.a * texel.a};
     }
     color.a = 1.0f; // OPAQUE materials ignore base color alpha.

@@ -1,5 +1,7 @@
 export module formlight.geometry;
 
+import std;
+
 export namespace formlight
 {
 struct Vec3
@@ -35,6 +37,16 @@ struct Vec3
 [[nodiscard]] constexpr Vec3 cross(Vec3 a, Vec3 b) noexcept
 {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
+}
+
+[[nodiscard]] inline Vec3 unit_vector(Vec3 value, const char *error)
+{
+    const double length = std::hypot(value.x, value.y, value.z);
+    if (!(length > 0.0) || !std::isfinite(length))
+    {
+        throw std::invalid_argument(error);
+    }
+    return value / length;
 }
 
 struct Ray

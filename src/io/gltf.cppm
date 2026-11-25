@@ -33,7 +33,12 @@ export class GltfScene
 
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
-    [[nodiscard]] LinearColor base_color(const TrianglePoint &point) const;
+    [[nodiscard]] LinearColor base_color(const Triangle &face, Barycentrics weights) const;
+    [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
+    {
+        return instances_.at(node_instance_slots_.at(std::to_underlying(id)).value());
+    }
+    const MeshInstance &instance(InstanceId id) const && = delete;
     [[nodiscard]] std::size_t mesh_count() const noexcept
     {
         return meshes_.size();
@@ -48,7 +53,7 @@ export class GltfScene
     GltfScene() = default;
     std::vector<std::vector<Triangle>> meshes_;
     std::vector<MeshInstance> instances_;
-    std::vector<std::optional<std::size_t>> node_mesh_slots_;
+    std::vector<std::optional<std::size_t>> node_instance_slots_;
     std::vector<std::optional<ColorImage>> images_;
     std::vector<std::optional<BaseColorMaterial>> materials_;
 };

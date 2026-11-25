@@ -16,6 +16,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/camera.cppm
         src/triangle.cppm
         src/mesh_instance.cppm
+        src/lighting.cppm
         src/raster/raster.cppm
         src/ray_query.cppm
 )
@@ -27,7 +28,7 @@ target_link_libraries(formlight_image_io PUBLIC formlight_renderer_core)
 target_include_directories(formlight_image_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
 add_library(formlight_gltf STATIC src/io/gltf.cpp)
-target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/base_color_preview.cppm)
+target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
 target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_image_io)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.

@@ -70,19 +70,6 @@ export class PinholeCamera
     double focal_length_pixels_{};
 };
 
-namespace
-{
-Vec3 unit_vector(Vec3 value, const char *error)
-{
-    const double length = std::hypot(value.x, value.y, value.z);
-    if (!(length > 0.0) || !std::isfinite(length))
-    {
-        throw std::invalid_argument(error);
-    }
-    return {value.x / length, value.y / length, value.z / length};
-}
-} // namespace
-
 PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : position_(view.position), extent_(extent)
 {
     if (extent.width <= 0 || extent.height <= 0)

@@ -1,8 +1,29 @@
 import std;
 import formlight.gltf;
-import formlight.base_color_preview;
+import formlight.preview;
 import formlight.raster;
 import formlight.ray_query;
+
+namespace
+{
+bool check_diffuse_box(const formlight::GltfScene &scene)
+{
+    using namespace formlight;
+    const auto view = frame_scene(scene, {64, 48});
+    const auto base = render_preview(scene, view);
+    const auto lit = render_preview(scene, view, DirectionalLight{{-2, 2, 1}});
+    const auto check_face = [&](Vec3 center, float cosine)
+    {
+        const auto point = view.camera.project(center).value().image;
+        const int x = static_cast<int>(point.x), y = static_cast<int>(point.y);
+        const auto color = base[y, x], shaded = lit[y, x];
+        return std::max({color.r, color.g, color.b}) > 0.01f && std::abs(shaded.r - color.r * cosine) < 1e-6f &&
+               std::abs(shaded.g - color.g * cosine) < 1e-6f && std::abs(shaded.b - color.b * cosine) < 1e-6f;
+    };
+    // The three visible face normals in world space are +X, +Y and +Z.
+    return check_face({0.5, 0, 0}, 0) && check_face({0, 0.5, 0}, 2.0f / 3) && check_face({0, 0, 0.5}, 1.0f / 3);
+}
+} // namespace
 
 auto main(int argc, char **argv) -> int
 {
@@ -24,6 +45,11 @@ auto main(int argc, char **argv) -> int
         std::cerr << "Expected one box mesh, one instance and twelve triangles\n";
         return 1;
     }
+    if (instances.front().triangles[6].vertices.front().normal.y != -1)
+    {
+        std::cerr << "Expected the authored local -Y normal on the box front face\n";
+        return 1;
+    }
     constexpr ImageExtent extent{64, 48};
     constexpr double camera_x = 1.0 / 48;
     const PinholeCamera camera{{.position = {camera_x, 0, 2.5},
@@ -33,7 +59,7 @@ auto main(int argc, char **argv) -> int
                                extent};
     std::vector<std::optional<RasterHit>> pixels(extent.width * extent.height);
     const VisibilityBuffer buffer{pixels.data(), extent.height, extent.width};
-    const auto image = render_base_color(*scene, {camera, {1, 4}});
+    const auto image = render_preview(*scene, {camera, {1, 4}});
     for (const auto &triangle : RasterTriangle::prepare(camera, instances, {1, 4}))
     {
         triangle.rasterize(buffer);
@@ -90,6 +116,11 @@ auto main(int argc, char **argv) -> int
     if (!matches_rgb(32, 19, {108, 173, 223}) || !matches_rgb(32, 27, {92, 135, 39}))
     {
         std::cerr << "Repeated base-color texture has the wrong colors or orientation\n";
+        return 1;
+    }
+    if (!check_diffuse_box(*scene))
+    {
+        std::cerr << "Directional light disagrees with the world-space box face normals\n";
         return 1;
     }
     // On a repeat boundary, linear filtering blends the last and first texel.

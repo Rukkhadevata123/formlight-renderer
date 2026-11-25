@@ -1,7 +1,8 @@
-export module formlight.base_color_preview;
+export module formlight.preview;
 
 import std;
 export import formlight.gltf;
+export import formlight.lighting;
 export import formlight.raster;
 
 namespace formlight
@@ -50,8 +51,8 @@ export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent
             {distance - radius, distance + radius}};
 }
 
-// Unlit, opaque base-color pass. The resulting pixels are linear and can be consumed independently of PNG output.
-export [[nodiscard]] ColorImage render_base_color(const GltfScene &scene, const PreviewView &view)
+export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
+                                               std::optional<DirectionalLight> light = std::nullopt)
 {
     const ImageExtent extent = view.camera.extent();
     if (extent.width > std::numeric_limits<int>::max() / extent.height)
@@ -71,7 +72,16 @@ export [[nodiscard]] ColorImage render_base_color(const GltfScene &scene, const 
         {
             if (const auto &hit = visible[y, x])
             {
-                image[y, x] = scene.base_color(hit->surface);
+                const auto &[id, weights] = hit->surface;
+                const auto &instance = scene.instance(id.instance);
+                const auto &face = instance.triangles[std::to_underlying(id.primitive)];
+                auto color = scene.base_color(face, weights);
+                if (light)
+                {
+                    const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
+                    color = light->diffuse(color, normal);
+                }
+                image[y, x] = color;
             }
         }
     }

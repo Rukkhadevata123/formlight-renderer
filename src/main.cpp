@@ -1,5 +1,5 @@
 import std;
-import formlight.base_color_preview;
+import formlight.preview;
 import formlight.image_codec;
 
 auto main(int argc, char **argv) -> int
@@ -7,7 +7,7 @@ auto main(int argc, char **argv) -> int
     if (argc == 1 || (argc == 2 && std::string_view{argv[1]} == "--help"))
     {
         std::println("Usage: formlight-renderer --inspect MODEL.glb\n"
-                     "       formlight-renderer --render MODEL.glb --output IMAGE.png");
+                     "       formlight-renderer --render MODEL.glb --output IMAGE.png [--shading base-color|diffuse]");
         return 0;
     }
 
@@ -29,24 +29,53 @@ auto main(int argc, char **argv) -> int
         return 0;
     }
 
-    if (argc == 5 && std::string_view{argv[1]} == "--render" && std::string_view{argv[3]} == "--output")
+    if ((argc == 5 || argc == 7) && std::string_view{argv[1]} == "--render")
     {
         using namespace formlight;
-        const std::filesystem::path input = argv[2], output = argv[4];
-        const auto scene = GltfScene::load_glb(input, GltfContent::BaseColor);
-        if (!scene)
-        {
-            std::cerr << scene.error() << '\n';
-            return 1;
-        }
         try
         {
+            const std::filesystem::path input = argv[2];
+            std::filesystem::path output;
+            std::optional<DirectionalLight> light;
+            for (int i = 3; i < argc; i += 2)
+            {
+                const std::string_view option = argv[i], value = argv[i + 1];
+                if (option == "--output" && output.empty())
+                {
+                    output = value;
+                }
+                else if (option == "--shading")
+                {
+                    if (value == "diffuse")
+                    {
+                        light.emplace(Vec3{1, 4, 3});
+                    }
+                    else if (value != "base-color")
+                    {
+                        throw std::invalid_argument("Expected --shading base-color or diffuse");
+                    }
+                }
+                else
+                {
+                    throw std::invalid_argument(std::format("Unexpected render option: {}", option));
+                }
+            }
+            if (output.empty())
+            {
+                throw std::invalid_argument("Expected --output IMAGE.png");
+            }
             if (std::filesystem::exists(output) && std::filesystem::equivalent(input, output))
             {
                 throw std::invalid_argument("Input model and output image refer to the same file");
             }
             constexpr ImageExtent extent{640, 480};
-            const auto image = render_base_color(*scene, frame_scene(*scene, extent));
+            const auto scene = GltfScene::load_glb(input, GltfContent::BaseColor);
+            if (!scene)
+            {
+                std::cerr << scene.error() << '\n';
+                return 1;
+            }
+            const auto image = render_preview(*scene, frame_scene(*scene, extent), light);
             write_png(output, image);
             std::println("Wrote {} ({} x {})", output.string(), extent.width, extent.height);
             return 0;
