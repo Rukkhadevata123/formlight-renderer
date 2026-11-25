@@ -8,6 +8,45 @@ using namespace formlight;
 constexpr ImageExtent extent{64, 48};
 constexpr double tolerance = 1e-12;
 
+struct Coverage
+{
+    bool raster, ray;
+};
+
+bool report_coverage(std::span<const Coverage> pixels)
+{
+    const auto ray_at = [&](int x, int y)
+    { return x >= 0 && x < extent.width && y >= 0 && y < extent.height && pixels[y * extent.width + x].ray; };
+    int interior = 0, outline = 0;
+    int interior_errors = 0, outline_errors = 0, background_errors = 0;
+    for (int y = 0; y < extent.height; ++y)
+    {
+        for (int x = 0; x < extent.width; ++x)
+        {
+            const auto [raster, ray] = pixels[y * extent.width + x];
+            // A one-pixel band on both sides of the ray silhouette; shared triangle edges are not silhouettes.
+            if (ray_at(x - 1, y) != ray || ray_at(x + 1, y) != ray || ray_at(x, y - 1) != ray ||
+                ray_at(x, y + 1) != ray)
+            {
+                ++outline;
+                outline_errors += raster != ray;
+            }
+            else if (ray)
+            {
+                ++interior;
+                interior_errors += !raster;
+            }
+            else
+            {
+                background_errors += raster;
+            }
+        }
+    }
+    std::println("Coverage mismatches: interior {}/{}, outline {}/{}, background {}", interior_errors, interior,
+                 outline_errors, outline, background_errors);
+    return interior_errors == 0 && outline_errors == 0 && background_errors == 0;
+}
+
 std::optional<RasterHit> sample_pieces(std::span<const RasterTriangle> pieces, ImagePoint point)
 {
     std::optional<RasterHit> hit;
@@ -33,6 +72,7 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
     const SurfaceId expected{instance.id, triangle.id};
     const auto pieces = RasterTriangle::prepare(camera, scene, range);
     int covered = 0;
+    std::array<Coverage, extent.width * extent.height> coverage{};
     double max_depth_error = 0, max_uv_error = 0;
     for (int row = 0; row < extent.height; ++row)
     {
@@ -44,6 +84,7 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
             const auto hit = intersect(ray, scene, {0, std::numeric_limits<double>::infinity()});
             const double depth = hit ? camera.to_view(ray.at(hit->t)).depth : 0.0;
             const bool ray_visible = hit && range.contains(depth);
+            coverage[row * extent.width + column] = {raster.has_value(), ray_visible};
             if (raster && ray_visible)
             {
                 ++covered;
@@ -66,18 +107,13 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
                 max_depth_error = std::max(max_depth_error, depth_error);
                 max_uv_error = std::max({max_uv_error, u_error, v_error});
             }
-            else if (raster || ray_visible)
-            {
-                std::cerr << std::format("Coverage differs at ({}, {})\n", column, row);
-                return false;
-            }
         }
     }
 
     std::println("ID {}, depth [{}, {}]: {} pieces, {} covered pixels (expected {}), max depth/UV error {:.3g}/{:.3g}",
                  std::to_underlying(triangle.id), range.near_depth, range.far_depth, pieces.size(), covered,
                  expected_coverage, max_depth_error, max_uv_error);
-    return covered == expected_coverage;
+    return report_coverage(coverage) && covered == expected_coverage;
 }
 
 bool check_ground_and_panel()

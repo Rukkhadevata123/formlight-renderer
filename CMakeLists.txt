@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 4.5)
 project(formlight-renderer LANGUAGES C CXX)
 
+find_package(fastgltf CONFIG REQUIRED)
+
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
@@ -16,8 +18,18 @@ target_sources(formlight_renderer_core PUBLIC
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
 
+add_library(formlight_gltf STATIC src/io/gltf.cpp)
+target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm)
+target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
+    # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
+    execute_process(COMMAND "${CMAKE_CXX_COMPILER}" --rtlib=compiler-rt --print-libgcc-file-name
+        OUTPUT_VARIABLE clang_builtins OUTPUT_STRIP_TRAILING_WHITESPACE COMMAND_ERROR_IS_FATAL ANY)
+    target_link_libraries(formlight_gltf PRIVATE "${clang_builtins}")
+endif()
+
 add_executable(formlight-renderer src/main.cpp)
-target_link_libraries(formlight-renderer PRIVATE formlight_renderer_core)
+target_link_libraries(formlight-renderer PRIVATE formlight_gltf)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -31,4 +43,8 @@ if(BUILD_TESTING)
     add_executable(triangle_visibility_test tests/triangle_visibility_test.cpp)
     target_link_libraries(triangle_visibility_test PRIVATE formlight_renderer_core)
     add_test(NAME triangle_visibility COMMAND triangle_visibility_test)
+
+    add_executable(gltf_geometry_test tests/gltf_geometry_test.cpp)
+    target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)
+    add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
 endif()
