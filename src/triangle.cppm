@@ -28,8 +28,9 @@ struct Barycentrics
 
 struct Triangle
 {
-    PrimitiveId id;
-    std::array<TriangleVertex, 3> vertices;
+    PrimitiveId id{};
+    std::array<TriangleVertex, 3> vertices{};
+    std::size_t material_index{}; // Slot zero is the default material.
 
     [[nodiscard]] constexpr TexCoord uv_at(Barycentrics weights) const noexcept
     {

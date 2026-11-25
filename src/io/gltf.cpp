@@ -6,6 +6,7 @@ module;
 module formlight.gltf;
 
 import std;
+import formlight.image_codec;
 
 namespace formlight
 {
@@ -19,6 +20,23 @@ void check(fastgltf::Error error)
     }
 }
 
+std::span<const std::byte> embedded_bytes(const fastgltf::DataSource &source)
+{
+    if (const auto *a = std::get_if<fastgltf::sources::Array>(&source))
+    {
+        return {a->bytes.data(), a->bytes.size_bytes()};
+    }
+    if (const auto *v = std::get_if<fastgltf::sources::Vector>(&source))
+    {
+        return v->bytes;
+    }
+    if (const auto *v = std::get_if<fastgltf::sources::ByteView>(&source))
+    {
+        return v->bytes;
+    }
+    throw std::runtime_error("Expected embedded GLB buffer or image data");
+}
+
 const fastgltf::Accessor &geometry_accessor(const fastgltf::Asset &asset, std::size_t index)
 {
     const auto &accessor = asset.accessors.at(index);
@@ -30,17 +48,12 @@ const fastgltf::Accessor &geometry_accessor(const fastgltf::Asset &asset, std::s
     {
         const auto &view = asset.bufferViews.at(*accessor.bufferViewIndex);
         const auto &data = asset.buffers.at(view.bufferIndex).data;
-        if (!std::holds_alternative<fastgltf::sources::Array>(data) &&
-            !std::holds_alternative<fastgltf::sources::ByteView>(data) &&
-            !std::holds_alternative<fastgltf::sources::Vector>(data))
-        {
-            throw std::runtime_error("Geometry requires an embedded buffer");
-        }
+        embedded_bytes(data);
     }
     return accessor;
 }
 
-std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Mesh &mesh)
+std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Mesh &mesh, GltfContent content)
 {
     std::vector<Triangle> triangles;
     for (const auto &primitive : mesh.primitives)
@@ -67,6 +80,12 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
                 vertices[i].position = {p[0], p[1], p[2]};
             });
         const auto texcoord = primitive.findAttribute("TEXCOORD_0");
+        const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
+        if (content == GltfContent::BaseColor && texcoord == primitive.attributes.end() && primitive.materialIndex &&
+            asset.materials.at(*primitive.materialIndex).pbrData.baseColorTexture)
+        {
+            throw std::runtime_error("Textured primitive is missing TEXCOORD_0");
+        }
         if (texcoord != primitive.attributes.end())
         {
             const auto &uvs = geometry_accessor(asset, texcoord->accessorIndex);
@@ -113,6 +132,7 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
                 const auto face = start + i / 3;
                 auto &triangle = triangles[face];
                 triangle.id = PrimitiveId{static_cast<std::uint32_t>(face)};
+                triangle.material_index = material_slot;
                 triangle.vertices[i % 3] = vertices[index];
             });
     }
@@ -124,9 +144,94 @@ AffineTransform instance_transform(const fastgltf::math::nmat4x4 &world)
     const auto column = [&](std::size_t i) -> Vec3 { return {world[i][0], world[i][1], world[i][2]}; };
     return {Basis3{column(0), column(1), column(2)}, column(3)};
 }
+
+ColorImage read_image(const fastgltf::Asset &asset, std::size_t index)
+{
+    const auto &source = asset.images.at(index).data;
+    if (const auto *reference = std::get_if<fastgltf::sources::BufferView>(&source))
+    {
+        const auto &view = asset.bufferViews.at(reference->bufferViewIndex);
+        const auto bytes = embedded_bytes(asset.buffers.at(view.bufferIndex).data);
+        if (view.byteOffset > bytes.size() || view.byteLength > bytes.size() - view.byteOffset)
+        {
+            throw std::runtime_error("Image buffer view exceeds its embedded buffer");
+        }
+        return decode_base_color(bytes.subspan(view.byteOffset, view.byteLength));
+    }
+    return decode_base_color(embedded_bytes(source));
+}
+
+WrapMode wrap_mode(fastgltf::Wrap wrap)
+{
+    switch (wrap)
+    {
+    case fastgltf::Wrap::Repeat:
+        return WrapMode::Repeat;
+    case fastgltf::Wrap::MirroredRepeat:
+        return WrapMode::MirroredRepeat;
+    case fastgltf::Wrap::ClampToEdge:
+        return WrapMode::ClampToEdge;
+    default:
+        throw std::runtime_error("Invalid glTF texture wrap mode");
+    }
+}
+
+BaseColorMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Material &material,
+                                std::vector<std::optional<ColorImage>> &images)
+{
+    if (material.alphaMode != fastgltf::AlphaMode::Opaque)
+    {
+        throw std::runtime_error("Base-color preview requires opaque materials");
+    }
+    const auto &pbr = material.pbrData;
+    const auto &f = pbr.baseColorFactor;
+    BaseColorMaterial result{.factor = {f[0], f[1], f[2], f[3]}, .texture = {}};
+    if (const auto &info = pbr.baseColorTexture)
+    {
+        if (info->texCoordIndex != 0)
+        {
+            throw std::runtime_error("Base-color preview requires TEXCOORD_0");
+        }
+        const auto &texture = asset.textures.at(info->textureIndex);
+        const auto image = texture.imageIndex.value();
+        if (!images.at(image))
+        {
+            images[image] = read_image(asset, image);
+        }
+        TextureSampler sampler;
+        if (texture.samplerIndex)
+        {
+            const auto &source = asset.samplers.at(*texture.samplerIndex);
+            sampler = {wrap_mode(source.wrapS), wrap_mode(source.wrapT),
+                       source.magFilter == fastgltf::Filter::Nearest ? TexelFilter::Nearest : TexelFilter::Linear};
+        }
+        result.texture = BaseColorTexture{image, sampler};
+    }
+    return result;
+}
+
+std::vector<std::optional<BaseColorMaterial>> read_materials(const fastgltf::Asset &asset,
+                                                             std::span<const std::vector<Triangle>> meshes,
+                                                             std::vector<std::optional<ColorImage>> &images)
+{
+    std::vector<std::optional<BaseColorMaterial>> materials(1 + asset.materials.size());
+    materials[0] = BaseColorMaterial{};
+    for (const auto &mesh : meshes)
+    {
+        for (const auto &face : mesh)
+        {
+            auto &slot = materials.at(face.material_index);
+            if (!slot)
+            {
+                slot = read_material(asset, asset.materials.at(face.material_index - 1), images);
+            }
+        }
+    }
+    return materials;
+}
 } // namespace
 
-std::expected<GltfGeometry, std::string> GltfGeometry::load_glb(const std::filesystem::path &path)
+std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem::path &path, GltfContent content)
 {
     try
     {
@@ -157,7 +262,8 @@ std::expected<GltfGeometry, std::string> GltfGeometry::load_glb(const std::files
         {
             pending.push_back({root, fastgltf::math::nmat4x4{}});
         }
-        GltfGeometry result;
+        GltfScene result;
+        result.node_mesh_slots_.resize(asset.nodes.size());
         std::vector<std::optional<std::size_t>> mesh_slots(asset.meshes.size());
         std::vector<bool> visited(asset.nodes.size());
         while (!pending.empty())
@@ -181,8 +287,9 @@ std::expected<GltfGeometry, std::string> GltfGeometry::load_glb(const std::files
                 if (!slot)
                 {
                     slot = result.meshes_.size();
-                    result.meshes_.push_back(read_mesh(asset, asset.meshes.at(*node.meshIndex)));
+                    result.meshes_.push_back(read_mesh(asset, asset.meshes.at(*node.meshIndex), content));
                 }
+                result.node_mesh_slots_[index] = *slot;
                 result.instances_.push_back(
                     {InstanceId{static_cast<std::uint32_t>(index)}, result.meshes_[*slot], instance_transform(world)});
             }
@@ -191,11 +298,31 @@ std::expected<GltfGeometry, std::string> GltfGeometry::load_glb(const std::files
                 pending.push_back({child, world});
             }
         }
+        if (content == GltfContent::BaseColor)
+        {
+            result.images_.resize(asset.images.size());
+            result.materials_ = read_materials(asset, result.meshes_, result.images_);
+        }
         return result;
     }
     catch (const std::exception &error)
     {
         return std::unexpected(std::format("{}: {}", path.string(), error.what()));
     }
+}
+
+LinearColor GltfScene::base_color(const TrianglePoint &point) const
+{
+    const auto mesh = node_mesh_slots_.at(std::to_underlying(point.id.instance)).value();
+    const auto &face = meshes_[mesh].at(std::to_underlying(point.id.primitive));
+    const auto &material = materials_.at(face.material_index).value();
+    auto color = material.factor;
+    if (const auto &binding = material.texture)
+    {
+        const auto texel = sample_texture(images_[binding->image].value(), face.uv_at(point.weights), binding->sampler);
+        color = {color.r * texel.r, color.g * texel.g, color.b * texel.b, color.a * texel.a};
+    }
+    color.a = 1.0f; // OPAQUE materials ignore base color alpha.
+    return color;
 }
 } // namespace formlight

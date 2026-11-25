@@ -2,14 +2,10 @@ export module formlight.camera;
 
 import std;
 export import formlight.geometry;
+export import formlight.image;
 
 namespace formlight
 {
-export struct ImageExtent
-{
-    int width, height;
-};
-
 // Continuous pixel coordinates, measured right and down from the top-left image corner.
 export struct ImagePoint
 {
@@ -55,6 +51,10 @@ export class PinholeCamera
 {
   public:
     PinholeCamera(const CameraView &view, ImageExtent extent);
+    [[nodiscard]] ImageExtent extent() const noexcept
+    {
+        return extent_;
+    }
 
     // Return a finite projection in front of the eye plane, including points outside the image.
     [[nodiscard]] std::optional<ProjectedPoint> project(Vec3 world_point) const noexcept;
@@ -66,7 +66,7 @@ export class PinholeCamera
   private:
     Vec3 position_;
     Vec3 forward_{}, right_{}, up_{};
-    ImagePoint image_center_{};
+    ImageExtent extent_;
     double focal_length_pixels_{};
 };
 
@@ -83,7 +83,7 @@ Vec3 unit_vector(Vec3 value, const char *error)
 }
 } // namespace
 
-PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : position_(view.position)
+PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : position_(view.position), extent_(extent)
 {
     if (extent.width <= 0 || extent.height <= 0)
     {
@@ -93,8 +93,7 @@ PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : posit
     {
         throw std::invalid_argument("Vertical field of view must be between zero and pi radians");
     }
-    image_center_ = {extent.width * 0.5, extent.height * 0.5};
-    focal_length_pixels_ = image_center_.y / std::tan(view.vertical_fov_radians * 0.5);
+    focal_length_pixels_ = (extent.height * 0.5) / std::tan(view.vertical_fov_radians * 0.5);
     if (!std::isfinite(focal_length_pixels_))
     {
         throw std::invalid_argument("Vertical field of view is too small for this image size");
@@ -131,8 +130,8 @@ std::optional<ProjectedPoint> PinholeCamera::project_view(ViewPoint point) const
         return std::nullopt;
     }
 
-    const double x = image_center_.x + focal_length_pixels_ * (point.x / point.depth);
-    const double y = image_center_.y - focal_length_pixels_ * (point.y / point.depth);
+    const double x = extent_.width * 0.5 + focal_length_pixels_ * (point.x / point.depth);
+    const double y = extent_.height * 0.5 - focal_length_pixels_ * (point.y / point.depth);
     if (!std::isfinite(x) || !std::isfinite(y))
     {
         return std::nullopt;
@@ -142,8 +141,8 @@ std::optional<ProjectedPoint> PinholeCamera::project_view(ViewPoint point) const
 
 Ray PinholeCamera::ray_for_sample(ImagePoint sample) const noexcept
 {
-    const double x = (sample.x - image_center_.x) / focal_length_pixels_;
-    const double y = (image_center_.y - sample.y) / focal_length_pixels_;
+    const double x = (sample.x - extent_.width * 0.5) / focal_length_pixels_;
+    const double y = (extent_.height * 0.5 - sample.y) / focal_length_pixels_;
     const Vec3 direction = forward_ + right_ * x + up_ * y;
     return {.origin = position_, .direction = direction * (1.0 / std::sqrt(dot(direction, direction)))};
 }

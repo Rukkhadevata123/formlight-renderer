@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 4.5)
 project(formlight-renderer LANGUAGES C CXX)
 
 find_package(fastgltf CONFIG REQUIRED)
+find_package(Stb REQUIRED)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
@@ -10,6 +11,8 @@ add_library(formlight_renderer_core STATIC src/raster/clipping.cpp)
 target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
+        src/image.cppm
+        src/texture.cppm
         src/camera.cppm
         src/triangle.cppm
         src/mesh_instance.cppm
@@ -18,9 +21,14 @@ target_sources(formlight_renderer_core PUBLIC
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
 
+add_library(formlight_image_io STATIC src/io/image_codec.cpp)
+target_sources(formlight_image_io PUBLIC FILE_SET CXX_MODULES FILES src/io/image_codec.cppm)
+target_link_libraries(formlight_image_io PUBLIC formlight_renderer_core)
+target_include_directories(formlight_image_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+
 add_library(formlight_gltf STATIC src/io/gltf.cpp)
-target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm)
-target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf)
+target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/base_color_preview.cppm)
+target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_image_io)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
     execute_process(COMMAND "${CMAKE_CXX_COMPILER}" --rtlib=compiler-rt --print-libgcc-file-name
@@ -29,7 +37,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIAN
 endif()
 
 add_executable(formlight-renderer src/main.cpp)
-target_link_libraries(formlight-renderer PRIVATE formlight_gltf)
+target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_image_io)
 
 include(CTest)
 if(BUILD_TESTING)

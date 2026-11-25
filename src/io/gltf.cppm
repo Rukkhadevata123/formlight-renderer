@@ -2,17 +2,38 @@ export module formlight.gltf;
 
 import std;
 export import formlight.mesh_instance;
+export import formlight.texture;
 
 namespace formlight
 {
-// Owns the local meshes referenced by the instances of the selected glTF scene.
-export class GltfGeometry
+export enum class GltfContent
+{
+    Geometry,
+    BaseColor
+};
+
+struct BaseColorTexture
+{
+    std::size_t image;
+    TextureSampler sampler;
+};
+
+struct BaseColorMaterial
+{
+    LinearColor factor{1, 1, 1, 1};
+    std::optional<BaseColorTexture> texture;
+};
+
+// Instances borrow the local mesh storage owned by this scene.
+export class GltfScene
 {
   public:
-    GltfGeometry(GltfGeometry &&) noexcept = default;
-    GltfGeometry &operator=(GltfGeometry &&) noexcept = default;
+    GltfScene(GltfScene &&) noexcept = default;
+    GltfScene &operator=(GltfScene &&) noexcept = default;
 
-    [[nodiscard]] static std::expected<GltfGeometry, std::string> load_glb(const std::filesystem::path &path);
+    [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
+                                                                        GltfContent content);
+    [[nodiscard]] LinearColor base_color(const TrianglePoint &point) const;
     [[nodiscard]] std::size_t mesh_count() const noexcept
     {
         return meshes_.size();
@@ -24,8 +45,11 @@ export class GltfGeometry
     std::span<const MeshInstance> instances() const && = delete;
 
   private:
-    GltfGeometry() = default;
+    GltfScene() = default;
     std::vector<std::vector<Triangle>> meshes_;
     std::vector<MeshInstance> instances_;
+    std::vector<std::optional<std::size_t>> node_mesh_slots_;
+    std::vector<std::optional<ColorImage>> images_;
+    std::vector<std::optional<BaseColorMaterial>> materials_;
 };
 } // namespace formlight

@@ -1,5 +1,6 @@
 import std;
 import formlight.gltf;
+import formlight.base_color_preview;
 import formlight.raster;
 import formlight.ray_query;
 
@@ -11,7 +12,7 @@ auto main(int argc, char **argv) -> int
         std::cerr << "Expected the BoxTextured.glb fixture path\n";
         return 1;
     }
-    const auto scene = GltfGeometry::load_glb(argv[1]);
+    const auto scene = GltfScene::load_glb(argv[1], GltfContent::BaseColor);
     if (!scene)
     {
         std::cerr << scene.error() << '\n';
@@ -32,6 +33,7 @@ auto main(int argc, char **argv) -> int
                                extent};
     std::vector<std::optional<RasterHit>> pixels(extent.width * extent.height);
     const VisibilityBuffer buffer{pixels.data(), extent.height, extent.width};
+    const auto image = render_base_color(*scene, {camera, {1, 4}});
     for (const auto &triangle : RasterTriangle::prepare(camera, instances, {1, 4}))
     {
         triangle.rasterize(buffer);
@@ -76,6 +78,27 @@ auto main(int argc, char **argv) -> int
                 }
             }
         }
+    }
+    // The top and bottom of the same rotated face sample the blue sky and green ground in the embedded PNG.
+    const auto matches_rgb = [&](int x, int y, std::array<int, 3> expected)
+    {
+        const auto color = image[y, x];
+        return std::lround(linear_to_srgb(color.r) * 255) == expected[0] &&
+               std::lround(linear_to_srgb(color.g) * 255) == expected[1] &&
+               std::lround(linear_to_srgb(color.b) * 255) == expected[2];
+    };
+    if (!matches_rgb(32, 19, {108, 173, 223}) || !matches_rgb(32, 27, {92, 135, 39}))
+    {
+        std::cerr << "Repeated base-color texture has the wrong colors or orientation\n";
+        return 1;
+    }
+    // On a repeat boundary, linear filtering blends the last and first texel.
+    ColorImage seam{{2, 1}};
+    seam[0, 1] = {1, 1, 1, 1};
+    if (sample_texture(seam, {-1, 0.5}, {}).r != 0.5f)
+    {
+        std::cerr << "Bilinear repeat failed across the negative U boundary\n";
+        return 1;
     }
     return 0;
 }
