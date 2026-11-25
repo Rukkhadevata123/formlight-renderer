@@ -1,0 +1,123 @@
+export module formlight.camera;
+
+import std;
+export import formlight.geometry;
+
+namespace formlight
+{
+export struct ImageExtent
+{
+    int width, height;
+};
+
+// Continuous pixel coordinates, measured right and down from the top-left image corner.
+export struct ImagePoint
+{
+    double x, y;
+};
+
+export [[nodiscard]] constexpr ImagePoint pixel_center(int column, int row) noexcept
+{
+    return {column + 0.5, row + 0.5};
+}
+
+export struct CameraView
+{
+    Vec3 position;
+    Vec3 target;
+    Vec3 up;
+    double vertical_fov_radians;
+};
+
+export struct ProjectedPoint
+{
+    ImagePoint image;
+    double view_depth; // Positive distance along the camera's forward axis (-Z in view space).
+};
+
+export class PinholeCamera
+{
+  public:
+    PinholeCamera(const CameraView &view, ImageExtent extent);
+
+    // Return a finite projection in front of the eye plane, including points outside the image.
+    [[nodiscard]] std::optional<ProjectedPoint> project(Vec3 world_point) const noexcept;
+    // The primary ray has unit direction, so its parameter measures distance in world units.
+    [[nodiscard]] Ray ray_for_sample(ImagePoint sample) const noexcept;
+
+  private:
+    Vec3 position_;
+    Vec3 forward_{}, right_{}, up_{};
+    ImagePoint image_center_{};
+    double focal_length_pixels_{};
+};
+
+namespace
+{
+Vec3 unit_vector(Vec3 value, const char *error)
+{
+    const double length = std::hypot(value.x, value.y, value.z);
+    if (!(length > 0.0) || !std::isfinite(length))
+    {
+        throw std::invalid_argument(error);
+    }
+    return {value.x / length, value.y / length, value.z / length};
+}
+} // namespace
+
+PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : position_(view.position)
+{
+    if (extent.width <= 0 || extent.height <= 0)
+    {
+        throw std::invalid_argument("Image dimensions must be positive");
+    }
+    if (!(view.vertical_fov_radians > 0.0 && view.vertical_fov_radians < std::numbers::pi))
+    {
+        throw std::invalid_argument("Vertical field of view must be between zero and pi radians");
+    }
+    image_center_ = {extent.width * 0.5, extent.height * 0.5};
+    focal_length_pixels_ = image_center_.y / std::tan(view.vertical_fov_radians * 0.5);
+    if (!std::isfinite(focal_length_pixels_))
+    {
+        throw std::invalid_argument("Vertical field of view is too small for this image size");
+    }
+
+    forward_ = unit_vector(view.target - position_, "Camera position and target must define a finite direction");
+    const Vec3 up_hint = unit_vector(view.up, "Camera up must be finite and nonzero");
+    const Vec3 side = cross(forward_, up_hint);
+    const double sine = std::sqrt(dot(side, side));
+    // A cross product at roundoff scale cannot reliably determine camera roll.
+    if (sine <= 16.0 * std::numeric_limits<double>::epsilon())
+    {
+        throw std::invalid_argument("Camera up is parallel to the view direction");
+    }
+    right_ = side * (1.0 / sine);
+    up_ = cross(right_, forward_);
+}
+
+std::optional<ProjectedPoint> PinholeCamera::project(Vec3 world_point) const noexcept
+{
+    const Vec3 offset = world_point - position_;
+    const double depth = dot(offset, forward_);
+    if (!(depth > 0.0) || !std::isfinite(depth))
+    {
+        return std::nullopt;
+    }
+
+    const double x = image_center_.x + focal_length_pixels_ * (dot(offset, right_) / depth);
+    const double y = image_center_.y - focal_length_pixels_ * (dot(offset, up_) / depth);
+    if (!std::isfinite(x) || !std::isfinite(y))
+    {
+        return std::nullopt;
+    }
+    return ProjectedPoint{.image = {x, y}, .view_depth = depth};
+}
+
+Ray PinholeCamera::ray_for_sample(ImagePoint sample) const noexcept
+{
+    const double x = (sample.x - image_center_.x) / focal_length_pixels_;
+    const double y = (image_center_.y - sample.y) / focal_length_pixels_;
+    const Vec3 direction = forward_ + right_ * x + up_ * y;
+    return {.origin = position_, .direction = direction * (1.0 / std::sqrt(dot(direction, direction)))};
+}
+} // namespace formlight
