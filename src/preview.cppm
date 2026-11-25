@@ -2,8 +2,7 @@ export module formlight.preview;
 
 import std;
 export import formlight.gltf;
-export import formlight.lighting;
-export import formlight.direct_lighting;
+export import formlight.scene_config;
 export import formlight.raster;
 import formlight.ray_query;
 import formlight.shadow_map;
@@ -16,28 +15,6 @@ export struct PreviewView
     ViewDepthRange depth{};
 };
 
-export enum class ShadowMethod
-{
-    None,
-    Map,
-    Ray
-};
-
-export struct DirectionalLighting
-{
-    DirectionalLight light{{1, 4, 3}};
-    ShadowMethod shadows{ShadowMethod::None};
-};
-
-export struct AreaLighting
-{
-    RectangleLight light;
-    LightSampling sampling{};
-    bool shadows{true};
-};
-
-export using PreviewLighting = std::variant<DirectionalLighting, AreaLighting>;
-
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
 {
     const auto center = subject.center();
@@ -47,23 +24,31 @@ export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
     scene.add_solid_mesh({Triangle{.vertices = {a, b, c}}, Triangle{.vertices = {a, c, d}}}, {0.4f, 0.4f, 0.4f, 1});
 }
 
+PreviewView clip_to_bounds(const PinholeCamera &camera, const Bounds3 &bounds, double minimum_near)
+{
+    const double center = camera.to_view(bounds.center()).depth;
+    const double radius = bounds.radius();
+    const double near_depth = std::max(minimum_near, center - radius);
+    return {camera, {near_depth, std::max(center + radius, 2 * minimum_near)}};
+}
+
 // Frame the subject, but include all scene geometry in the camera's depth range.
 export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent extent,
-                                             std::optional<Bounds3> subject = {})
+                                             std::optional<Bounds3> subject = {},
+                                             double fov = CameraSettings{}.vertical_fov_degrees *
+                                                          (std::numbers::pi / 180))
 {
     const auto bounds = world_bounds(scene.instances());
     const auto framing = subject.value_or(bounds);
     const auto center = framing.center();
     const double radius = framing.radius();
-    constexpr double fov = std::numbers::pi / 4;
     const double half_angle =
         std::atan(std::tan(fov / 2) * std::min(1.0, static_cast<double>(extent.width) / extent.height));
     const double distance = 1.05 * radius / std::sin(half_angle);
-    const Vec3 direction = Vec3{1.1, 0.8, 1.5} / std::hypot(1.1, 0.8, 1.5);
-    const PinholeCamera camera{{center + direction * distance, center, {0, 1, 0}, fov}, extent};
-    const double scene_depth = camera.to_view(bounds.center()).depth;
-    const double scene_radius = bounds.radius();
-    return {camera, {std::max(distance * 1e-5, scene_depth - scene_radius), scene_depth + scene_radius}};
+    constexpr CameraSettings defaults;
+    const Vec3 direction = unit_vector(defaults.position - defaults.target, "Invalid default camera direction");
+    const PinholeCamera camera{{center + direction * distance, center, defaults.up, fov}, extent};
+    return clip_to_bounds(camera, bounds, distance * 1e-5);
 }
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
@@ -138,5 +123,28 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
         }
     }
     return image;
+}
+
+export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)
+{
+    auto scene = GltfScene::load_glb(request.asset, GltfContent::BaseColor);
+    if (!scene)
+    {
+        throw std::runtime_error(scene.error());
+    }
+    std::optional<Bounds3> subject;
+    if (request.ground)
+    {
+        subject = world_bounds(scene->instances());
+        add_preview_ground(*scene, *subject);
+    }
+    if (request.camera)
+    {
+        const auto bounds = world_bounds(scene->instances());
+        const auto view = clip_to_bounds(*request.camera, bounds, bounds.radius() * 1e-5);
+        return render_preview(*scene, view, request.lighting);
+    }
+    return render_preview(*scene, frame_scene(*scene, request.extent, subject, request.vertical_fov_radians),
+                          request.lighting);
 }
 } // namespace formlight

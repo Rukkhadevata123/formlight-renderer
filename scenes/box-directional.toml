@@ -1,0 +1,10 @@
+[scene]
+asset = "../assets/BoxTextured.glb"
+ground = true
+
+[light]
+type = "directional"
+toward_light = [3, 3, 0.75]
+
+[render]
+mode = "raster"

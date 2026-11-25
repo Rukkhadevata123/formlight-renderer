@@ -3,6 +3,7 @@ project(formlight-renderer LANGUAGES C CXX)
 
 find_package(fastgltf CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
@@ -14,6 +15,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/image.cppm
         src/texture.cppm
         src/camera.cppm
+        src/config/scene_config.cppm
         src/triangle.cppm
         src/mesh_instance.cppm
         src/lighting.cppm
@@ -25,14 +27,15 @@ target_sources(formlight_renderer_core PUBLIC
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
 
-add_library(formlight_image_io STATIC src/io/image_codec.cpp)
-target_sources(formlight_image_io PUBLIC FILE_SET CXX_MODULES FILES src/io/image_codec.cppm)
-target_link_libraries(formlight_image_io PUBLIC formlight_renderer_core)
-target_include_directories(formlight_image_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+add_library(formlight_io STATIC src/io/image_codec.cpp src/config/scene_toml.cpp)
+target_sources(formlight_io PUBLIC FILE_SET CXX_MODULES FILES src/io/image_codec.cppm src/config/scene_toml.cppm)
+target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES FILES src/io/output_file.cppm)
+target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
+target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
 add_library(formlight_gltf STATIC src/io/gltf.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
-target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_image_io)
+target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_io)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
     execute_process(COMMAND "${CMAKE_CXX_COMPILER}" --rtlib=compiler-rt --print-libgcc-file-name
@@ -42,7 +45,7 @@ endif()
 
 add_executable(formlight-renderer src/main.cpp)
 target_sources(formlight-renderer PRIVATE FILE_SET CXX_MODULES FILES src/cli/render_options.cppm)
-target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_image_io)
+target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_io)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -60,4 +63,8 @@ if(BUILD_TESTING)
     add_executable(gltf_geometry_test tests/gltf_geometry_test.cpp)
     target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)
     add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
+
+    add_executable(scene_config_test tests/scene_config_test.cpp)
+    target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf)
+    add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/box-area-light.toml")
 endif()

@@ -1,0 +1,15 @@
+[scene]
+asset = "../assets/BoxTextured.glb"
+ground = true
+
+[light]
+type = "rectangle"
+center = [3, 3, 0.75]
+width = 1.5
+height = 1.5
+power = 240
+
+[render]
+mode = "hybrid"
+light_samples = 64
+seed = 7

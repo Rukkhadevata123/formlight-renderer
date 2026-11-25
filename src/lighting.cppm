@@ -11,7 +11,7 @@ class DirectionalLight
 {
   public:
     explicit DirectionalLight(Vec3 toward_light)
-        : toward_light_(unit_vector(toward_light, "Light direction must be finite and nonzero"))
+        : toward_light_(unit_vector(toward_light, "light.toward_light must be finite and nonzero"))
     {
     }
 
@@ -49,10 +49,13 @@ class RectangleLight
 RectangleLight::RectangleLight(Vec3 center, Vec3 edge_u, Vec3 edge_v, double power)
     : center_(center), edge_u_(edge_u), edge_v_(edge_v), diffuse_scale_(power / (std::numbers::pi * std::numbers::pi))
 {
-    if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z) || !std::isfinite(power) ||
-        power < 0)
+    if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z))
     {
-        throw std::invalid_argument("Rectangle light requires a finite center and finite nonnegative power");
+        throw std::invalid_argument("light.center must be finite");
+    }
+    if (!std::isfinite(power) || power < 0)
+    {
+        throw std::invalid_argument("light.power must be finite and nonnegative");
     }
     const Vec3 u = unit_vector(edge_u, "Rectangle light width must be finite and nonzero");
     const Vec3 v = unit_vector(edge_v, "Rectangle light height must be finite and nonzero");

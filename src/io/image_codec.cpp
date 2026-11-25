@@ -11,6 +11,7 @@ module;
 
 module formlight.image_codec;
 import std;
+import formlight.output_file;
 
 namespace formlight
 {
@@ -70,32 +71,15 @@ void write_png(const std::filesystem::path &path, const ColorImage &image)
             }
         }
     }
-    auto temporary = path;
-    temporary += std::format(".{:08x}.tmp", std::random_device{}());
-    std::ofstream file(temporary, std::ios::binary | std::ios::noreplace);
-    if (!file)
-    {
-        throw std::runtime_error(std::format("Cannot open PNG output: {}", path.string()));
-    }
     const auto write = [](void *stream, void *data, int size)
     { static_cast<std::ostream *>(stream)->write(static_cast<const char *>(data), size); };
-    try
-    {
-        const int encoded =
-            stbi_write_png_to_func(write, static_cast<std::ostream *>(&file), width, height, 3, rgb.data(), 3 * width);
-        file.close();
-        if (!encoded || !file)
-        {
-            throw std::runtime_error(std::format("Cannot write PNG: {}", path.string()));
-        }
-        std::filesystem::rename(temporary, path);
-    }
-    catch (...)
-    {
-        file.close();
-        std::error_code ignored;
-        std::filesystem::remove(temporary, ignored);
-        throw;
-    }
+    replace_output_file(path,
+                        [&](std::ostream &file)
+                        {
+                            if (!stbi_write_png_to_func(write, &file, width, height, 3, rgb.data(), 3 * width))
+                            {
+                                throw std::runtime_error(std::format("Cannot write PNG: {}", path.string()));
+                            }
+                        });
 }
 } // namespace formlight
