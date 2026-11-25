@@ -4,13 +4,13 @@ project(formlight-renderer LANGUAGES C CXX)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
-add_library(formlight_renderer_core STATIC)
+add_library(formlight_renderer_core STATIC src/raster/clipping.cpp)
 target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
         src/camera.cppm
         src/triangle.cppm
-        src/raster.cppm
+        src/raster/raster.cppm
         src/ray_query.cppm
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)

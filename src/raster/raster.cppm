@@ -36,26 +36,36 @@ struct EdgeEquation
     }
 };
 
-// Prepare once per triangle from finite, projected vertices with positive view depths.
+struct RasterVertex
+{
+    ProjectedPoint point;
+    Barycentrics source_weights;
+};
+
 export class RasterTriangle
 {
   public:
-    RasterTriangle(PrimitiveId primitive, const std::array<ProjectedPoint, 3> &vertices);
+    // Clip to the closed view-depth range, then triangulate and project the surviving polygons.
+    [[nodiscard]] static std::vector<RasterTriangle> prepare(const PinholeCamera &camera,
+                                                             std::span<const Triangle> triangles, ViewDepthRange range);
     [[nodiscard]] std::optional<RasterHit> sample(ImagePoint point) const noexcept;
 
   private:
+    RasterTriangle(PrimitiveId primitive, const RasterVertex &a, const RasterVertex &b, const RasterVertex &c);
     PrimitiveId primitive_;
     std::array<EdgeEquation, 3> edges_;
     std::array<double, 3> inverse_depths_;
+    std::array<Barycentrics, 3> source_weights_;
     double twice_area_;
 };
 
-RasterTriangle::RasterTriangle(PrimitiveId primitive, const std::array<ProjectedPoint, 3> &vertices)
+RasterTriangle::RasterTriangle(PrimitiveId primitive, const RasterVertex &a, const RasterVertex &b,
+                               const RasterVertex &c)
     : primitive_(primitive),
-      edges_{EdgeEquation{vertices[1].image, vertices[2].image}, EdgeEquation{vertices[2].image, vertices[0].image},
-             EdgeEquation{vertices[0].image, vertices[1].image}},
-      inverse_depths_{1.0 / vertices[0].view_depth, 1.0 / vertices[1].view_depth, 1.0 / vertices[2].view_depth},
-      twice_area_(edges_[0].at(vertices[0].image))
+      edges_{EdgeEquation{b.point.image, c.point.image}, EdgeEquation{c.point.image, a.point.image},
+             EdgeEquation{a.point.image, b.point.image}},
+      inverse_depths_{1.0 / a.point.view_depth, 1.0 / b.point.view_depth, 1.0 / c.point.view_depth},
+      source_weights_{a.source_weights, b.source_weights, c.source_weights}, twice_area_(edges_[0].at(a.point.image))
 {
     // Orient the edges inward for either winding; their indices still match the input vertices.
     if (twice_area_ < 0.0)
@@ -86,6 +96,13 @@ std::optional<RasterHit> RasterTriangle::sample(ImagePoint point) const noexcept
     const double wb = b * inverse_depths_[1];
     const double wc = c * inverse_depths_[2];
     const double sum = wa + wb + wc;
-    return RasterHit{.surface = {primitive_, {wa / sum, wb / sum, wc / sum}}, .view_depth = twice_area_ / sum};
+    // The clipped vertices carry barycentrics in the original primitive.
+    const auto &[v0, v1, v2] = source_weights_;
+    const Barycentrics source{
+        (wa * v0.a + wb * v1.a + wc * v2.a) / sum,
+        (wa * v0.b + wb * v1.b + wc * v2.b) / sum,
+        (wa * v0.c + wb * v1.c + wc * v2.c) / sum,
+    };
+    return RasterHit{.surface = {primitive_, source}, .view_depth = twice_area_ / sum};
 }
 } // namespace formlight

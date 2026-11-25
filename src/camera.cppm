@@ -35,6 +35,22 @@ export struct ProjectedPoint
     double view_depth; // Positive distance along the camera's forward axis (-Z in view space).
 };
 
+// Camera-space coordinates before perspective division. Depth is positive along the view direction.
+export struct ViewPoint
+{
+    double x, y, depth;
+};
+
+export struct ViewDepthRange
+{
+    double near_depth, far_depth;
+
+    [[nodiscard]] constexpr bool contains(double depth) const noexcept
+    {
+        return depth >= near_depth && depth <= far_depth;
+    }
+};
+
 export class PinholeCamera
 {
   public:
@@ -42,6 +58,8 @@ export class PinholeCamera
 
     // Return a finite projection in front of the eye plane, including points outside the image.
     [[nodiscard]] std::optional<ProjectedPoint> project(Vec3 world_point) const noexcept;
+    [[nodiscard]] ViewPoint to_view(Vec3 world_point) const noexcept;
+    [[nodiscard]] std::optional<ProjectedPoint> project_view(ViewPoint point) const noexcept;
     // The primary ray has unit direction, so its parameter measures distance in world units.
     [[nodiscard]] Ray ray_for_sample(ImagePoint sample) const noexcept;
 
@@ -97,20 +115,29 @@ PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : posit
 
 std::optional<ProjectedPoint> PinholeCamera::project(Vec3 world_point) const noexcept
 {
+    return project_view(to_view(world_point));
+}
+
+ViewPoint PinholeCamera::to_view(Vec3 world_point) const noexcept
+{
     const Vec3 offset = world_point - position_;
-    const double depth = dot(offset, forward_);
-    if (!(depth > 0.0) || !std::isfinite(depth))
+    return {dot(offset, right_), dot(offset, up_), dot(offset, forward_)};
+}
+
+std::optional<ProjectedPoint> PinholeCamera::project_view(ViewPoint point) const noexcept
+{
+    if (!(point.depth > 0.0) || !std::isfinite(point.depth))
     {
         return std::nullopt;
     }
 
-    const double x = image_center_.x + focal_length_pixels_ * (dot(offset, right_) / depth);
-    const double y = image_center_.y - focal_length_pixels_ * (dot(offset, up_) / depth);
+    const double x = image_center_.x + focal_length_pixels_ * (point.x / point.depth);
+    const double y = image_center_.y - focal_length_pixels_ * (point.y / point.depth);
     if (!std::isfinite(x) || !std::isfinite(y))
     {
         return std::nullopt;
     }
-    return ProjectedPoint{.image = {x, y}, .view_depth = depth};
+    return ProjectedPoint{.image = {x, y}, .view_depth = point.depth};
 }
 
 Ray PinholeCamera::ray_for_sample(ImagePoint sample) const noexcept
