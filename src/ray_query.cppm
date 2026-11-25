@@ -1,23 +1,24 @@
 export module formlight.ray_query;
 
 import std;
-export import formlight.triangle;
+export import formlight.mesh_instance;
 
-export namespace formlight
+namespace formlight
 {
-struct RayInterval
+export struct RayInterval
 {
     double min, max;
 };
 
-struct RayHit
+export struct RayHit
 {
     TrianglePoint surface;
     double t;
 };
 
 // Two-sided Möller–Trumbore intersection in the open interval (min, max).
-[[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, const Triangle &triangle, RayInterval interval) noexcept
+[[nodiscard]] std::optional<RayHit> intersect_triangle(const Ray &ray, const Triangle &triangle, InstanceId instance,
+                                                       RayInterval interval) noexcept
 {
     const auto &[a, b, c] = triangle.vertices;
     const Vec3 ab = b.position - a.position;
@@ -47,21 +48,24 @@ struct RayHit
     {
         return std::nullopt;
     }
-    return RayHit{.surface = {triangle.id, {1.0 - weight_b - weight_c, weight_b, weight_c}}, .t = t};
+    return RayHit{.surface = {{instance, triangle.id}, {1.0 - weight_b - weight_c, weight_b, weight_c}}, .t = t};
 }
 
-// Brute-force nearest hit in (min, max). Exact distance ties use the smaller primitive ID.
-[[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<const Triangle> triangles,
-                                              RayInterval interval) noexcept
+// Brute-force nearest hit in (min, max). Exact ties use the smaller (instance, primitive) pair.
+export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<const MeshInstance> instances,
+                                                     RayInterval interval) noexcept
 {
     std::optional<RayHit> nearest;
-    for (const auto &triangle : triangles)
+    for (const auto &instance : instances)
     {
-        const auto hit = intersect(ray, triangle, interval);
-        if (hit &&
-            (!nearest || std::tie(hit->t, hit->surface.primitive) < std::tie(nearest->t, nearest->surface.primitive)))
+        const Ray local = instance.transform.to_local_ray(ray);
+        for (const auto &triangle : instance.triangles)
         {
-            nearest = hit;
+            const auto hit = intersect_triangle(local, triangle, instance.id, interval);
+            if (hit && (!nearest || std::tie(hit->t, hit->surface.id) < std::tie(nearest->t, nearest->surface.id)))
+            {
+                nearest = hit;
+            }
         }
     }
     return nearest;

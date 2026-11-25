@@ -10,6 +10,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/geometry.cppm
         src/camera.cppm
         src/triangle.cppm
+        src/mesh_instance.cppm
         src/raster/raster.cppm
         src/ray_query.cppm
 )

@@ -41,9 +41,4 @@ struct Triangle
     }
 };
 
-struct TrianglePoint
-{
-    PrimitiveId primitive;
-    Barycentrics weights;
-};
 } // namespace formlight

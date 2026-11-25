@@ -79,8 +79,8 @@ std::span<const RasterVertex> project_polygon(const PinholeCamera &camera, std::
 }
 } // namespace
 
-std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera, std::span<const Triangle> triangles,
-                                                    ViewDepthRange range)
+std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
+                                                    std::span<const MeshInstance> instances, ViewDepthRange range)
 {
     if (!(range.near_depth > 0.0 && range.near_depth < range.far_depth))
     {
@@ -88,24 +88,34 @@ std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
     }
 
     std::vector<RasterTriangle> result;
-    result.reserve(triangles.size());
-    for (const auto &triangle : triangles)
+    std::size_t triangle_count = 0;
+    for (const auto &instance : instances)
     {
-        const auto &[a, b, c] = triangle.vertices;
-        const std::array input{
-            ClipVertex{camera.to_view(a.position), {1, 0, 0}},
-            ClipVertex{camera.to_view(b.position), {0, 1, 0}},
-            ClipVertex{camera.to_view(c.position), {0, 0, 1}},
-        };
-        ClipPolygon near_polygon{}, far_polygon{};
-        auto polygon = clip_plane(input, range.near_depth, DepthPlane::Near, near_polygon);
-        polygon = clip_plane(polygon, range.far_depth, DepthPlane::Far, far_polygon);
-
-        std::array<RasterVertex, max_vertices> screen_polygon{};
-        const auto projected = project_polygon(camera, polygon, screen_polygon);
-        for (std::size_t i = 2; i < projected.size(); ++i)
+        triangle_count += instance.triangles.size();
+    }
+    result.reserve(triangle_count);
+    for (const auto &instance : instances)
+    {
+        const auto to_view = [&](Vec3 p) { return camera.to_view(instance.transform.to_world_point(p)); };
+        for (const auto &triangle : instance.triangles)
         {
-            result.push_back(RasterTriangle{triangle.id, projected[0], projected[i - 1], projected[i]});
+            const auto &[a, b, c] = triangle.vertices;
+            const std::array input{
+                ClipVertex{to_view(a.position), {1, 0, 0}},
+                ClipVertex{to_view(b.position), {0, 1, 0}},
+                ClipVertex{to_view(c.position), {0, 0, 1}},
+            };
+            ClipPolygon near_polygon{}, far_polygon{};
+            auto polygon = clip_plane(input, range.near_depth, DepthPlane::Near, near_polygon);
+            polygon = clip_plane(polygon, range.far_depth, DepthPlane::Far, far_polygon);
+
+            std::array<RasterVertex, max_vertices> screen_polygon{};
+            const auto projected = project_polygon(camera, polygon, screen_polygon);
+            for (std::size_t i = 2; i < projected.size(); ++i)
+            {
+                result.push_back(
+                    RasterTriangle{{instance.id, triangle.id}, projected[0], projected[i - 1], projected[i]});
+            }
         }
     }
     return result;

@@ -25,9 +25,13 @@ std::optional<RasterHit> sample_pieces(std::span<const RasterTriangle> pieces, I
     return hit;
 }
 
-bool compare(const PinholeCamera &camera, const Triangle &triangle, ViewDepthRange range, int expected_coverage)
+bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance, ViewDepthRange range,
+                      int expected_coverage)
 {
-    const auto pieces = RasterTriangle::prepare(camera, std::span{&triangle, 1}, range);
+    const auto scene = std::span{&instance, 1};
+    const auto &triangle = instance.triangles.front();
+    const SurfaceId expected{instance.id, triangle.id};
+    const auto pieces = RasterTriangle::prepare(camera, scene, range);
     int covered = 0;
     double max_depth_error = 0, max_uv_error = 0;
     for (int row = 0; row < extent.height; ++row)
@@ -37,7 +41,7 @@ bool compare(const PinholeCamera &camera, const Triangle &triangle, ViewDepthRan
             const auto point = pixel_center(column, row);
             const auto raster = sample_pieces(pieces, point);
             const auto ray = camera.ray_for_sample(point);
-            const auto hit = intersect(ray, triangle, {0, std::numeric_limits<double>::infinity()});
+            const auto hit = intersect(ray, scene, {0, std::numeric_limits<double>::infinity()});
             const double depth = hit ? camera.to_view(ray.at(hit->t)).depth : 0.0;
             const bool ray_visible = hit && range.contains(depth);
             if (raster && ray_visible)
@@ -48,13 +52,15 @@ bool compare(const PinholeCamera &camera, const Triangle &triangle, ViewDepthRan
                 const double depth_error = std::abs(raster->view_depth - depth);
                 const double u_error = std::abs(raster_uv.u - ray_uv.u);
                 const double v_error = std::abs(raster_uv.v - ray_uv.v);
-                if (raster->surface.primitive != triangle.id || hit->surface.primitive != triangle.id ||
+                if (raster->surface.id != expected || hit->surface.id != expected ||
                     !(depth_error <= tolerance && u_error <= tolerance && v_error <= tolerance))
                 {
-                    std::cerr << std::format(
-                        "Hit differs at ({}, {}): raster ID/depth/UV ({}, {}, {}, {}), ray ({}, {}, {}, {})\n", column,
-                        row, std::to_underlying(raster->surface.primitive), raster->view_depth, raster_uv.u,
-                        raster_uv.v, std::to_underlying(hit->surface.primitive), depth, ray_uv.u, ray_uv.v);
+                    std::cerr << std::format("Hit differs at ({}, {}): raster instance/primitive/depth/UV ({}, {}, {}, "
+                                             "{}, {}), ray ({}, {}, {}, {}, {})\n",
+                                             column, row, std::to_underlying(raster->surface.id.instance),
+                                             std::to_underlying(raster->surface.id.primitive), raster->view_depth,
+                                             raster_uv.u, raster_uv.v, std::to_underlying(hit->surface.id.instance),
+                                             std::to_underlying(hit->surface.id.primitive), depth, ray_uv.u, ray_uv.v);
                     return false;
                 }
                 max_depth_error = std::max(max_depth_error, depth_error);
@@ -81,13 +87,19 @@ bool check_ground_and_panel()
         extent};
     constexpr TriangleVertex nw{{-2, 0, -2}, {0, 0}}, ne{{2, 0, -2}, {1, 0}}, se{{2, 0, 2}, {1, 1}},
         sw{{-2, 0, 2}, {0, 1}};
-    constexpr PrimitiveId upper{31}, lower{7}, panel{45};
+    constexpr PrimitiveId upper{31}, lower{7};
+    constexpr InstanceId floor{2}, right{8}, left{4};
+    std::array ground_mesh{Triangle{upper, {nw, ne, se}}, Triangle{lower, {nw, se, sw}}};
+    // Both panels use the same local triangle. Its primitive ID also occurs in the ground mesh.
+    constexpr std::array panel_mesh{
+        Triangle{upper,
+                 {TriangleVertex{{-0.5, 0.75, -0.75}, {0, 0}}, TriangleVertex{{2, 0.5, -1}, {1, 0}},
+                  TriangleVertex{{2.5, 0.25, 0}, {0, 1}}}}};
     std::array scene{
-        Triangle{upper, {nw, ne, se}},
-        Triangle{lower, {nw, se, sw}},
-        Triangle{panel,
-                 {TriangleVertex{{-0.25, 1.5, -0.75}, {0, 0}}, TriangleVertex{{1, 1, -1}, {1, 0}},
-                  TriangleVertex{{1.25, 0.5, 0}, {0, 1}}}},
+        MeshInstance{floor, ground_mesh},
+        MeshInstance{right, panel_mesh, {Basis3{.x = {0.5, 0, 0}, .y = {0, 2, 0}}, {}}},
+        MeshInstance{
+            left, panel_mesh, {Basis3{.x = {-0.375, 0, 0}, .y = {0, 1.5, 0}, .z = {0, 0, -0.75}}, {0, 0.75, 0}}},
     };
     for (int pass = 0; pass < 2; ++pass)
     {
@@ -105,20 +117,25 @@ bool check_ground_and_panel()
             return false;
         }
 
-        // The ground spans [16,48] x [8,40]. The panel projects to (28,12), (44,12), (44,24).
-        int panel_pixels = 0;
+        // The right panel projects to (28,12), (44,12), (44,24); the left is rotated 180 degrees about image center.
+        const auto on_right = [](ImagePoint p) { return p.x < 44 && p.y > 12 && 4 * (p.y - 12) < 3 * (p.x - 28); };
+        int right_pixels = 0, left_pixels = 0;
         for (int row = 8; row < 40; ++row)
         {
             for (int column = 16; column < 48; ++column)
             {
                 const auto point = pixel_center(column, row);
                 const bool on_seam = row == column - 8;
-                const bool on_panel = point.x < 44 && point.y > 12 && 4 * (point.y - 12) < 3 * (point.x - 28);
-                auto expected = row <= column - 8 ? upper : lower;
-                if (on_panel)
+                SurfaceId expected{floor, row <= column - 8 ? upper : lower};
+                if (on_right(point))
                 {
-                    expected = panel;
-                    ++panel_pixels;
+                    expected = {right, panel_mesh.front().id};
+                    ++right_pixels;
+                }
+                else if (on_right({extent.width - point.x, extent.height - point.y}))
+                {
+                    expected = {left, panel_mesh.front().id};
+                    ++left_pixels;
                 }
                 // Check raw coverage, since a depth test could hide two owners of the same edge.
                 if (on_seam && !sample_pieces(pieces, point))
@@ -129,26 +146,37 @@ bool check_ground_and_panel()
                 const auto &pixel = buffer[row, column];
                 const auto ray = camera.ray_for_sample(point);
                 const auto hit = intersect(ray, scene, {0.0, std::numeric_limits<double>::infinity()});
-                if (!pixel || pixel->surface.primitive != expected || !hit ||
-                    !(hit->surface.primitive == expected || (on_seam && hit->surface.primitive == lower)) ||
+                if (!pixel || pixel->surface.id != expected || !hit ||
+                    !(hit->surface.id == expected || (on_seam && hit->surface.id == SurfaceId{floor, lower})) ||
                     !(std::abs(pixel->view_depth - camera.to_view(ray.at(hit->t)).depth) <= tolerance))
                 {
                     std::cerr << std::format("Wrong visible surface at ({}, {}) in draw order {}\n", column, row, pass);
                     return false;
+                }
+                if (expected.instance != floor)
+                {
+                    const auto uv = panel_mesh.front().uv_at(pixel->surface.weights);
+                    const auto ray_uv = panel_mesh.front().uv_at(hit->surface.weights);
+                    if (!(std::abs(uv.u - ray_uv.u) <= tolerance && std::abs(uv.v - ray_uv.v) <= tolerance))
+                    {
+                        std::cerr << std::format("Panel UV differs at ({}, {})\n", column, row);
+                        return false;
+                    }
                 }
             }
         }
         const auto ray = camera.ray_for_sample(pixel_center(40, 15));
         const RayInterval behind_panel{2.75 / -ray.direction.y, std::numeric_limits<double>::infinity()};
         const auto ground = intersect(ray, scene, behind_panel);
-        if (!ground || ground->surface.primitive != upper)
+        if (!ground || ground->surface.id != SurfaceId{floor, upper})
         {
             std::cerr << "The ray interval behind the panel must still hit the ground\n";
             return false;
         }
-        std::println("Draw order {}: {} visible pixels, {} on the panel, 32 shared-edge samples", pass, covered,
-                     panel_pixels);
+        std::println("Draw order {}: {} visible pixels, right/left panel {}/{}, 32 shared-edge samples", pass, covered,
+                     right_pixels, left_pixels);
         std::ranges::reverse(scene);
+        std::ranges::reverse(ground_mesh);
     }
     return true;
 }
@@ -161,13 +189,17 @@ auto main() -> int
         extent};
     constexpr Triangle triangle{
         .id = PrimitiveId{17},
-        .vertices = {TriangleVertex{{-2, -1, -2}, {0, 0}}, TriangleVertex{{4, -2, -4}, {1, 0}},
-                     TriangleVertex{{-1, 2, -3}, {0, 1}}},
+        .vertices = {TriangleVertex{{-2, 0, -2}, {0, 0}}, TriangleVertex{{2, -2, 2}, {1, 0}},
+                     TriangleVertex{{-1, 6, -2}, {0, 1}}},
     };
+    // A 45-degree rotation and unequal axis lengths give world corners (-2,-1,-2), (4,-2,-4), (-1,2,-3).
+    const MeshInstance tilted{InstanceId{1},
+                              std::span{&triangle, 1},
+                              {Basis3{.x = {1, 0, -1}, .y = {0, 0.5, 0}, .z = {0.5, 0, 0.5}}, {1, -1, -3}}};
     constexpr ViewDepthRange full{1, 5};
 
     // At (32.5,24.5) the original triangle's perspective weights are (290,251,368)/909.
-    const auto pieces = RasterTriangle::prepare(camera, std::span{&triangle, 1}, full);
+    const auto pieces = RasterTriangle::prepare(camera, std::span{&tilted, 1}, full);
     const auto reference = sample_pieces(pieces, pixel_center(32, 24)).value();
     const auto uv = triangle.uv_at(reference.surface.weights);
     if (!(std::abs(reference.view_depth - 896.0 / 303) <= tolerance && std::abs(uv.u - 251.0 / 909) <= tolerance &&
@@ -183,8 +215,9 @@ auto main() -> int
         .vertices = {TriangleVertex{{0, 2.5, 1}, {1, 1}}, TriangleVertex{{-1.5, -1.5, -3}, {1, 0}},
                      TriangleVertex{{1, -1.5, -3}, {0, 1}}},
     };
-    const bool passed = compare(camera, triangle, full, 672) && compare(camera, crosses_eye, full, 600) &&
-                        compare(camera, triangle, {2.5, 3.5}, 471) && compare(camera, triangle, {5, 6}, 0) &&
-                        check_ground_and_panel();
+    const MeshInstance crossing{InstanceId{2}, std::span{&crosses_eye, 1}};
+    const bool passed = compare_triangle(camera, tilted, full, 672) && compare_triangle(camera, crossing, full, 600) &&
+                        compare_triangle(camera, tilted, {2.5, 3.5}, 471) &&
+                        compare_triangle(camera, tilted, {5, 6}, 0) && check_ground_and_panel();
     return passed ? 0 : 1;
 }
