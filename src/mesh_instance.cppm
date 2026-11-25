@@ -46,6 +46,13 @@ export class AffineTransform
         return unit_vector(world, "Surface normal must define a finite direction");
     }
 
+    // Coordinate magnitudes before cancellation in interpolation and the local-to-world transform.
+    [[nodiscard]] Vec3 world_point_magnitudes(Vec3 local_magnitudes) const noexcept
+    {
+        return abs_components(translation_) + abs_components(axes_.x) * local_magnitudes.x +
+               abs_components(axes_.y) * local_magnitudes.y + abs_components(axes_.z) * local_magnitudes.z;
+    }
+
     [[nodiscard]] Ray to_local_ray(const Ray &world) const noexcept
     {
         // Applying the inverse linear map without normalizing preserves world.at(t) for the same t.

@@ -16,6 +16,34 @@ export struct RayHit
     double t;
 };
 
+// Start on the side of the geometric surface that the outgoing world-space direction points into.
+export [[nodiscard]] Ray spawn_surface_ray(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
+                                           Vec3 direction)
+{
+    const auto &[a, b, c] = face.vertices;
+    const Vec3 local_magnitudes = abs_components(a.position) + abs_components(b.position - a.position) * weights.b +
+                                  abs_components(c.position - a.position) * weights.c;
+    const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
+    Vec3 normal = instance.transform.to_world_normal(face.geometric_normal());
+    if (dot(normal, direction) < 0)
+    {
+        normal = normal * -1;
+    }
+
+    // Project a roundoff allowance onto the normal so distant tangential coordinates do not widen thin gaps.
+    const double scale = dot(abs_components(normal), instance.transform.world_point_magnitudes(local_magnitudes));
+    const Vec3 origin = world + normal * (32 * std::numeric_limits<double>::epsilon() * scale);
+    const auto outward = [](double value, double component)
+    {
+        if (component == 0)
+        {
+            return value;
+        }
+        return std::nextafter(value, std::copysign(std::numeric_limits<double>::infinity(), component));
+    };
+    return {{outward(origin.x, normal.x), outward(origin.y, normal.y), outward(origin.z, normal.z)}, direction};
+}
+
 // Two-sided Möller–Trumbore intersection in the open interval (min, max).
 [[nodiscard]] std::optional<RayHit> intersect_triangle(const Ray &ray, const Triangle &triangle, InstanceId instance,
                                                        RayInterval interval) noexcept
@@ -69,5 +97,23 @@ export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<c
         }
     }
     return nearest;
+}
+
+// For opaque triangles, any hit in the open interval blocks the ray.
+export [[nodiscard]] bool occluded(const Ray &ray, std::span<const MeshInstance> instances,
+                                   RayInterval interval) noexcept
+{
+    for (const auto &instance : instances)
+    {
+        const Ray local = instance.transform.to_local_ray(ray);
+        for (const auto &triangle : instance.triangles)
+        {
+            if (intersect_triangle(local, triangle, instance.id, interval))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 } // namespace formlight

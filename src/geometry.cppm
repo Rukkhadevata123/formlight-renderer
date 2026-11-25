@@ -29,6 +29,11 @@ struct Vec3
     return {v.x / scale, v.y / scale, v.z / scale};
 }
 
+[[nodiscard]] constexpr Vec3 abs_components(Vec3 v) noexcept
+{
+    return {std::abs(v.x), std::abs(v.y), std::abs(v.z)};
+}
+
 [[nodiscard]] constexpr double dot(Vec3 a, Vec3 b) noexcept
 {
     return a.x * b.x + a.y * b.y + a.z * b.z;

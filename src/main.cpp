@@ -70,11 +70,22 @@ RenderOptions parse_render_options(std::span<char *> arguments)
         else if (option == "--shadows")
         {
             const auto value = take_value(option);
-            if (value != "map" && value != "none")
+            if (value == "none")
             {
-                throw std::invalid_argument("Expected --shadows none or map");
+                shadows = ShadowMethod::None;
             }
-            shadows = value == "map" ? ShadowMethod::Map : ShadowMethod::None;
+            else if (value == "map")
+            {
+                shadows = ShadowMethod::Map;
+            }
+            else if (value == "ray")
+            {
+                shadows = ShadowMethod::Ray;
+            }
+            else
+            {
+                throw std::invalid_argument("Expected --shadows none, map or ray");
+            }
         }
         else
         {
@@ -85,7 +96,7 @@ RenderOptions parse_render_options(std::span<char *> arguments)
     {
         throw std::invalid_argument("Expected --output IMAGE.png");
     }
-    const bool needs_light = light.has_value() || shadows == ShadowMethod::Map;
+    const bool needs_light = light.has_value() || shadows != ShadowMethod::None;
     if (diffuse.value_or(needs_light))
     {
         auto &lighting = options.lighting.emplace();
@@ -110,7 +121,7 @@ auto main(int argc, char **argv) -> int
         std::println(
             "Usage: formlight-renderer --inspect MODEL.glb\n"
             "       formlight-renderer --render MODEL.glb --output IMAGE.png [--ground]\n"
-            "                         [--shading base-color|diffuse] [--toward-light X Y Z] [--shadows none|map]");
+            "                         [--shading base-color|diffuse] [--toward-light X Y Z] [--shadows none|map|ray]");
         return 0;
     }
 

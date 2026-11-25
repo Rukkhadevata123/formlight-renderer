@@ -27,22 +27,35 @@ bool check_ground_shadow(formlight::GltfScene &scene)
 {
     using namespace formlight;
     add_preview_ground(scene, world_bounds(scene.instances()));
-    const PinholeCamera overhead{
-        {.position = {0, 4, 0}, .target = {}, .up = {0, 0, -1}, .vertical_fov_radians = std::numbers::pi / 3},
-        {128, 128}};
+    // Look down from the shadow side so the box top does not hide its contact edge.
+    const PinholeCamera overhead{{.position = {0, 4, -0.75},
+                                  .target = {0, 0, -0.75},
+                                  .up = {0, 0, -1},
+                                  .vertical_fov_radians = std::numbers::pi / 3},
+                                 {128, 128}};
     const PreviewView view{overhead, {1, 6}};
     const auto lit = render_preview(scene, view, PreviewLighting{});
-    const auto shadowed = render_preview(scene, view, PreviewLighting{.shadows = ShadowMethod::Map});
-    const auto check = [&](Vec3 world, bool blocked)
+    const auto check = [&](const ColorImage &shadowed, Vec3 world, bool blocked)
     {
         const auto p = overhead.project(world).value().image;
         const int x = static_cast<int>(p.x), y = static_cast<int>(p.y);
-        const auto plain = lit[y, x], mapped = shadowed[y, x];
-        return plain.r > 0 && (blocked ? mapped.r == 0 && mapped.g == 0 && mapped.b == 0
-                                       : mapped.r == plain.r && mapped.g == plain.g && mapped.b == plain.b);
+        const auto plain = lit[y, x], actual = shadowed[y, x];
+        const LinearColor expected = blocked ? LinearColor{0, 0, 0, 1} : plain;
+        return plain.r > 0 && actual.r == expected.r && actual.g == expected.g && actual.b == expected.b;
     };
     // At floor height the top of the unit box projects by (-1/4, 0, -3/4).
-    return check({0, -0.5, -0.8}, true) && check({0, -0.5, -1.45}, false) && check({0, 0.5, 0}, false);
+    for (const auto method : {ShadowMethod::Map, ShadowMethod::Ray})
+    {
+        const auto shadowed = render_preview(scene, view, PreviewLighting{.shadows = method});
+        if (!check(shadowed, {0, -0.5, -0.55}, true) || !check(shadowed, {0, -0.5, -0.8}, true) ||
+            !check(shadowed, {0, -0.5, -1.45}, false) || !check(shadowed, {0, 0.5, 0}, false))
+        {
+            std::cerr << (method == ShadowMethod::Map ? "Shadow map" : "Shadow ray")
+                      << " disagrees with the box footprint or shadows a lit surface\n";
+            return false;
+        }
+    }
+    return true;
 }
 } // namespace
 
@@ -154,7 +167,6 @@ auto main(int argc, char **argv) -> int
     }
     if (!check_ground_shadow(*scene))
     {
-        std::cerr << "Shadow map disagrees with the box footprint or shadows a lit surface\n";
         return 1;
     }
     return 0;

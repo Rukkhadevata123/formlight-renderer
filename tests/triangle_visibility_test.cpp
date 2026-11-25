@@ -116,6 +116,32 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
     return report_coverage(coverage) && covered == expected_coverage;
 }
 
+bool check_shadow_ray_interval()
+{
+    // Two thin sheets share a mirrored, nonuniformly scaled mesh far from the world Z axis.
+    constexpr std::array mesh{
+        Triangle{.vertices = {TriangleVertex{{-1, -1, 0}}, TriangleVertex{{1, -1, 0}}, TriangleVertex{{0, 1, 0}}}}};
+    for (double scale : {1e-6, 1e6})
+    {
+        const Basis3 axes{{-2 * scale, 0, 0}, {0, scale, 0}, {0, 0, scale}};
+        const Vec3 position{1e10 * scale, 0, scale};
+        const double gap = 1e-9 * scale;
+        const std::array sheets{MeshInstance{InstanceId{0}, mesh, {axes, position}},
+                                MeshInstance{InstanceId{1}, mesh, {axes, position - Vec3{0, 0, gap}}}};
+        const Ray ray = spawn_surface_ray(sheets.front(), mesh.front(), {0.25, 0.25, 0.5}, {0, 0, -1});
+        const auto hit = intersect(ray, sheets, {0, 2 * gap});
+        if (!(ray.origin.z < position.z && hit && hit->surface.id.instance == sheets.back().id &&
+              occluded(ray, sheets, {0, 2 * gap}) && !occluded(ray, sheets, {0, hit->t}) &&
+              !occluded(ray, sheets, {hit->t, 2 * gap})))
+        {
+            std::cerr << std::format("Shadow ray missed the thin gap or included an interval endpoint at scale {}\n",
+                                     scale);
+            return false;
+        }
+    }
+    return true;
+}
+
 bool check_ground_and_panel()
 {
     const PinholeCamera camera{
@@ -263,6 +289,7 @@ auto main() -> int
     const MeshInstance crossing{InstanceId{2}, std::span{&crosses_eye, 1}};
     const bool passed = compare_triangle(camera, tilted, full, 672) && compare_triangle(camera, crossing, full, 600) &&
                         compare_triangle(camera, tilted, {2.5, 3.5}, 471) &&
-                        compare_triangle(camera, tilted, {5, 6}, 0) && check_ground_and_panel();
+                        compare_triangle(camera, tilted, {5, 6}, 0) && check_ground_and_panel() &&
+                        check_shadow_ray_interval();
     return passed ? 0 : 1;
 }

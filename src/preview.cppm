@@ -4,6 +4,7 @@ import std;
 export import formlight.gltf;
 export import formlight.lighting;
 export import formlight.raster;
+import formlight.ray_query;
 import formlight.shadow_map;
 
 namespace formlight
@@ -17,7 +18,8 @@ export struct PreviewView
 export enum class ShadowMethod
 {
     None,
-    Map
+    Map,
+    Ray
 };
 
 export struct PreviewLighting
@@ -74,6 +76,22 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
     {
         shadow_map.emplace(scene.instances(), lighting->light);
     }
+    const auto in_shadow = [&](const MeshInstance &instance, const Triangle &face, Barycentrics weights)
+    {
+        if (shadow_map)
+        {
+            const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
+            const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
+            return !shadow_map->visible(world, geometric_normal);
+        }
+        if (lighting && lighting->shadows == ShadowMethod::Ray)
+        {
+            const Ray ray = spawn_surface_ray(instance, face, weights, lighting->light.toward_light());
+            return occluded(ray, scene.instances(), {0, std::numeric_limits<double>::infinity()});
+        }
+        return false;
+    };
+
     for (int y = 0; y < extent.height; ++y)
     {
         for (int x = 0; x < extent.width; ++x)
@@ -86,15 +104,9 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
                 auto color = scene.base_color(face, weights);
                 if (lighting)
                 {
-                    const bool sunlit =
-                        !shadow_map || shadow_map->visible(instance.transform.to_world_point(face.position_at(weights)),
-                                                           instance.transform.to_world_normal(face.geometric_normal()));
-                    if (sunlit)
-                    {
-                        const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
-                        color = lighting->light.diffuse(color, normal);
-                    }
-                    else
+                    const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
+                    color = lighting->light.diffuse(color, normal);
+                    if ((color.r > 0 || color.g > 0 || color.b > 0) && in_shadow(instance, face, weights))
                     {
                         color = {0, 0, 0, color.a};
                     }
