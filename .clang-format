@@ -1,0 +1,14 @@
+# Modern C++ / Microsoft-style formatting
+BasedOnStyle: Microsoft
+
+# Four spaces
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+
+# Allman braces
+BreakBeforeBraces: Allman
+
+# Maximum line length
+ColumnLimit: 120
