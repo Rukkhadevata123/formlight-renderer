@@ -40,6 +40,14 @@ export class RasterTriangle
                                                              std::span<const MeshInstance> instances,
                                                              ViewDepthRange range, std::stop_token stop = {});
     [[nodiscard]] std::optional<RasterHit> sample(ImagePoint point) const noexcept;
+    [[nodiscard]] SurfaceId source() const noexcept
+    {
+        return source_;
+    }
+    void for_each_hit(ImageExtent extent, auto &&visit) const
+    {
+        coverage_.for_each_sample(extent, [&](int x, int y, const auto &edges) { visit(x, y, interpolate(edges)); });
+    }
     // Keep the nearest pixel-center hit. Exact depth ties use the smaller (instance, primitive) pair.
     void rasterize(VisibilityBuffer target, const SurfaceFilter &accept = {}) const;
 
@@ -90,7 +98,7 @@ RasterHit RasterTriangle::interpolate(const std::array<double, 3> &values) const
 
 void RasterTriangle::rasterize(VisibilityBuffer target, const SurfaceFilter &accept) const
 {
-    coverage_.for_each_sample({target.extent(1), target.extent(0)}, [&](int x, int y, const auto &values)
-                              { interpolate(values).keep_nearest(target[y, x], accept); });
+    for_each_hit({target.extent(1), target.extent(0)},
+                 [&](int x, int y, const RasterHit &hit) { hit.keep_nearest(target[y, x], accept); });
 }
 } // namespace formlight

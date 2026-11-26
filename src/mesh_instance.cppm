@@ -56,10 +56,15 @@ export class AffineTransform
                abs_components(axes_.y) * local_magnitudes.y + abs_components(axes_.z) * local_magnitudes.z;
     }
 
+    [[nodiscard]] Vec3 to_local_point(Vec3 world) const noexcept
+    {
+        return to_local_vector(world - translation_);
+    }
+
     [[nodiscard]] Ray to_local_ray(const Ray &world) const noexcept
     {
         // Applying the inverse linear map without normalizing preserves world.at(t) for the same t.
-        return {to_local_vector(world.origin - translation_), to_local_vector(world.direction)};
+        return {to_local_point(world.origin), to_local_vector(world.direction)};
     }
 
   private:

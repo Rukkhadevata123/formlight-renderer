@@ -18,11 +18,20 @@ struct BaseColorTexture
     TextureSampler sampler;
 };
 
-struct BaseColorMaterial
+export enum class AlphaMode
+{
+    Opaque,
+    Mask,
+    Blend
+};
+
+export struct BaseColorMaterial
 {
     LinearColor factor{1, 1, 1, 1};
     std::optional<BaseColorTexture> texture;
-    std::optional<float> alpha_cutoff{};
+    AlphaMode alpha_mode{AlphaMode::Opaque};
+    float alpha_cutoff{0.5f};
+    bool double_sided{};
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -35,9 +44,13 @@ export class GltfScene
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
     [[nodiscard]] LinearColor base_color(const Triangle &face, Barycentrics weights) const;
-    // The filter borrows this scene for the lifetime of the visibility pass or BVH.
-    [[nodiscard]] SurfaceFilter coverage_filter() const &;
-    SurfaceFilter coverage_filter() const && = delete;
+    [[nodiscard]] const BaseColorMaterial &material(const Triangle &face) const
+    {
+        return materials_.at(face.material_index).value();
+    }
+    // Depth and shadow passes accept opaque and covered mask samples. The filter borrows the scene.
+    [[nodiscard]] SurfaceFilter solid_filter() const &;
+    SurfaceFilter solid_filter() const && = delete;
     void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
     {

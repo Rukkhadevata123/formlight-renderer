@@ -84,12 +84,12 @@ export struct PixelDiagnostic
     std::vector<LightSample> samples{};
     LinearColor color{};
 
-    // Linear RGB contribution to the final pixel, including the sample's share of the mean.
+    // Selected surface's contribution to the final pixel, including opacity and the sample's share of the mean.
     [[nodiscard]] Vec3 sample_contribution(std::size_t index) const
     {
         const auto &sample = samples.at(index);
         const auto &base = surface.value().base_color;
-        return Vec3{base.r, base.g, base.b} * (sample.visible_weight() / static_cast<double>(samples.size()));
+        return Vec3{base.r, base.g, base.b} * (base.a * sample.visible_weight() / static_cast<double>(samples.size()));
     }
 };
 
@@ -105,12 +105,13 @@ export class PreviewRenderer
 
   private:
     [[nodiscard]] LinearColor shade(const RasterHit &hit, std::uint64_t pixel, AreaLightPattern area_light_pattern,
-                                    const std::stop_token &stop, PixelDiagnostic *record = nullptr) const;
+                                    const std::stop_token &stop, bool back_face,
+                                    PixelDiagnostic *record = nullptr) const;
     [[nodiscard]] LightSample directional_sample(const DirectionalLighting &light, const MeshInstance &instance,
                                                  const Triangle &face, Barycentrics weights, Vec3 normal,
                                                  bool identify_blocker) const;
     const GltfScene &scene_;
-    SurfaceFilter coverage_;
+    SurfaceFilter solid_filter_;
     std::optional<PreviewLighting> lighting_;
     std::shared_ptr<const DirectionalShadowMap> shadow_map_;
     std::shared_ptr<const TriangleBvh> blockers_;

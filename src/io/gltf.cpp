@@ -218,16 +218,17 @@ WrapMode wrap_mode(fastgltf::Wrap wrap)
 BaseColorMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Material &material,
                                 std::vector<std::optional<ColorImage>> &images)
 {
-    if (material.alphaMode == fastgltf::AlphaMode::Blend)
-    {
-        throw std::runtime_error("Base-color preview does not support alphaMode BLEND");
-    }
     const auto &pbr = material.pbrData;
     const auto &f = pbr.baseColorFactor;
-    BaseColorMaterial result{.factor = {f[0], f[1], f[2], f[3]}, .texture = {}};
+    BaseColorMaterial result{.factor = {f[0], f[1], f[2], f[3]}, .texture = {}, .double_sided = material.doubleSided};
     if (material.alphaMode == fastgltf::AlphaMode::Mask)
     {
+        result.alpha_mode = AlphaMode::Mask;
         result.alpha_cutoff = material.alphaCutoff;
+    }
+    else if (material.alphaMode == fastgltf::AlphaMode::Blend)
+    {
+        result.alpha_mode = AlphaMode::Blend;
     }
     if (const auto &info = pbr.baseColorTexture)
     {
@@ -397,22 +398,24 @@ LinearColor GltfScene::sample_base_color(const BaseColorMaterial &material, cons
 
 LinearColor GltfScene::base_color(const Triangle &face, Barycentrics weights) const
 {
-    auto color = sample_base_color(materials_.at(face.material_index).value(), face, weights);
-    color.a = 1.0f; // Both opaque surfaces and accepted mask samples fully cover the pixel.
+    const auto &mat = material(face);
+    auto color = sample_base_color(mat, face, weights);
+    color.a = mat.alpha_mode == AlphaMode::Blend ? std::clamp(color.a, 0.0f, 1.0f) : 1.0f;
     return color;
 }
 
-SurfaceFilter GltfScene::coverage_filter() const &
+SurfaceFilter GltfScene::solid_filter() const &
 {
-    if (std::ranges::none_of(materials_, [](const auto &m) { return m && m->alpha_cutoff.has_value(); }))
+    if (std::ranges::none_of(materials_, [](const auto &m) { return m && m->alpha_mode != AlphaMode::Opaque; }))
     {
         return {};
     }
     return [this](const TrianglePoint &point)
     {
         const auto &face = instance(point.id.instance).triangles[std::to_underlying(point.id.primitive)];
-        const auto &material = materials_[face.material_index].value();
-        return !material.alpha_cutoff || sample_base_color(material, face, point.weights).a >= *material.alpha_cutoff;
+        const auto &mat = material(face);
+        return mat.alpha_mode == AlphaMode::Opaque ||
+               (mat.alpha_mode == AlphaMode::Mask && sample_base_color(mat, face, point.weights).a >= mat.alpha_cutoff);
     };
 }
 } // namespace formlight

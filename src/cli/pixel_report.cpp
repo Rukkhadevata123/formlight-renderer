@@ -41,6 +41,10 @@ void print_pixel_report(const PixelDiagnostic &report)
                      surface->hit.view_depth);
         std::println("Barycentrics: ({:.9g}, {:.9g}, {:.9g})  Base linear RGB: ({}, {}, {})", weights.a, weights.b,
                      weights.c, surface->base_color.r, surface->base_color.g, surface->base_color.b);
+        if (surface->base_color.a < 1)
+        {
+            std::println("Front layer opacity: {}", surface->base_color.a);
+        }
         if (report.light == LightKind::Rectangle)
         {
             const auto blocked = std::ranges::count_if(report.samples, [](const auto &sample)

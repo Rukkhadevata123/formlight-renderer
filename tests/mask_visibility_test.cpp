@@ -16,7 +16,7 @@ try
     config.render.extent = {320, 240};
     const auto preview = load_preview(prepare_render(config));
     const auto &scene = preview.scene;
-    const auto accept = scene.coverage_filter();
+    const auto accept = scene.solid_filter();
     const TriangleBvh bvh{scene.instances(), accept};
 
     // Cross the panel at t=1 through a hole. The front face of the block lies at t=1.45.

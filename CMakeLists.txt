@@ -38,7 +38,7 @@ target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES F
 target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
-add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp)
+add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
 target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_io TBB::tbb)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -93,6 +93,10 @@ if(BUILD_TESTING)
     add_executable(mask_visibility_test tests/mask_visibility_test.cpp)
     target_link_libraries(mask_visibility_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME mask_visibility COMMAND mask_visibility_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mask-panel.toml")
+
+    add_executable(blend_layers_test tests/blend_layers_test.cpp)
+    target_link_libraries(blend_layers_test PRIVATE formlight_gltf)
+    add_test(NAME blend_layers COMMAND blend_layers_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BlendLayers.glb")
 
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
