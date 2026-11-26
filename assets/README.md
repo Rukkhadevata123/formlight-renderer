@@ -14,6 +14,10 @@ A perforated panel stands in front of an ochre block. Its embedded texture, vert
 
 Two intersecting, half-opacity sheets change depth order across the image. An opaque block passes between them. The coral sheet gets its alpha from the material and the blue sheet from its vertices. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## EmissivePanels.glb
+
+A half-opacity sheet covers the right half of an amber panel. Its two emissive texels have different RGB and alpha values. In the backlit example, their RGB controls emission and the sheet's base-color alpha controls compositing. Created for Formlight and distributed under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

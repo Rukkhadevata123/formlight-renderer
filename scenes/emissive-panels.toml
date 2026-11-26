@@ -1,0 +1,16 @@
+[scene]
+asset = "../assets/EmissivePanels.glb"
+
+[camera]
+auto_frame = false
+position = [0, 0, 4]
+target = [0, 0, 0]
+vertical_fov_degrees = 30
+
+[light]
+type = "directional"
+toward_light = [0, 0, -1]
+
+[render]
+width = 640
+height = 320

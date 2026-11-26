@@ -63,9 +63,11 @@ void show_report(const PixelDiagnostic &report)
         ImGui::Text("Instance %u", std::to_underlying(id.instance));
         ImGui::Text("Primitive %u", std::to_underlying(id.primitive));
         ImGui::Text("Material slot %zu", surface->material_index);
-        if (surface->base_color.a < 1)
+        const auto &[base, emission] = surface->colors;
+        ImGui::Text("Surface emission (linear RGB)   %.3g  %.3g  %.3g", emission.r, emission.g, emission.b);
+        if (base.a < 1)
         {
-            ImGui::Text("Front layer opacity   %.3g", surface->base_color.a);
+            ImGui::Text("Front layer opacity   %.3g", base.a);
         }
     }
     else

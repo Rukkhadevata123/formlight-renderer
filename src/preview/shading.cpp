@@ -6,6 +6,15 @@ import formlight.shadow_map;
 
 namespace formlight
 {
+namespace
+{
+LinearColor shade_diffuse(const SurfaceColors &surface, double weight) noexcept
+{
+    const auto reflected = scale_rgb(surface.base_color, weight);
+    const auto &emission = surface.emission;
+    return {reflected.r + emission.r, reflected.g + emission.g, reflected.b + emission.b, surface.base_color.a};
+}
+} // namespace
 
 PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting)
     : scene_(scene), solid_filter_(scene.solid_filter())
@@ -42,20 +51,21 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, Ar
     const auto &[id, weights] = hit.surface;
     const auto &instance = scene_.instance(id.instance);
     const auto &face = instance.triangles[std::to_underlying(id.primitive)];
-    const auto base = scene_.base_color(face, weights);
-    if (base.a == 0)
+    const auto colors = scene_.surface_colors(face, weights);
+    if (colors.base_color.a == 0)
     {
-        return base;
+        return colors.base_color;
     }
     if (record)
     {
         // Layers are visited back to front. Keep lighting details for the nearest nonzero layer.
         record->samples.clear();
-        record->surface = DiagnosticSurface{hit, face.material_index, base};
+        record->surface = DiagnosticSurface{hit, face.material_index, colors};
     }
     if (!lighting_)
     {
-        return base;
+        // The no-light preview shows the base color at unit weight.
+        return shade_diffuse(colors, 1);
     }
 
     const Vec3 local_normal = face.normal_at(weights);
@@ -70,7 +80,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, Ar
         const double weight = sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal,
                                                   area->sampling, pixel, area->shadows ? blockers_.get() : nullptr,
                                                   area_light_pattern, record ? &record->samples : nullptr, stop);
-        return scale_rgb(base, weight);
+        return shade_diffuse(colors, weight);
     }
 
     const LightSample sample = directional_sample(std::get<DirectionalLighting>(*lighting_), instance, face, weights,
@@ -80,7 +90,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, Ar
         record->light = LightKind::Directional;
         record->samples.push_back(sample);
     }
-    return scale_rgb(base, sample.visible_weight());
+    return shade_diffuse(colors, sample.visible_weight());
 }
 
 LightSample PreviewRenderer::directional_sample(const DirectionalLighting &light, const MeshInstance &instance,

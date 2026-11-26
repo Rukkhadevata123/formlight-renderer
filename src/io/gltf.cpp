@@ -115,15 +115,18 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
         }
         const auto texcoord = primitive.findAttribute("TEXCOORD_0");
         if (const auto color = primitive.findAttribute("COLOR_0");
-            content == GltfContent::BaseColor && color != primitive.attributes.end())
+            content == GltfContent::Materials && color != primitive.attributes.end())
         {
             read_vertex_colors(asset, geometry_accessor(asset, color->accessorIndex), vertices);
         }
         const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
-        if (content == GltfContent::BaseColor && texcoord == primitive.attributes.end() && primitive.materialIndex &&
-            asset.materials.at(*primitive.materialIndex).pbrData.baseColorTexture)
+        if (content == GltfContent::Materials && texcoord == primitive.attributes.end() && primitive.materialIndex)
         {
-            throw std::runtime_error("Textured primitive is missing TEXCOORD_0");
+            const auto &material = asset.materials.at(*primitive.materialIndex);
+            if (material.pbrData.baseColorTexture || material.emissiveTexture)
+            {
+                throw std::runtime_error("Textured primitive is missing TEXCOORD_0");
+            }
         }
         if (texcoord != primitive.attributes.end())
         {
@@ -195,9 +198,9 @@ ColorImage read_image(const fastgltf::Asset &asset, std::size_t index)
         {
             throw std::runtime_error("Image buffer view exceeds its embedded buffer");
         }
-        return decode_base_color(bytes.subspan(view.byteOffset, view.byteLength));
+        return decode_srgb_image(bytes.subspan(view.byteOffset, view.byteLength));
     }
-    return decode_base_color(embedded_bytes(source));
+    return decode_srgb_image(embedded_bytes(source));
 }
 
 WrapMode wrap_mode(fastgltf::Wrap wrap)
@@ -215,12 +218,38 @@ WrapMode wrap_mode(fastgltf::Wrap wrap)
     }
 }
 
-BaseColorMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Material &material,
-                                std::vector<std::optional<ColorImage>> &images)
+TextureBinding read_texture_binding(const fastgltf::Asset &asset, const fastgltf::TextureInfo &info,
+                                    std::vector<std::optional<ColorImage>> &images)
+{
+    if (info.texCoordIndex != 0)
+    {
+        throw std::runtime_error("Preview textures require TEXCOORD_0");
+    }
+    const auto &texture = asset.textures.at(info.textureIndex);
+    const auto image = texture.imageIndex.value();
+    if (!images.at(image))
+    {
+        images[image] = read_image(asset, image);
+    }
+    TextureSampler sampler;
+    if (texture.samplerIndex)
+    {
+        const auto &source = asset.samplers.at(*texture.samplerIndex);
+        sampler = {wrap_mode(source.wrapS), wrap_mode(source.wrapT),
+                   source.magFilter == fastgltf::Filter::Nearest ? TexelFilter::Nearest : TexelFilter::Linear};
+    }
+    return {image, sampler};
+}
+
+GltfMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Material &material,
+                           std::vector<std::optional<ColorImage>> &images)
 {
     const auto &pbr = material.pbrData;
     const auto &f = pbr.baseColorFactor;
-    BaseColorMaterial result{.factor = {f[0], f[1], f[2], f[3]}, .texture = {}, .double_sided = material.doubleSided};
+    const auto &e = material.emissiveFactor;
+    GltfMaterial result{.base_color_factor = {f[0], f[1], f[2], f[3]},
+                        .emissive_factor = {e[0], e[1], e[2]},
+                        .double_sided = material.doubleSided};
     if (material.alphaMode == fastgltf::AlphaMode::Mask)
     {
         result.alpha_mode = AlphaMode::Mask;
@@ -232,34 +261,21 @@ BaseColorMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Ma
     }
     if (const auto &info = pbr.baseColorTexture)
     {
-        if (info->texCoordIndex != 0)
-        {
-            throw std::runtime_error("Base-color preview requires TEXCOORD_0");
-        }
-        const auto &texture = asset.textures.at(info->textureIndex);
-        const auto image = texture.imageIndex.value();
-        if (!images.at(image))
-        {
-            images[image] = read_image(asset, image);
-        }
-        TextureSampler sampler;
-        if (texture.samplerIndex)
-        {
-            const auto &source = asset.samplers.at(*texture.samplerIndex);
-            sampler = {wrap_mode(source.wrapS), wrap_mode(source.wrapT),
-                       source.magFilter == fastgltf::Filter::Nearest ? TexelFilter::Nearest : TexelFilter::Linear};
-        }
-        result.texture = BaseColorTexture{image, sampler};
+        result.base_color_texture = read_texture_binding(asset, *info, images);
+    }
+    if (const auto &info = material.emissiveTexture)
+    {
+        result.emissive_texture = read_texture_binding(asset, *info, images);
     }
     return result;
 }
 
-std::vector<std::optional<BaseColorMaterial>> read_materials(const fastgltf::Asset &asset,
-                                                             std::span<const std::vector<Triangle>> meshes,
-                                                             std::vector<std::optional<ColorImage>> &images)
+std::vector<std::optional<GltfMaterial>> read_materials(const fastgltf::Asset &asset,
+                                                        std::span<const std::vector<Triangle>> meshes,
+                                                        std::vector<std::optional<ColorImage>> &images)
 {
-    std::vector<std::optional<BaseColorMaterial>> materials(1 + asset.materials.size());
-    materials[0] = BaseColorMaterial{};
+    std::vector<std::optional<GltfMaterial>> materials(1 + asset.materials.size());
+    materials[0] = GltfMaterial{};
     for (const auto &mesh : meshes)
     {
         for (const auto &face : mesh)
@@ -342,7 +358,7 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
                 pending.push_back({child, world});
             }
         }
-        if (content == GltfContent::BaseColor)
+        if (content == GltfContent::Materials)
         {
             result.images_.resize(asset.images.size());
             result.materials_ = read_materials(asset, result.meshes_, result.images_);
@@ -376,32 +392,42 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
     meshes_.reserve(meshes_.size() + 1);
     node_instance_slots_.reserve(node_instance_slots_.size() + 1);
     instances_.reserve(instances_.size() + 1);
-    materials_.emplace_back(BaseColorMaterial{color, {}});
+    materials_.emplace_back(GltfMaterial{.base_color_factor = color});
     meshes_.push_back(std::move(mesh));
     node_instance_slots_.push_back(instances_.size());
     instances_.push_back({id, meshes_.back(), {}});
 }
 
-LinearColor GltfScene::sample_base_color(const BaseColorMaterial &material, const Triangle &face,
-                                         Barycentrics weights) const
+LinearColor GltfScene::sample(const TextureBinding &binding, TexCoord uv) const
+{
+    return sample_texture(images_[binding.image].value(), uv, binding.sampler);
+}
+
+LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Triangle &face, Barycentrics weights) const
 {
     const auto vertex = face.color_at(weights);
-    const auto &factor = material.factor;
+    const auto &factor = material.base_color_factor;
     LinearColor color{factor.r * vertex.r, factor.g * vertex.g, factor.b * vertex.b, factor.a * vertex.a};
-    if (const auto &binding = material.texture)
+    if (const auto &binding = material.base_color_texture)
     {
-        const auto texel = sample_texture(images_[binding->image].value(), face.uv_at(weights), binding->sampler);
+        const auto texel = sample(*binding, face.uv_at(weights));
         color = {color.r * texel.r, color.g * texel.g, color.b * texel.b, color.a * texel.a};
     }
     return color;
 }
 
-LinearColor GltfScene::base_color(const Triangle &face, Barycentrics weights) const
+SurfaceColors GltfScene::surface_colors(const Triangle &face, Barycentrics weights) const
 {
     const auto &mat = material(face);
     auto color = sample_base_color(mat, face, weights);
     color.a = mat.alpha_mode == AlphaMode::Blend ? std::clamp(color.a, 0.0f, 1.0f) : 1.0f;
-    return color;
+    auto emission = mat.emissive_factor;
+    if (color.a > 0 && mat.emissive_texture)
+    {
+        const auto texel = sample(*mat.emissive_texture, face.uv_at(weights));
+        emission = {emission.r * texel.r, emission.g * texel.g, emission.b * texel.b};
+    }
+    return {color, emission};
 }
 
 SurfaceFilter GltfScene::solid_filter() const &

@@ -98,6 +98,10 @@ if(BUILD_TESTING)
     target_link_libraries(blend_layers_test PRIVATE formlight_gltf)
     add_test(NAME blend_layers COMMAND blend_layers_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BlendLayers.glb")
 
+    add_executable(emissive_panels_test tests/emissive_panels_test.cpp)
+    target_link_libraries(emissive_panels_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME emissive_panels COMMAND emissive_panels_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/emissive-panels.toml")
+
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
     add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/box-area-light.toml")

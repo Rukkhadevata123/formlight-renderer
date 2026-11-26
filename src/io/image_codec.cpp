@@ -15,7 +15,7 @@ import formlight.output_file;
 
 namespace formlight
 {
-ColorImage decode_base_color(std::span<const std::byte> encoded)
+ColorImage decode_srgb_image(std::span<const std::byte> encoded)
 {
     if (encoded.empty() || !std::in_range<int>(encoded.size()))
     {
@@ -28,7 +28,7 @@ ColorImage decode_base_color(std::span<const std::byte> encoded)
         &stbi_image_free};
     if (!bytes)
     {
-        throw std::runtime_error(std::format("Cannot decode base-color image: {}", stbi_failure_reason()));
+        throw std::runtime_error(std::format("Cannot decode sRGB image: {}", stbi_failure_reason()));
     }
     static const auto linear = []
     {

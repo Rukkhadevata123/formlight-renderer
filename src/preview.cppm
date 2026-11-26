@@ -72,7 +72,7 @@ export struct DiagnosticSurface
 {
     RasterHit hit;
     std::size_t material_index;
-    LinearColor base_color;
+    SurfaceColors colors;
 };
 
 export struct PixelDiagnostic
@@ -88,7 +88,7 @@ export struct PixelDiagnostic
     [[nodiscard]] Vec3 sample_contribution(std::size_t index) const
     {
         const auto &sample = samples.at(index);
-        const auto &base = surface.value().base_color;
+        const auto &base = surface.value().colors.base_color;
         return Vec3{base.r, base.g, base.b} * (base.a * sample.visible_weight() / static_cast<double>(samples.size()));
     }
 };
@@ -140,7 +140,7 @@ export struct ScenePreview
 
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 {
-    auto scene = GltfScene::load_glb(request.asset, GltfContent::BaseColor);
+    auto scene = GltfScene::load_glb(request.asset, GltfContent::Materials);
     if (!scene)
     {
         throw std::runtime_error(scene.error());

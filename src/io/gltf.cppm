@@ -9,10 +9,10 @@ namespace formlight
 export enum class GltfContent
 {
     Geometry,
-    BaseColor
+    Materials
 };
 
-struct BaseColorTexture
+struct TextureBinding
 {
     std::size_t image;
     TextureSampler sampler;
@@ -25,13 +25,21 @@ export enum class AlphaMode
     Blend
 };
 
-export struct BaseColorMaterial
+export struct GltfMaterial
 {
-    LinearColor factor{1, 1, 1, 1};
-    std::optional<BaseColorTexture> texture;
+    LinearColor base_color_factor{1, 1, 1, 1};
+    std::optional<TextureBinding> base_color_texture{};
+    LinearColor emissive_factor{};
+    std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};
     float alpha_cutoff{0.5f};
     bool double_sided{};
+};
+
+export struct SurfaceColors
+{
+    LinearColor base_color;
+    LinearColor emission;
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -43,8 +51,8 @@ export class GltfScene
 
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
-    [[nodiscard]] LinearColor base_color(const Triangle &face, Barycentrics weights) const;
-    [[nodiscard]] const BaseColorMaterial &material(const Triangle &face) const
+    [[nodiscard]] SurfaceColors surface_colors(const Triangle &face, Barycentrics weights) const;
+    [[nodiscard]] const GltfMaterial &material(const Triangle &face) const
     {
         return materials_.at(face.material_index).value();
     }
@@ -69,12 +77,13 @@ export class GltfScene
 
   private:
     GltfScene() = default;
-    [[nodiscard]] LinearColor sample_base_color(const BaseColorMaterial &material, const Triangle &face,
+    [[nodiscard]] LinearColor sample(const TextureBinding &binding, TexCoord uv) const;
+    [[nodiscard]] LinearColor sample_base_color(const GltfMaterial &material, const Triangle &face,
                                                 Barycentrics weights) const;
     std::vector<std::vector<Triangle>> meshes_;
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
     std::vector<std::optional<ColorImage>> images_;
-    std::vector<std::optional<BaseColorMaterial>> materials_;
+    std::vector<std::optional<GltfMaterial>> materials_;
 };
 } // namespace formlight
