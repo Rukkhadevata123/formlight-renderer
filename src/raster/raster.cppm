@@ -36,7 +36,7 @@ export class RasterTriangle
     // Clip to the closed view-depth range, then triangulate and project the surviving polygons.
     [[nodiscard]] static std::vector<RasterTriangle> prepare(const PinholeCamera &camera,
                                                              std::span<const MeshInstance> instances,
-                                                             ViewDepthRange range);
+                                                             ViewDepthRange range, std::stop_token stop = {});
     [[nodiscard]] std::optional<RasterHit> sample(ImagePoint point) const noexcept;
     // Keep the nearest pixel-center hit. Exact depth ties use the smaller (instance, primitive) pair.
     void rasterize(VisibilityBuffer target) const noexcept;

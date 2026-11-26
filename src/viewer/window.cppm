@@ -9,6 +9,7 @@ export module formlight.viewer.window;
 
 import std;
 import formlight.preview;
+import formlight.viewer.session;
 
 namespace formlight
 {
@@ -74,7 +75,22 @@ void show_report(const PixelDiagnostic &report)
     ImGui::Text("R   %.7g\nG   %.7g\nB   %.7g", report.color.r, report.color.g, report.color.b);
 }
 
-std::optional<PixelCoord> draw_image(SDL_Texture *texture, std::optional<PixelCoord> selection)
+struct ImageRect
+{
+    ImVec2 lo, hi;
+    [[nodiscard]] PixelCoord pixel_at(ImVec2 mouse, ImageExtent extent) const
+    {
+        // ImGui floors mouse positions to logical pixels. Pick at the center of that pixel.
+        const auto texel = [](float position, float start, float end, int count)
+        {
+            const double offset = (static_cast<double>(position) + 0.5 - start) / (end - start);
+            return static_cast<int>(std::clamp(offset * count, 0.0, static_cast<double>(count - 1)));
+        };
+        return {texel(mouse.x, lo.x, hi.x, extent.width), texel(mouse.y, lo.y, hi.y, extent.height)};
+    }
+};
+
+std::optional<ImageRect> place_image(ImageExtent extent)
 {
     const auto space = ImGui::GetContentRegionAvail();
     const auto origin = ImGui::GetCursorScreenPos();
@@ -82,11 +98,17 @@ std::optional<PixelCoord> draw_image(SDL_Texture *texture, std::optional<PixelCo
     {
         return {};
     }
-    const float scale = std::min(space.x / static_cast<float>(texture->w), space.y / static_cast<float>(texture->h));
-    const ImVec2 size{static_cast<float>(texture->w) * scale, static_cast<float>(texture->h) * scale};
+    const float scale =
+        std::min(space.x / static_cast<float>(extent.width), space.y / static_cast<float>(extent.height));
+    const ImVec2 size{static_cast<float>(extent.width) * scale, static_cast<float>(extent.height) * scale};
     ImGui::SetCursorScreenPos({origin.x + (space.x - size.x) / 2, origin.y + (space.y - size.y) / 2});
-    ImGui::InvisibleButton("##image", size);
-    const auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
+    ImGui::InvisibleButton("##image", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+    return ImageRect{ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
+}
+
+void draw_image(SDL_Texture *texture, ImageRect rect, std::optional<PixelCoord> selection)
+{
+    const auto [lo, hi] = rect;
     auto *draw = ImGui::GetWindowDrawList();
     draw->AddCallback(ImGui::GetPlatformIO().DrawCallback_SetSamplerNearest);
     draw->AddImage(reinterpret_cast<ImTextureID>(texture), lo, hi);
@@ -99,18 +121,6 @@ std::optional<PixelCoord> draw_image(SDL_Texture *texture, std::optional<PixelCo
         draw->AddCircle(mark, 5.0f, IM_COL32_BLACK, 0, 3.0f);
         draw->AddCircle(mark, 5.0f, IM_COL32_WHITE);
     }
-    if (!ImGui::IsItemClicked(ImGuiMouseButton_Left))
-    {
-        return {};
-    }
-    const auto mouse = ImGui::GetMousePos();
-    // ImGui floors mouse positions to logical pixels. Pick at the center of that pixel.
-    const auto texel = [](float position, float start, float end, int extent)
-    {
-        const double offset = (static_cast<double>(position) + 0.5 - start) / (end - start);
-        return static_cast<int>(std::clamp(offset * extent, 0.0, static_cast<double>(extent - 1)));
-    };
-    return PixelCoord{texel(mouse.x, lo.x, hi.x, texture->w), texel(mouse.y, lo.y, hi.y, texture->h)};
 }
 
 export class ViewerWindow
@@ -120,11 +130,18 @@ export class ViewerWindow
     ViewerWindow(const ViewerWindow &) = delete;
     ViewerWindow &operator=(const ViewerWindow &) = delete;
     [[nodiscard]] bool poll();
-    void upload(const ColorImage &image);
-    [[nodiscard]] std::optional<PixelCoord> draw(const std::optional<PixelDiagnostic> &report,
-                                                 std::optional<PixelCoord> selection);
+    void draw(ViewerSession &session);
 
   private:
+    enum class Drag
+    {
+        None,
+        Orbit,
+        Pan
+    };
+    Drag drag_{};
+    [[nodiscard]] ViewportInput read_input(ImageRect rect, ImageExtent extent);
+    void upload(const ColorImage &image);
     SdlVideo video_;
     std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window_{nullptr, SDL_DestroyWindow};
     std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer_{nullptr, SDL_DestroyRenderer};
@@ -190,13 +207,53 @@ void ViewerWindow::upload(const ColorImage &image)
     SDL_UnlockTexture(texture_.get());
 }
 
-std::optional<PixelCoord> ViewerWindow::draw(const std::optional<PixelDiagnostic> &report,
-                                             std::optional<PixelCoord> selection)
+ViewportInput ViewerWindow::read_input(ImageRect rect, ImageExtent extent)
+{
+    const auto &io = ImGui::GetIO();
+    ViewportInput input;
+    if (ImGui::IsItemHovered())
+    {
+        input.wheel = io.MouseWheel;
+        input.focus = !io.WantTextInput && ImGui::IsKeyPressed(ImGuiKey_F, false);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+        {
+            input.picked = rect.pixel_at(ImGui::GetMousePos(), extent);
+        }
+    }
+    if (!ImGui::IsMouseDown(ImGuiMouseButton_Middle) || !ImGui::IsItemActive())
+    {
+        drag_ = Drag::None;
+    }
+    else if (ImGui::IsItemClicked(ImGuiMouseButton_Middle))
+    {
+        drag_ = Drag::None;
+        if (io.KeyMods == ImGuiMod_None)
+        {
+            drag_ = Drag::Orbit;
+        }
+        if (io.KeyMods == ImGuiMod_Shift)
+        {
+            drag_ = Drag::Pan;
+        }
+    }
+    else if (drag_ == Drag::Orbit)
+    {
+        input.orbit_pixels = {io.MouseDelta.x, io.MouseDelta.y};
+    }
+    else if (drag_ == Drag::Pan)
+    {
+        const double height = rect.hi.y - rect.lo.y;
+        input.pan_heights = {io.MouseDelta.x / height, io.MouseDelta.y / height};
+    }
+    return input;
+}
+
+void ViewerWindow::draw(ViewerSession &session)
 {
     if ((SDL_GetWindowFlags(window_.get()) & SDL_WINDOW_MINIMIZED) != 0)
     {
         SDL_Delay(16);
-        return {};
+        return;
     }
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
@@ -209,17 +266,26 @@ std::optional<PixelCoord> ViewerWindow::draw(const std::optional<PixelDiagnostic
                      ImGuiWindowFlags_NoScrollWithMouse);
     const float width = ImGui::GetContentRegionAvail().x;
     const float panel = std::min(width * 0.4f, 16 * ImGui::GetFontSize());
-    std::optional<PixelCoord> clicked;
+    std::optional<ImageRect> rect;
     if (ImGui::BeginChild("Viewport", {std::max(1.0f, width - panel - ImGui::GetStyle().ItemSpacing.x), 0}, 0,
                           ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
     {
+        rect = place_image(session.extent());
+    }
+    const ViewportInput input = rect && texture_ ? read_input(*rect, session.extent()) : ViewportInput{};
+    if (const auto *image = session.update(input))
+    {
+        upload(*image);
+    }
+    if (rect)
+    {
         if (texture_)
         {
-            clicked = draw_image(texture_.get(), selection);
+            draw_image(texture_.get(), *rect, session.selection());
         }
         else
         {
-            ImGui::TextUnformatted("Rendering scene...");
+            ImGui::GetWindowDrawList()->AddText(rect->lo, ImGui::GetColorU32(ImGuiCol_Text), "Rendering scene...");
         }
     }
     ImGui::EndChild();
@@ -227,17 +293,23 @@ std::optional<PixelCoord> ViewerWindow::draw(const std::optional<PixelDiagnostic
     if (ImGui::BeginChild("Inspector"))
     {
         ImGui::SeparatorText("Pixel inspector");
-        if ((selection && !report) || clicked)
+        if (session.selection() && !session.report())
         {
             ImGui::TextUnformatted("Inspecting pixel...");
         }
-        else if (report)
+        else if (const auto &report = session.report())
         {
             show_report(*report);
         }
         else if (texture_)
         {
             ImGui::TextWrapped("Click the image to inspect a pixel.");
+        }
+        ImGui::SeparatorText("Navigation");
+        ImGui::TextWrapped("Middle-drag to orbit\nShift + middle-drag to pan\nScroll to zoom\nF to frame selection");
+        if (texture_ && session.updating())
+        {
+            ImGui::TextDisabled("Updating view...");
         }
     }
     ImGui::EndChild();
@@ -252,6 +324,5 @@ std::optional<PixelCoord> ViewerWindow::draw(const std::optional<PixelDiagnostic
     {
         SDL_Delay(16);
     }
-    return clicked;
 }
 } // namespace formlight

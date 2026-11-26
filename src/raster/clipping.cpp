@@ -80,7 +80,8 @@ std::span<const RasterVertex> project_polygon(const PinholeCamera &camera, std::
 } // namespace
 
 std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
-                                                    std::span<const MeshInstance> instances, ViewDepthRange range)
+                                                    std::span<const MeshInstance> instances, ViewDepthRange range,
+                                                    std::stop_token stop)
 {
     if (!(range.near_depth > 0.0 && range.near_depth < range.far_depth))
     {
@@ -99,6 +100,10 @@ std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
         const auto to_view = [&](Vec3 p) { return camera.to_view(instance.transform.to_world_point(p)); };
         for (const auto &triangle : instance.triangles)
         {
+            if (stop.stop_requested())
+            {
+                throw std::runtime_error("Rendering cancelled");
+            }
             const auto &[a, b, c] = triangle.vertices;
             const std::array input{
                 ClipVertex{to_view(a.position), {1, 0, 0}},

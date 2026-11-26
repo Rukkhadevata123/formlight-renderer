@@ -51,6 +51,10 @@ export class PinholeCamera
 {
   public:
     PinholeCamera(const CameraView &view, ImageExtent extent);
+    [[nodiscard]] CameraView view() const noexcept
+    {
+        return view_;
+    }
     [[nodiscard]] ImageExtent extent() const noexcept
     {
         return extent_;
@@ -64,13 +68,13 @@ export class PinholeCamera
     [[nodiscard]] Ray ray_for_sample(ImagePoint sample) const noexcept;
 
   private:
-    Vec3 position_;
+    CameraView view_;
     Vec3 forward_{}, right_{}, up_{};
     ImageExtent extent_;
     double focal_length_pixels_{};
 };
 
-PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : position_(view.position), extent_(extent)
+PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : view_(view), extent_(extent)
 {
     if (extent.width <= 0 || extent.height <= 0)
     {
@@ -86,7 +90,7 @@ PinholeCamera::PinholeCamera(const CameraView &view, ImageExtent extent) : posit
         throw std::invalid_argument("Vertical field of view is too small for this image size");
     }
 
-    forward_ = unit_vector(view.target - position_, "Camera position and target must define a finite direction");
+    forward_ = unit_vector(view.target - view.position, "Camera position and target must define a finite direction");
     const Vec3 up_hint = unit_vector(view.up, "Camera up must be finite and nonzero");
     const Vec3 side = cross(forward_, up_hint);
     const double sine = std::sqrt(dot(side, side));
@@ -106,7 +110,7 @@ std::optional<ProjectedPoint> PinholeCamera::project(Vec3 world_point) const noe
 
 ViewPoint PinholeCamera::to_view(Vec3 world_point) const noexcept
 {
-    const Vec3 offset = world_point - position_;
+    const Vec3 offset = world_point - view_.position;
     return {dot(offset, right_), dot(offset, up_), dot(offset, forward_)};
 }
 
@@ -131,6 +135,6 @@ Ray PinholeCamera::ray_for_sample(ImagePoint sample) const noexcept
     const double x = (sample.x - extent_.width * 0.5) / focal_length_pixels_;
     const double y = (extent_.height * 0.5 - sample.y) / focal_length_pixels_;
     const Vec3 direction = forward_ + right_ * x + up_ * y;
-    return {.origin = position_, .direction = direction * (1.0 / std::sqrt(dot(direction, direction)))};
+    return {.origin = view_.position, .direction = direction * (1.0 / std::sqrt(dot(direction, direction)))};
 }
 } // namespace formlight

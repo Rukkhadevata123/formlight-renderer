@@ -4,6 +4,8 @@ import std;
 export import formlight.gltf;
 export import formlight.scene_config;
 export import formlight.raster;
+import formlight.ray_query;
+import formlight.shadow_map;
 
 namespace formlight
 {
@@ -22,7 +24,7 @@ export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
     scene.add_solid_mesh({Triangle{.vertices = {a, b, c}}, Triangle{.vertices = {a, c, d}}}, {0.4f, 0.4f, 0.4f, 1});
 }
 
-PreviewView clip_to_bounds(const PinholeCamera &camera, const Bounds3 &bounds, double minimum_near)
+export PreviewView clip_to_bounds(const PinholeCamera &camera, const Bounds3 &bounds, double minimum_near)
 {
     const double center = camera.to_view(bounds.center()).depth;
     const double radius = bounds.radius();
@@ -30,23 +32,31 @@ PreviewView clip_to_bounds(const PinholeCamera &camera, const Bounds3 &bounds, d
     return {camera, {near_depth, std::max(center + radius, 2 * minimum_near)}};
 }
 
+export [[nodiscard]] double framing_distance(double radius, ImageExtent extent, double fov)
+{
+    const double half_angle =
+        std::atan(std::tan(fov / 2) * std::min(1.0, static_cast<double>(extent.width) / extent.height));
+    return 1.05 * radius / std::sin(half_angle);
+}
+
 // Frame the subject, but include all scene geometry in the camera's depth range.
+PreviewView frame_bounds(Bounds3 bounds, Bounds3 subject, ImageExtent extent, double fov)
+{
+    const auto center = subject.center();
+    const double distance = framing_distance(subject.radius(), extent, fov);
+    constexpr CameraSettings defaults;
+    const Vec3 direction = unit_vector(defaults.position - defaults.target, "Invalid default camera direction");
+    const PinholeCamera camera{{center + direction * distance, center, defaults.up, fov}, extent};
+    return clip_to_bounds(camera, bounds, distance * 1e-5);
+}
+
 export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent extent,
                                              std::optional<Bounds3> subject = {},
                                              double fov = CameraSettings{}.vertical_fov_degrees *
                                                           (std::numbers::pi / 180))
 {
     const auto bounds = world_bounds(scene.instances());
-    const auto framing = subject.value_or(bounds);
-    const auto center = framing.center();
-    const double radius = framing.radius();
-    const double half_angle =
-        std::atan(std::tan(fov / 2) * std::min(1.0, static_cast<double>(extent.width) / extent.height));
-    const double distance = 1.05 * radius / std::sin(half_angle);
-    constexpr CameraSettings defaults;
-    const Vec3 direction = unit_vector(defaults.position - defaults.target, "Invalid default camera direction");
-    const PinholeCamera camera{{center + direction * distance, center, defaults.up, fov}, extent};
-    return clip_to_bounds(camera, bounds, distance * 1e-5);
+    return frame_bounds(bounds, subject.value_or(bounds), extent, fov);
 }
 
 export struct DiagnosticSurface
@@ -74,17 +84,44 @@ export struct PixelDiagnostic
     }
 };
 
+// Borrows a static scene. Camera changes and pixel inspections share the prepared shadow data.
+export class PreviewRenderer
+{
+  public:
+    explicit PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting = {});
+    [[nodiscard]] ColorImage render(const PreviewView &view, std::stop_token stop = {}) const;
+    [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
+
+  private:
+    [[nodiscard]] LinearColor shade(const RasterHit &hit, std::uint64_t pixel, const std::stop_token &stop,
+                                    PixelDiagnostic *record = nullptr) const;
+    [[nodiscard]] LightSample directional_sample(const DirectionalLighting &light, const MeshInstance &instance,
+                                                 const Triangle &face, Barycentrics weights, Vec3 normal,
+                                                 bool identify_blocker) const;
+    const GltfScene &scene_;
+    std::optional<PreviewLighting> lighting_;
+    std::optional<DirectionalShadowMap> shadow_map_;
+    TriangleBvh blockers_;
+};
+
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
                                                std::optional<PreviewLighting> lighting = std::nullopt,
-                                               std::stop_token stop = {});
+                                               std::stop_token stop = {})
+{
+    return PreviewRenderer{scene, std::move(lighting)}.render(view, stop);
+}
 export [[nodiscard]] PixelDiagnostic diagnose_pixel(const GltfScene &scene, const PreviewView &view, PixelCoord pixel,
                                                     std::optional<PreviewLighting> lighting = std::nullopt,
-                                                    std::stop_token stop = {});
+                                                    std::stop_token stop = {})
+{
+    return PreviewRenderer{scene, std::move(lighting)}.diagnose(view, pixel, stop);
+}
 
 export struct ScenePreview
 {
     GltfScene scene;
     PreviewView view;
+    Bounds3 bounds;
 };
 
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
@@ -100,27 +137,22 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
         subject = world_bounds(scene->instances());
         add_preview_ground(*scene, *subject);
     }
-    const auto view = [&]
-    {
-        if (request.camera)
-        {
-            const auto bounds = world_bounds(scene->instances());
-            return clip_to_bounds(*request.camera, bounds, bounds.radius() * 1e-5);
-        }
-        return frame_scene(*scene, request.extent, subject, request.vertical_fov_radians);
-    }();
-    return {std::move(*scene), view};
+    const auto bounds = world_bounds(scene->instances());
+    const auto view =
+        request.camera ? clip_to_bounds(*request.camera, bounds, bounds.radius() * 1e-5)
+                       : frame_bounds(bounds, subject.value_or(bounds), request.extent, request.vertical_fov_radians);
+    return {std::move(*scene), view, bounds};
 }
 
 export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)
 {
-    const auto [scene, view] = load_preview(request);
-    return render_preview(scene, view, request.lighting);
+    const auto preview = load_preview(request);
+    return render_preview(preview.scene, preview.view, request.lighting);
 }
 
 export [[nodiscard]] PixelDiagnostic diagnose_pixel(const RenderRequest &request, PixelCoord pixel)
 {
-    const auto [scene, view] = load_preview(request);
-    return diagnose_pixel(scene, view, pixel, request.lighting);
+    const auto preview = load_preview(request);
+    return diagnose_pixel(preview.scene, preview.view, pixel, request.lighting);
 }
 } // namespace formlight
