@@ -9,6 +9,7 @@ export module formlight.viewer.window;
 
 import std;
 import formlight.preview;
+import formlight.viewer.appearance;
 import formlight.viewer.session;
 import formlight.viewer.settings_panel;
 
@@ -112,8 +113,9 @@ void draw_image(SDL_Texture *texture, ImageRect rect, std::optional<PixelCoord> 
         const auto center = pixel_center(selection->x, selection->y);
         const ImVec2 mark{lo.x + static_cast<float>(center.x / texture->w) * (hi.x - lo.x),
                           lo.y + static_cast<float>(center.y / texture->h) * (hi.y - lo.y)};
-        draw->AddCircle(mark, 5.0f, IM_COL32_BLACK, 0, 3.0f);
-        draw->AddCircle(mark, 5.0f, IM_COL32_WHITE);
+        const float scale = ImGui::GetStyle().FontScaleDpi;
+        draw->AddCircle(mark, 5.0f * scale, IM_COL32_BLACK, 0, 3.0f * scale);
+        draw->AddCircle(mark, 5.0f * scale, IM_COL32_WHITE, 0, scale);
     }
 }
 
@@ -143,12 +145,24 @@ export class ViewerWindow
     std::unique_ptr<SDL_Texture, decltype(&SDL_DestroyTexture)> texture_{nullptr, SDL_DestroyTexture};
     bool vsync_{};
     std::int64_t max_texture_size_{};
+    ViewerAppearance appearance_;
     SettingsPanel settings_;
 };
 
 ViewerWindow::ViewerWindow(const char *title)
 {
-    window_.reset(SDL_CreateWindow(title, 1040, 640, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
+    const auto display = SDL_GetPrimaryDisplay();
+    const float content_scale = SDL_GetDisplayContentScale(display);
+    const float scale = content_scale > 0 ? content_scale : 1.0f;
+    int width = static_cast<int>(std::lround(1040 * scale));
+    int height = static_cast<int>(std::lround(640 * scale));
+    SDL_Rect usable;
+    if (SDL_GetDisplayUsableBounds(display, &usable))
+    {
+        width = std::min(width, usable.w);
+        height = std::min(height, usable.h);
+    }
+    window_.reset(SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
     require_sdl(window_ != nullptr, "SDL_CreateWindow");
     renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
     require_sdl(renderer_ != nullptr, "SDL_CreateRenderer");
@@ -158,9 +172,7 @@ ViewerWindow::ViewerWindow(const char *title)
     IMGUI_CHECKVERSION();
     context_.reset(ImGui::CreateContext());
     ImGui::GetIO().IniFilename = nullptr;
-    ImGui::GetIO().Fonts->AddFontDefaultVector();
-    ImGui::StyleColorsDark();
-    ImGui::GetStyle().FontSizeBase = 16.0f;
+    appearance_.initialize();
     require_sdl(ImGui_ImplSDL3_InitForSDLRenderer(window_.get(), renderer_.get()), "ImGui SDL3 platform");
     require_sdl(ImGui_ImplSDLRenderer3_Init(renderer_.get()), "ImGui SDL3 renderer");
 }
@@ -236,7 +248,8 @@ ViewportInput ViewerWindow::read_input(ImageRect rect, ImageExtent extent)
     }
     else if (drag_ == Drag::Orbit)
     {
-        input.orbit_pixels = {io.MouseDelta.x, io.MouseDelta.y};
+        const float scale = ImGui::GetStyle().FontScaleDpi;
+        input.orbit_pixels = {io.MouseDelta.x / scale, io.MouseDelta.y / scale};
     }
     else if (drag_ == Drag::Pan)
     {
@@ -255,6 +268,7 @@ void ViewerWindow::draw(ViewerSession &session)
     }
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    appearance_.update_scale(SDL_GetWindowDisplayScale(window_.get()), SDL_GetWindowPixelDensity(window_.get()));
     ImGui::NewFrame();
     const auto *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);

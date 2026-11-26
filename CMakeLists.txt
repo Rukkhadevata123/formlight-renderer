@@ -61,8 +61,13 @@ if(FORMLIGHT_BUILD_VIEWER)
     target_link_libraries(formlight_viewer_session PUBLIC formlight_gltf)
     add_executable(formlight-viewer src/viewer/main.cpp)
     target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES
-        src/viewer/settings_panel.cppm src/viewer/window.cppm)
+        src/viewer/appearance.cppm src/viewer/settings_panel.cppm src/viewer/window.cppm)
     target_link_libraries(formlight-viewer PRIVATE formlight_viewer_session formlight_io SDL3::SDL3 imgui::imgui)
+    add_custom_target(formlight_viewer_fonts
+        COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts" "$<TARGET_FILE_DIR:formlight-viewer>/fonts"
+        COMMENT "Copying viewer fonts" VERBATIM)
+    add_dependencies(formlight-viewer formlight_viewer_fonts)
 endif()
 
 include(CTest)
