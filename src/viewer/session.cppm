@@ -76,11 +76,12 @@ export class ViewerSession
         return draft_.light;
     }
     void apply_settings();
+    [[nodiscard]] SceneConfig scene_snapshot() const;
     // Consume input against the displayed view before publishing a replacement image.
     [[nodiscard]] const ColorImage *update(const ViewportInput &input, Clock::time_point now = Clock::now());
     [[nodiscard]] ImageExtent display_extent() const
     {
-        return frame_ ? frame_->request.full_extent : settings_.extent;
+        return frame_ ? frame_->request.full_extent : applied_.request.extent;
     }
     [[nodiscard]] auto selection() const
     {
@@ -130,8 +131,13 @@ export class ViewerSession
     void schedule_render(Clock::time_point now);
     [[nodiscard]] Quality navigation_quality(Clock::duration budget) const;
 
+    struct AppliedSettings
+    {
+        SceneConfig config;
+        RenderRequest request{prepare_render(config)};
+    };
     SceneConfig draft_;
-    RenderRequest settings_;
+    AppliedSettings applied_;
     std::unique_ptr<ViewerScene> scene_;
     std::optional<Frame> frame_;
     std::optional<PixelCoord> selection_;
@@ -148,19 +154,19 @@ export class ViewerSession
 };
 
 ViewerSession::ViewerSession(SceneConfig config)
-    : draft_(std::move(config)), settings_(prepare_render(draft_)),
-      loading_(0, [request = settings_](std::stop_token) { return std::make_unique<ViewerScene>(request); })
+    : draft_(std::move(config)), applied_{draft_},
+      loading_(0, [request = applied_.request](std::stop_token) { return std::make_unique<ViewerScene>(request); })
 {
 }
 
 void ViewerSession::apply_settings()
 {
-    auto settings = prepare_render(draft_);
+    AppliedSettings next{draft_};
     if (scene_)
     {
-        scene_->resize(settings.extent);
+        scene_->resize(next.request.extent);
     }
-    settings_ = std::move(settings);
+    applied_ = std::move(next);
     settings_revision_ = ++requested_;
     select(std::nullopt);
     if (rendering_)
@@ -170,6 +176,22 @@ void ViewerSession::apply_settings()
     refine_after_ = Clock::time_point::min();
     gesture_quality_ = Quality::Full;
     full_cost_ = light_center_cost_ = {};
+}
+
+SceneConfig ViewerSession::scene_snapshot() const
+{
+    if (!scene_)
+    {
+        throw std::logic_error("The scene camera is still loading");
+    }
+    auto snapshot = applied_.config;
+    const auto camera = scene_->preview.view.camera.view();
+    // Navigation changes the pose but preserves the authored vertical FOV in degrees.
+    snapshot.camera.auto_frame = false;
+    snapshot.camera.position = camera.position;
+    snapshot.camera.target = camera.target;
+    snapshot.camera.up = camera.up;
+    return snapshot;
 }
 
 void ViewerSession::select(std::optional<PixelCoord> pixel)
@@ -190,7 +212,8 @@ ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget)
     {
         return Quality::Full;
     }
-    const auto *area = settings_.lighting ? std::get_if<AreaLighting>(&*settings_.lighting) : nullptr;
+    const auto &lighting = applied_.request.lighting;
+    const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
     if (area && area->sampling.samples > 1 && light_center_cost_ <= budget)
     {
         return Quality::LightCenter;
@@ -264,7 +287,7 @@ void ViewerSession::schedule_render(Clock::time_point now)
     if (quality == Quality::HalfResolution)
     {
         // Round up so odd extents retain their last row/column and a one-pixel axis stays valid.
-        const auto [width, height] = settings_.extent;
+        const auto [width, height] = applied_.request.extent;
         const ImageExtent half{width / 2 + width % 2, height / 2 + height % 2};
         view.camera = PinholeCamera{view.camera.view(), half};
     }
@@ -274,8 +297,8 @@ void ViewerSession::schedule_render(Clock::time_point now)
     }
     auto renderer = frame_ ? frame_->result.renderer : PreviewRenderer{scene_->preview.scene};
     rendering_.emplace(
-        FrameRequest{requested_, quality, navigating, settings_.extent, view},
-        [renderer = std::move(renderer), lighting = settings_.lighting, view](std::stop_token stop) mutable
+        FrameRequest{requested_, quality, navigating, applied_.request.extent, view},
+        [renderer = std::move(renderer), lighting = applied_.request.lighting, view](std::stop_token stop) mutable
         {
             renderer.set_lighting(std::move(lighting));
             const auto start = Clock::now();
@@ -289,7 +312,7 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
     if (loading_.ready())
     {
         scene_ = loading_.take();
-        scene_->resize(settings_.extent);
+        scene_->resize(applied_.request.extent);
     }
     if (!scene_)
     {

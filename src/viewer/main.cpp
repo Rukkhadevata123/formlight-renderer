@@ -9,8 +9,7 @@ using namespace formlight;
 
 void view_scene(const std::filesystem::path &path)
 {
-    const auto title = std::format("Formlight | {}", path.filename().string());
-    ViewerWindow window{title.c_str()};
+    ViewerWindow window{path};
     ViewerSession session{load_scene_config(path)};
     while (window.poll())
     {

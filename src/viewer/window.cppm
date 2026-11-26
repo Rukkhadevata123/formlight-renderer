@@ -10,6 +10,7 @@ export module formlight.viewer.window;
 import std;
 import formlight.preview;
 import formlight.viewer.appearance;
+import formlight.viewer.save_dialog;
 import formlight.viewer.session;
 import formlight.viewer.settings_panel;
 
@@ -122,7 +123,7 @@ void draw_image(SDL_Texture *texture, ImageRect rect, std::optional<PixelCoord> 
 export class ViewerWindow
 {
   public:
-    explicit ViewerWindow(const char *title);
+    explicit ViewerWindow(const std::filesystem::path &scene_path);
     ViewerWindow(const ViewerWindow &) = delete;
     ViewerWindow &operator=(const ViewerWindow &) = delete;
     [[nodiscard]] bool poll();
@@ -147,9 +148,10 @@ export class ViewerWindow
     std::int64_t max_texture_size_{};
     ViewerAppearance appearance_;
     SettingsPanel settings_;
+    SceneSaveDialog save_dialog_;
 };
 
-ViewerWindow::ViewerWindow(const char *title)
+ViewerWindow::ViewerWindow(const std::filesystem::path &scene_path) : save_dialog_(scene_path)
 {
     const auto display = SDL_GetPrimaryDisplay();
     const float content_scale = SDL_GetDisplayContentScale(display);
@@ -162,7 +164,8 @@ ViewerWindow::ViewerWindow(const char *title)
         width = std::min(width, usable.w);
         height = std::min(height, usable.h);
     }
-    window_.reset(SDL_CreateWindow(title, width, height, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
+    window_.reset(SDL_CreateWindow(save_dialog_.window_title().c_str(), width, height,
+                                   SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
     require_sdl(window_ != nullptr, "SDL_CreateWindow");
     renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
     require_sdl(renderer_ != nullptr, "SDL_CreateRenderer");
@@ -179,6 +182,7 @@ ViewerWindow::ViewerWindow(const char *title)
 
 bool ViewerWindow::poll()
 {
+    bool open = true;
     SDL_Event event{};
     while (SDL_PollEvent(&event))
     {
@@ -186,10 +190,11 @@ bool ViewerWindow::poll()
         if (event.type == SDL_EVENT_QUIT ||
             (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED && event.window.windowID == SDL_GetWindowID(window_.get())))
         {
-            return false;
+            open = false;
         }
     }
-    return true;
+    save_dialog_.update(window_.get());
+    return open;
 }
 
 void ViewerWindow::upload(const ColorImage &image)
@@ -314,6 +319,7 @@ void ViewerWindow::draw(ViewerSession &session)
     if (ImGui::BeginChild("Inspector"))
     {
         settings_.draw(session, max_texture_size_);
+        save_dialog_.draw(window_.get(), session, texture_ != nullptr);
         ImGui::SeparatorText("Pixel inspector");
         if (session.selection() && !session.report())
         {

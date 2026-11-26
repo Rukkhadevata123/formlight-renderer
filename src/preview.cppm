@@ -26,10 +26,14 @@ export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
     scene.add_solid_mesh({Triangle{.vertices = {a, b, c}}, Triangle{.vertices = {a, c, d}}}, {0.4f, 0.4f, 0.4f, 1});
 }
 
-export PreviewView clip_to_bounds(const PinholeCamera &camera, const Bounds3 &bounds, double minimum_near)
+export PreviewView clip_to_bounds(const PinholeCamera &camera, const Bounds3 &bounds)
 {
     const double center = camera.to_view(bounds.center()).depth;
     const double radius = bounds.radius();
+    // A saved pose must clip identically when reopened, including close-ups inside the scene bounds.
+    const auto pose = camera.view();
+    const Vec3 offset = pose.position - pose.target;
+    const double minimum_near = 1e-5 * std::min(radius, std::hypot(offset.x, offset.y, offset.z));
     const double near_depth = std::max(minimum_near, center - radius);
     return {camera, {near_depth, std::max(center + radius, 2 * minimum_near)}};
 }
@@ -49,7 +53,7 @@ PreviewView frame_bounds(Bounds3 bounds, Bounds3 subject, ImageExtent extent, do
     constexpr CameraSettings defaults;
     const Vec3 direction = unit_vector(defaults.position - defaults.target, "Invalid default camera direction");
     const PinholeCamera camera{{center + direction * distance, center, defaults.up, fov}, extent};
-    return clip_to_bounds(camera, bounds, distance * 1e-5);
+    return clip_to_bounds(camera, bounds);
 }
 
 export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent extent,
@@ -143,7 +147,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     }
     const auto bounds = world_bounds(scene->instances());
     const auto view =
-        request.camera ? clip_to_bounds(*request.camera, bounds, bounds.radius() * 1e-5)
+        request.camera ? clip_to_bounds(*request.camera, bounds)
                        : frame_bounds(bounds, subject.value_or(bounds), request.extent, request.vertical_fov_radians);
     return {std::move(*scene), view, bounds};
 }

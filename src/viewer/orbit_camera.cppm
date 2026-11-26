@@ -96,6 +96,6 @@ PreviewView OrbitCamera::view(const Bounds3 &scene) const
 {
     const auto basis = axes();
     const PinholeCamera camera{{target_ + basis.back * distance_, target_, basis.up, fov_}, extent_};
-    return clip_to_bounds(camera, scene, distance_ * 1e-5);
+    return clip_to_bounds(camera, scene);
 }
 } // namespace formlight

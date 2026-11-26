@@ -48,7 +48,10 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIAN
     target_link_libraries(formlight_gltf PRIVATE "${clang_builtins}")
 endif()
 
-add_executable(formlight-renderer src/main.cpp src/cli/pixel_report.cpp)
+if(WIN32)
+    set(formlight_app_manifest src/windows/utf8.manifest)
+endif()
+add_executable(formlight-renderer src/main.cpp src/cli/pixel_report.cpp ${formlight_app_manifest})
 target_sources(formlight-renderer PRIVATE FILE_SET CXX_MODULES FILES src/cli/render_options.cppm)
 target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_io)
 
@@ -59,9 +62,9 @@ if(FORMLIGHT_BUILD_VIEWER)
     target_sources(formlight_viewer_session PUBLIC FILE_SET CXX_MODULES FILES
         src/viewer/orbit_camera.cppm src/viewer/session.cppm)
     target_link_libraries(formlight_viewer_session PUBLIC formlight_gltf)
-    add_executable(formlight-viewer src/viewer/main.cpp)
+    add_executable(formlight-viewer src/viewer/main.cpp ${formlight_app_manifest})
     target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES
-        src/viewer/appearance.cppm src/viewer/settings_panel.cppm src/viewer/window.cppm)
+        src/viewer/appearance.cppm src/viewer/save_dialog.cppm src/viewer/settings_panel.cppm src/viewer/window.cppm)
     target_link_libraries(formlight-viewer PRIVATE formlight_viewer_session formlight_io SDL3::SDL3 imgui::imgui)
     add_custom_target(formlight_viewer_fonts
         COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different

@@ -153,7 +153,18 @@ void check_frame_replacement(const std::filesystem::path &asset)
     session.light_settings() = config.light;
     session.render_settings() = config.render;
     session.apply_settings();
-    check_image(await_frame(session, now), config);
+    // Save before this pose is published, with newer edits still in the panel.
+    session.light_settings().width = 9;
+    session.render_settings().sampling.samples = 0;
+    const auto snapshot = session.scene_snapshot();
+    if (snapshot.camera.auto_frame || snapshot.light.width != config.light.width ||
+        snapshot.render.sampling.samples != config.render.sampling.samples)
+    {
+        throw std::runtime_error("Scene snapshot lost the explicit camera or applied settings");
+    }
+    const auto &edited = await_frame(session, now);
+    check_image(edited, config);
+    check_image(edited, snapshot);
 }
 } // namespace
 
