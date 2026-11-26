@@ -54,9 +54,19 @@ struct ViewerScene
     ScenePreview preview;
     OrbitCamera orbit;
 
-    void resize(ImageExtent extent)
+    void resize(ImageExtent extent, bool auto_frame)
     {
         auto &camera = preview.view.camera;
+        if (camera.extent().width == extent.width && camera.extent().height == extent.height)
+        {
+            return;
+        }
+        if (auto_frame)
+        {
+            preview.view = frame_bounds(preview.bounds, preview.subject, extent, camera.view().vertical_fov_radians);
+            orbit = OrbitCamera{preview.view.camera};
+            return;
+        }
         camera = PinholeCamera{camera.view(), extent};
         orbit.resize(extent);
     }
@@ -67,6 +77,10 @@ export class ViewerSession
   public:
     using Clock = std::chrono::steady_clock;
     explicit ViewerSession(SceneConfig config);
+    [[nodiscard]] const SceneConfig &applied_config() const
+    {
+        return applied_.config;
+    }
     [[nodiscard]] RenderSettings &render_settings()
     {
         return draft_.render;
@@ -164,7 +178,7 @@ void ViewerSession::apply_settings()
     AppliedSettings next{draft_};
     if (scene_)
     {
-        scene_->resize(next.request.extent);
+        scene_->resize(next.request.extent, !frame_ && next.config.camera.auto_frame);
     }
     applied_ = std::move(next);
     settings_revision_ = ++requested_;
@@ -312,7 +326,7 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
     if (loading_.ready())
     {
         scene_ = loading_.take();
-        scene_->resize(applied_.request.extent);
+        scene_->resize(applied_.request.extent, applied_.config.camera.auto_frame);
     }
     if (!scene_)
     {

@@ -49,7 +49,7 @@ export [[nodiscard]] double framing_distance(double radius, ImageExtent extent, 
 }
 
 // Frame the subject, but include all scene geometry in the camera's depth range.
-PreviewView frame_bounds(Bounds3 bounds, Bounds3 subject, ImageExtent extent, double fov)
+export [[nodiscard]] PreviewView frame_bounds(Bounds3 bounds, Bounds3 subject, ImageExtent extent, double fov)
 {
     const auto center = subject.center();
     const double distance = framing_distance(subject.radius(), extent, fov);
@@ -133,6 +133,7 @@ export struct ScenePreview
     GltfScene scene;
     PreviewView view;
     Bounds3 bounds;
+    Bounds3 subject;
 };
 
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
@@ -142,17 +143,16 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     {
         throw std::runtime_error(scene.error());
     }
-    std::optional<Bounds3> subject;
+    const auto subject = world_bounds(scene->instances());
+    auto bounds = subject;
     if (request.ground)
     {
-        subject = world_bounds(scene->instances());
-        add_preview_ground(*scene, *subject);
+        add_preview_ground(*scene, subject);
+        bounds = world_bounds(scene->instances());
     }
-    const auto bounds = world_bounds(scene->instances());
-    const auto view =
-        request.camera ? clip_to_bounds(*request.camera, bounds)
-                       : frame_bounds(bounds, subject.value_or(bounds), request.extent, request.vertical_fov_radians);
-    return {std::move(*scene), view, bounds};
+    const auto view = request.camera ? clip_to_bounds(*request.camera, bounds)
+                                     : frame_bounds(bounds, subject, request.extent, request.vertical_fov_radians);
+    return {std::move(*scene), view, bounds, subject};
 }
 
 export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)

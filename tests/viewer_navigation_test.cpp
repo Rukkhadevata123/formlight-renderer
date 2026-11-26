@@ -1,5 +1,6 @@
 import std;
 import formlight.preview;
+import formlight.viewer.document;
 import formlight.viewer.orbit_camera;
 import formlight.viewer.session;
 
@@ -66,7 +67,9 @@ void check_frame_replacement(const std::filesystem::path &asset)
     config.camera.position = {0.25, 0, 4};
     config.camera.target = {0.25, 0, 0};
     const auto request = prepare_render(config);
-    ViewerSession session{config};
+    const auto source = asset.parent_path() / "scene.toml";
+    ViewerDocument document{source, config};
+    auto &session = document.session();
     auto now = ViewerSession::Clock::now();
     if (await_frame(session, now).extent().width != 81 || session.updating())
     {
@@ -165,6 +168,40 @@ void check_frame_replacement(const std::filesystem::path &asset)
     const auto &edited = await_frame(session, now);
     check_image(edited, config);
     check_image(edited, snapshot);
+
+    const auto finish_open = [&]
+    {
+        const ColorImage *image = nullptr;
+        while (document.opening_model())
+        {
+            image = document.update({});
+            std::this_thread::sleep_for(std::chrono::milliseconds{1});
+        }
+        return image;
+    };
+    document.open_model(asset / "missing.glb");
+    if (finish_open() || document.open_error().empty() || document.display_path() != source ||
+        document.session().scene_snapshot().camera.position != snapshot.camera.position)
+    {
+        throw std::runtime_error("Failed model import replaced the current scene");
+    }
+
+    document.open_model(asset);
+    session.render_settings().sampling.samples = 4;
+    session.render_settings().extent = {43, 67};
+    document.apply_settings();           // This edit must reach the first frame of the new asset.
+    session.light_settings().width = -1; // An unapplied draft survives the switch.
+    const auto *opened = finish_open();
+    if (!opened || !document.open_error().empty() || document.display_path() != asset ||
+        document.session().light_settings().width != -1)
+    {
+        throw std::runtime_error("Model replacement failed to commit the first frame or preserve the draft");
+    }
+    config.camera.auto_frame = true;
+    config.render.sampling.samples = 4;
+    config.render.extent = {43, 67};
+    config.light.width = 9; // The earlier unapplied width was accepted by Apply during this load.
+    check_image(*opened, config);
 }
 } // namespace
 

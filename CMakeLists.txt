@@ -60,11 +60,11 @@ if(FORMLIGHT_BUILD_VIEWER)
     find_package(imgui CONFIG REQUIRED)
     add_library(formlight_viewer_session STATIC)
     target_sources(formlight_viewer_session PUBLIC FILE_SET CXX_MODULES FILES
-        src/viewer/orbit_camera.cppm src/viewer/session.cppm)
+        src/viewer/orbit_camera.cppm src/viewer/session.cppm src/viewer/document.cppm)
     target_link_libraries(formlight_viewer_session PUBLIC formlight_gltf)
     add_executable(formlight-viewer src/viewer/main.cpp ${formlight_app_manifest})
     target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES
-        src/viewer/appearance.cppm src/viewer/save_dialog.cppm src/viewer/settings_panel.cppm src/viewer/window.cppm)
+        src/viewer/appearance.cppm src/viewer/file_dialogs.cppm src/viewer/settings_panel.cppm src/viewer/window.cppm)
     target_link_libraries(formlight-viewer PRIVATE formlight_viewer_session formlight_io SDL3::SDL3 imgui::imgui)
     add_custom_target(formlight_viewer_fonts
         COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different

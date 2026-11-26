@@ -6,7 +6,7 @@ export module formlight.viewer.settings_panel;
 
 import std;
 import formlight.scene_config;
-import formlight.viewer.session;
+import formlight.viewer.document;
 
 namespace formlight
 {
@@ -139,8 +139,9 @@ bool edit_group(const char *name, ConfigGroup auto &group, InvalidIntegers &inva
 export class SettingsPanel
 {
   public:
-    void draw(ViewerSession &session, std::int64_t max_texture_size)
+    void draw(ViewerDocument &document, std::int64_t max_texture_size)
     {
+        auto &session = document.session();
         ImGui::PushItemFlag(ImGuiItemFlags_LiveEditOnInput, true);
         const bool render_changed = edit_group("Render", session.render_settings(), invalid_);
         const bool light_changed = edit_group("Light", session.light_settings(), invalid_);
@@ -161,7 +162,7 @@ export class SettingsPanel
                     throw std::invalid_argument(
                         std::format("The display supports render.width and render.height up to {}.", max_texture_size));
                 }
-                session.apply_settings();
+                document.apply_settings();
                 dirty_ = false;
             }
             catch (const std::invalid_argument &error)

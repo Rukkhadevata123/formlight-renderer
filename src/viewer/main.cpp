@@ -1,5 +1,5 @@
 import std;
-import formlight.viewer.session;
+import formlight.viewer.document;
 import formlight.scene_toml;
 import formlight.viewer.window;
 
@@ -9,11 +9,11 @@ using namespace formlight;
 
 void view_scene(const std::filesystem::path &path)
 {
-    ViewerWindow window{path};
-    ViewerSession session{load_scene_config(path)};
+    ViewerDocument document{path, load_scene_config(path)};
+    ViewerWindow window{document};
     while (window.poll())
     {
-        window.draw(session);
+        window.draw();
     }
 }
 } // namespace

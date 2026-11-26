@@ -10,7 +10,8 @@ export module formlight.viewer.window;
 import std;
 import formlight.preview;
 import formlight.viewer.appearance;
-import formlight.viewer.save_dialog;
+import formlight.viewer.document;
+import formlight.viewer.file_dialogs;
 import formlight.viewer.session;
 import formlight.viewer.settings_panel;
 
@@ -123,11 +124,11 @@ void draw_image(SDL_Texture *texture, ImageRect rect, std::optional<PixelCoord> 
 export class ViewerWindow
 {
   public:
-    explicit ViewerWindow(const std::filesystem::path &scene_path);
+    explicit ViewerWindow(ViewerDocument &document);
     ViewerWindow(const ViewerWindow &) = delete;
     ViewerWindow &operator=(const ViewerWindow &) = delete;
     [[nodiscard]] bool poll();
-    void draw(ViewerSession &session);
+    void draw();
 
   private:
     enum class Drag
@@ -148,10 +149,12 @@ export class ViewerWindow
     std::int64_t max_texture_size_{};
     ViewerAppearance appearance_;
     SettingsPanel settings_;
-    SceneSaveDialog save_dialog_;
+    ViewerDocument &document_;
+    SceneFileDialogs files_;
+    std::filesystem::path title_path_;
 };
 
-ViewerWindow::ViewerWindow(const std::filesystem::path &scene_path) : save_dialog_(scene_path)
+ViewerWindow::ViewerWindow(ViewerDocument &document) : document_(document), title_path_(document.display_path())
 {
     const auto display = SDL_GetPrimaryDisplay();
     const float content_scale = SDL_GetDisplayContentScale(display);
@@ -164,7 +167,7 @@ ViewerWindow::ViewerWindow(const std::filesystem::path &scene_path) : save_dialo
         width = std::min(width, usable.w);
         height = std::min(height, usable.h);
     }
-    window_.reset(SDL_CreateWindow(save_dialog_.window_title().c_str(), width, height,
+    window_.reset(SDL_CreateWindow(SceneFileDialogs::window_title(document).c_str(), width, height,
                                    SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
     require_sdl(window_ != nullptr, "SDL_CreateWindow");
     renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
@@ -193,7 +196,7 @@ bool ViewerWindow::poll()
             open = false;
         }
     }
-    save_dialog_.update(window_.get());
+    files_.update(document_);
     return open;
 }
 
@@ -264,7 +267,7 @@ ViewportInput ViewerWindow::read_input(ImageRect rect, ImageExtent extent)
     return input;
 }
 
-void ViewerWindow::draw(ViewerSession &session)
+void ViewerWindow::draw()
 {
     if ((SDL_GetWindowFlags(window_.get()) & SDL_WINDOW_MINIMIZED) != 0)
     {
@@ -291,16 +294,22 @@ void ViewerWindow::draw(ViewerSession &session)
     ViewportInput input;
     if (show_image && texture_)
     {
-        const auto rect = fit_image(origin, space, session.display_extent());
+        const auto rect = fit_image(origin, space, document_.session().display_extent());
         ImGui::SetCursorScreenPos(rect.lo);
         ImGui::InvisibleButton("##image", {rect.hi.x - rect.lo.x, rect.hi.y - rect.lo.y},
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
         input = read_input(rect, {texture_->w, texture_->h});
     }
-    if (const auto *image = session.update(input))
+    if (const auto *image = document_.update(input))
     {
         upload(*image);
     }
+    if (title_path_ != document_.display_path())
+    {
+        title_path_ = document_.display_path();
+        SDL_SetWindowTitle(window_.get(), SceneFileDialogs::window_title(document_).c_str());
+    }
+    const auto &session = document_.session();
     if (show_image)
     {
         // A newly published frame may have a different aspect ratio from the image just picked.
@@ -318,8 +327,8 @@ void ViewerWindow::draw(ViewerSession &session)
     ImGui::SameLine();
     if (ImGui::BeginChild("Inspector"))
     {
-        settings_.draw(session, max_texture_size_);
-        save_dialog_.draw(window_.get(), session, texture_ != nullptr);
+        settings_.draw(document_, max_texture_size_);
+        files_.draw(window_.get(), document_, texture_ != nullptr);
         ImGui::SeparatorText("Pixel inspector");
         if (session.selection() && !session.report())
         {
