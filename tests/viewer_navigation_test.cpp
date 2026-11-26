@@ -52,23 +52,26 @@ void check_frame_replacement(const std::filesystem::path &asset)
         throw std::runtime_error("Expected an initial full-quality frame");
     }
     (void)session.update({.orbit_pixels = {40, 0}}, now);
-    // Submit a new pose on every poll. At least two previews must finish during this drag.
+    // Submit a new pose on every poll. Navigation must keep publishing, even at full quality.
     double dx = 0.002;
     for (int frames = 0; frames < 2;)
     {
         if (const auto *image = session.update({.pan_heights = {dx, 0}}, now))
         {
-            if (!session.showing_preview() || image->extent().width != 41 || image->extent().height != 31)
+            const auto [w, h] = image->extent();
+            if (!(w == 81 && h == 61) && !(session.showing_preview() && w == 41 && h == 31))
             {
-                throw std::runtime_error("Expected half-resolution feedback while moving");
+                throw std::runtime_error("Unexpected navigation frame dimensions");
             }
             ++frames;
         }
         dx = -dx;
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
-    constexpr PixelCoord center{20, 15};
-    const auto preview_color = await_frame(session, now)[center.y, center.x];
+    const auto &navigation = await_frame(session, now);
+    const PixelCoord center{navigation.extent().width / 2, navigation.extent().height / 2};
+    const auto preview_color = navigation[center.y, center.x];
+    const auto expected_samples = session.showing_preview() ? 1u : config.render.sampling.samples;
     (void)session.update({.picked = center}, now);
     while (!session.report())
     {
@@ -76,8 +79,8 @@ void check_frame_replacement(const std::filesystem::path &asset)
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
     const auto &pick = *session.report();
-    if (!pick.surface || pick.surface->hit.surface.id.instance != InstanceId{1} || pick.samples.size() != 1 ||
-        pick.sampling_seed != 7 ||
+    if (!pick.surface || pick.surface->hit.surface.id.instance != InstanceId{1} ||
+        pick.samples.size() != expected_samples || pick.sampling_seed != 7 ||
         std::tie(preview_color.r, preview_color.g, preview_color.b) !=
             std::tie(pick.color.r, pick.color.g, pick.color.b))
     {
@@ -86,14 +89,14 @@ void check_frame_replacement(const std::filesystem::path &asset)
     (void)session.update({.focus = true}, now);
     (void)await_frame(session, now);
     now += std::chrono::seconds{1};
-    (void)session.update({}, now); // Start refining the focused pose, then interrupt with another gesture.
+    (void)session.update({}, now); // Allow any refinement of the focused pose, then interrupt with another gesture.
     (void)session.update({.wheel = 1}, now);
-    (void)await_frame(session, now);
-    if (!session.showing_preview() || session.selection() || session.report())
+    const auto &zoomed = await_frame(session, now);
+    if (session.selection() || session.report())
     {
         throw std::runtime_error("Old refinement or selection survived a new gesture");
     }
-    const auto &latest = await_frame(session, now + std::chrono::seconds{1});
+    const auto &latest = session.showing_preview() ? await_frame(session, now + std::chrono::seconds{1}) : zoomed;
     if (session.updating() || latest.extent().width != 81 || latest.extent().height != 61)
     {
         throw std::runtime_error("The settled camera did not return to full resolution");

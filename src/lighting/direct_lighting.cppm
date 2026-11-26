@@ -12,6 +12,12 @@ export struct LightSampling
     std::uint64_t seed{};
 };
 
+export enum class AreaLightPattern
+{
+    ShiftedHalton,
+    Center
+};
+
 export enum class ShadowState
 {
     ZeroWeight,
@@ -82,18 +88,27 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 
 export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, const SurfaceRayOrigin &receiver,
                                                 Vec3 unit_normal, LightSampling sampling, std::uint64_t pixel,
-                                                const TriangleBvh &blockers, std::vector<LightSample> *record = nullptr,
+                                                const TriangleBvh &blockers,
+                                                AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
+                                                std::vector<LightSample> *record = nullptr,
                                                 const std::stop_token &stop = {})
 {
     if (sampling.samples == 0)
     {
         throw std::invalid_argument("Light sample count must be positive");
     }
-    const std::uint64_t bits = mix_bits(mix_bits(pixel + 1) ^ sampling.seed);
-    const double shift_u = static_cast<double>(bits >> 32) * 0x1p-32;
-    const double shift_v = static_cast<double>(static_cast<std::uint32_t>(bits)) * 0x1p-32;
+    // Halton sample zero is exactly its shift. A shared midpoint gives navigation a stable hard shadow.
+    double shift_u = 0.5, shift_v = 0.5;
+    std::uint32_t count = 1;
+    if (pattern == AreaLightPattern::ShiftedHalton)
+    {
+        const std::uint64_t bits = mix_bits(mix_bits(pixel + 1) ^ sampling.seed);
+        shift_u = static_cast<double>(bits >> 32) * 0x1p-32;
+        shift_v = static_cast<double>(static_cast<std::uint32_t>(bits)) * 0x1p-32;
+        count = sampling.samples;
+    }
     double sum = 0;
-    for (std::uint32_t i = 0; i < sampling.samples; ++i)
+    for (std::uint32_t i = 0; i < count; ++i)
     {
         if ((i % 256 == 0) && stop.stop_requested())
         {
@@ -112,6 +127,6 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
             record->push_back(evaluated);
         }
     }
-    return sum / sampling.samples;
+    return sum / count;
 }
 } // namespace formlight

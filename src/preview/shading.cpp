@@ -1,3 +1,8 @@
+module;
+
+#include <oneapi/tbb/parallel_for.h>
+#include <oneapi/tbb/task_group.h>
+
 module formlight.preview;
 
 import std;
@@ -35,7 +40,7 @@ PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLi
     }
 }
 
-LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, std::uint32_t area_sample_limit,
+LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, AreaLightPattern area_light_pattern,
                                    const std::stop_token &stop, PixelDiagnostic *record) const
 {
     const auto &[id, weights] = hit.surface;
@@ -59,10 +64,9 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, st
             record->light = LightKind::Rectangle;
             record->sampling_seed = area->sampling.seed;
         }
-        const LightSampling sampling{std::min(area->sampling.samples, area_sample_limit), area->sampling.seed};
         const double weight =
-            sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal, sampling, pixel,
-                                blockers_, record ? &record->samples : nullptr, stop);
+            sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal, area->sampling, pixel,
+                                blockers_, area_light_pattern, record ? &record->samples : nullptr, stop);
         return scale_rgb(base, weight);
     }
 
@@ -122,7 +126,8 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
         }
         triangle.rasterize(visible);
     }
-    for (int y = 0; y < extent.height; ++y)
+    // Visibility is complete; each worker shades disjoint pixels against the same read-only scene.
+    const auto shade_row = [&](int y)
     {
         if (stop.stop_requested())
         {
@@ -132,10 +137,13 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
         {
             if (const auto &hit = visible[y, x])
             {
-                image[y, x] = shade(*hit, pixel_index({x, y}, extent), view.area_sample_limit, stop);
+                image[y, x] = shade(*hit, pixel_index({x, y}, extent), view.area_light_pattern, stop);
             }
         }
-    }
+    };
+    // Only the render's stop token may interrupt the frame; a cancelled outer TBB task could skip rows.
+    oneapi::tbb::task_group_context frame_tasks{oneapi::tbb::task_group_context::isolated};
+    oneapi::tbb::parallel_for(0, extent.height, shade_row, frame_tasks);
     return image;
 }
 
@@ -164,7 +172,7 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
     PixelDiagnostic report{.pixel = pixel, .color = background};
     if (nearest)
     {
-        report.color = shade(*nearest, pixel_index(pixel, extent), view.area_sample_limit, stop, &report);
+        report.color = shade(*nearest, pixel_index(pixel, extent), view.area_light_pattern, stop, &report);
     }
     return report;
 }

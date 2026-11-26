@@ -42,6 +42,18 @@ bool check_area_light()
         Triangle{.vertices = {TriangleVertex{{-8, 0, -8}}, TriangleVertex{{0, 0, 8}}, TriangleVertex{{8, 0, -8}}}}};
     const MeshInstance floor{InstanceId{0}, mesh};
     const SurfaceRayOrigin receiver{floor, mesh.front(), {0.25, 0.5, 0.25}};
+    // Adjacent pixels on this flat receiver should both see the unit-weight light center during navigation.
+    for (const auto pixel : {40u, 41u})
+    {
+        std::vector<LightSample> samples;
+        const double weight =
+            sample_area_diffuse(light, receiver, up, {16, 7}, pixel, {}, AreaLightPattern::Center, &samples);
+        if (samples.size() != 1 || std::abs(weight - 1) > 1e-12)
+        {
+            std::cerr << "Navigation samples must hit the same rectangle center at every pixel\n";
+            return false;
+        }
+    }
     const auto with_panel = [&](double height)
     {
         const std::array panels{MeshInstance{InstanceId{1}, mesh, {Basis3{}, {0, height, 0}}}};

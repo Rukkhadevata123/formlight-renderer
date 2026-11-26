@@ -49,12 +49,15 @@ struct ViewerScene
     explicit ViewerScene(const RenderRequest &request)
         : preview(load_preview(request)), renderer(preview.scene, request.lighting), orbit(preview.view.camera)
     {
+        const auto *area = request.lighting ? std::get_if<AreaLighting>(&*request.lighting) : nullptr;
+        can_reduce_samples = area && area->sampling.samples > 1;
     }
     ViewerScene(const ViewerScene &) = delete;
     ViewerScene &operator=(const ViewerScene &) = delete;
     ScenePreview preview;
     PreviewRenderer renderer;
     OrbitCamera orbit;
+    bool can_reduce_samples{};
 };
 
 export class ViewerSession
@@ -82,20 +85,27 @@ export class ViewerSession
     }
     [[nodiscard]] bool showing_preview() const
     {
-        return frame_ && frame_->request.quality == Quality::Interactive;
+        return frame_ && frame_->request.quality != Quality::Full;
     }
 
   private:
     enum class Quality
     {
-        Interactive,
-        Full
+        Full,
+        LightCenter,
+        HalfResolution
     };
     struct FrameRequest
     {
         std::uint64_t revision;
         Quality quality;
+        bool navigation;
         PreviewView view;
+    };
+    struct TimedImage
+    {
+        ColorImage image;
+        Clock::duration elapsed;
     };
     struct Frame
     {
@@ -105,6 +115,7 @@ export class ViewerSession
     void select(std::optional<PixelCoord> pixel);
     void navigate(const ViewportInput &input, Clock::time_point now);
     void schedule_render(Clock::time_point now);
+    [[nodiscard]] Quality navigation_quality(Clock::duration budget) const;
 
     ImageExtent extent_;
     std::unique_ptr<ViewerScene> scene_;
@@ -114,9 +125,11 @@ export class ViewerSession
     bool focus_pending_{};
     std::uint64_t requested_{1}, pick_revision_{};
     Clock::time_point refine_after_{Clock::time_point::min()};
+    Quality gesture_quality_{Quality::Full};
+    Clock::duration full_cost_{}, light_center_cost_{};
     // Destroy workers before the scene and published frame.
     PreviewJob<std::unique_ptr<ViewerScene>> loading_;
-    std::optional<PreviewJob<ColorImage, FrameRequest>> rendering_;
+    std::optional<PreviewJob<TimedImage, FrameRequest>> rendering_;
     std::optional<PreviewJob<PixelDiagnostic>> inspecting_;
 };
 
@@ -136,6 +149,19 @@ void ViewerSession::select(std::optional<PixelCoord> pixel)
     {
         inspecting_->cancel();
     }
+}
+
+ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget) const
+{
+    if (full_cost_ <= budget)
+    {
+        return Quality::Full;
+    }
+    if (scene_->can_reduce_samples && light_center_cost_ <= budget)
+    {
+        return Quality::LightCenter;
+    }
+    return Quality::HalfResolution;
 }
 
 void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
@@ -171,8 +197,17 @@ void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
     {
         scene_->preview.view = camera.view(scene_->preview.bounds);
         ++requested_;
+        // Start with headroom for presentation. During a drag, only downgrade on sustained slow frames.
+        if (now >= refine_after_)
+        {
+            gesture_quality_ = navigation_quality(std::chrono::milliseconds{25});
+        }
+        else
+        {
+            gesture_quality_ = std::max(gesture_quality_, navigation_quality(std::chrono::milliseconds{40}));
+        }
         refine_after_ = now + std::chrono::milliseconds{120};
-        if (rendering_ && rendering_->request.quality == Quality::Full)
+        if (rendering_ && !rendering_->request.navigation)
         {
             rendering_->cancel();
         }
@@ -186,22 +221,29 @@ void ViewerSession::schedule_render(Clock::time_point now)
         return;
     }
     auto view = scene_->preview.view;
-    auto quality = Quality::Full;
-    if (frame_ && frame_->request.revision != requested_)
+    const bool navigating = frame_ && frame_->request.revision != requested_;
+    if (!navigating && now < refine_after_)
+    {
+        return;
+    }
+    const Quality quality = navigating ? gesture_quality_ : Quality::Full;
+    if (quality == Quality::HalfResolution)
     {
         // Round up so odd extents retain their last row/column and a one-pixel axis stays valid.
         const ImageExtent half{extent_.width / 2 + extent_.width % 2, extent_.height / 2 + extent_.height % 2};
         view.camera = PinholeCamera{view.camera.view(), half};
-        view.area_sample_limit = 1;
-        quality = Quality::Interactive;
     }
-    else if (now < refine_after_)
+    if (quality != Quality::Full)
     {
-        return;
+        view.area_light_pattern = AreaLightPattern::Center;
     }
-    rendering_.emplace(FrameRequest{requested_, quality, view},
+    rendering_.emplace(FrameRequest{requested_, quality, navigating, view},
                        [&renderer = scene_->renderer, view](std::stop_token stop)
-                       { return renderer.render(view, stop); });
+                       {
+                           const auto start = Clock::now();
+                           auto image = renderer.render(view, stop);
+                           return TimedImage{std::move(image), Clock::now() - start};
+                       });
 }
 
 const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_point now)
@@ -236,11 +278,16 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
     const ColorImage *published = nullptr;
     if (rendering_ && rendering_->ready())
     {
-        // Finish the in-flight preview while input accumulates. A full render must still match the desired pose.
+        // Even a full-quality navigation frame may finish while more input accumulates.
         const auto &request = rendering_->request;
-        if (request.quality == Quality::Interactive || request.revision == requested_)
+        if (request.navigation || request.revision == requested_)
         {
-            frame_ = Frame{request, rendering_->take()};
+            auto [image, elapsed] = rendering_->take();
+            // A half-size preview has about a quarter of the native pixel count.
+            const auto estimate = request.quality == Quality::HalfResolution ? 4 * elapsed : elapsed;
+            auto &cost = request.quality == Quality::Full ? full_cost_ : light_center_cost_;
+            cost = frame_ ? cost + (estimate - cost) / 4 : estimate;
+            frame_ = Frame{request, std::move(image)};
             select(std::nullopt);
             published = &frame_->image;
         }

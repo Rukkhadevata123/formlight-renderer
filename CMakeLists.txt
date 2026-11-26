@@ -7,6 +7,7 @@ project(formlight-renderer LANGUAGES C CXX)
 
 find_package(fastgltf CONFIG REQUIRED)
 find_package(Stb REQUIRED)
+find_package(TBB CONFIG REQUIRED COMPONENTS tbb)
 find_package(tomlplusplus CONFIG REQUIRED)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -39,7 +40,7 @@ target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
 add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
-target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_io)
+target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_io TBB::tbb)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
     execute_process(COMMAND "${CMAKE_CXX_COMPILER}" --rtlib=compiler-rt --print-libgcc-file-name
@@ -81,7 +82,7 @@ if(BUILD_TESTING)
     add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
 
     add_executable(scene_config_test tests/scene_config_test.cpp)
-    target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf)
+    target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
     add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/box-area-light.toml")
 
     if(FORMLIGHT_BUILD_VIEWER)

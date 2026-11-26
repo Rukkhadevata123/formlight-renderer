@@ -1,3 +1,5 @@
+#include <oneapi/tbb/task_arena.h>
+
 import std;
 import formlight.scene_toml;
 import formlight.preview;
@@ -15,7 +17,8 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.camera.target = {0, -0.2, 0};
     config.light.width = 0.75;
 
-    const auto before = render_scene(prepare_render(config));
+    // Change worker counts across the round trip; fixed samples must give identical linear pixels.
+    const auto before = oneapi::tbb::task_arena{1}.execute([&] { return render_scene(prepare_render(config)); });
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     if (!std::filesystem::equivalent(config.scene.asset, loaded.scene.asset) ||
@@ -23,7 +26,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     {
         throw std::runtime_error("Save As lost the asset reference, camera, or full-width seed");
     }
-    const auto after = render_scene(prepare_render(loaded));
+    const auto after = oneapi::tbb::task_arena{4}.execute([&] { return render_scene(prepare_render(loaded)); });
     if (after.extent().width != before.extent().width || after.extent().height != before.extent().height)
     {
         throw std::runtime_error("Image extent changed after Save As");
