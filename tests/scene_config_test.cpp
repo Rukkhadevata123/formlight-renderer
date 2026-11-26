@@ -19,8 +19,14 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
 
     // Change worker counts across the round trip; fixed samples must give identical linear pixels.
     const auto before = oneapi::tbb::task_arena{1}.execute([&] { return render_scene(prepare_render(config)); });
+    config.display.exposure_ev = -2;
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
+    // Two stops down brings an HDR value of 2 back to 0.5 before sRGB encoding.
+    if (DisplayTransform{loaded.display}.rgb8({2, 1, 0}) != std::array<std::uint8_t, 3>{188, 137, 0})
+    {
+        throw std::runtime_error("Saved exposure did not map HDR to the expected sRGB bytes");
+    }
     if (!std::filesystem::equivalent(config.scene.asset, loaded.scene.asset) ||
         loaded.render.sampling.seed != config.render.sampling.seed || loaded.camera.auto_frame)
     {

@@ -37,12 +37,46 @@ struct LinearColor
     return value <= 0.0031308f ? 12.92f * value : 1.055f * std::pow(value, 1.0f / 2.4f) - 0.055f;
 }
 
-// RGB uses the same display transfer function for PNG files and window textures.
-[[nodiscard]] inline std::array<std::uint8_t, 3> display_rgb8(LinearColor color) noexcept
+struct DisplaySettings
 {
-    const auto encode = [](float c) { return static_cast<std::uint8_t>(std::lround(linear_to_srgb(c) * 255.0f)); };
-    return {encode(color.r), encode(color.g), encode(color.b)};
-}
+    static constexpr double min_exposure_ev = -16, max_exposure_ev = 16;
+    double exposure_ev{};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("exposure_ev", self.exposure_ev);
+    }
+
+    void validate() const
+    {
+        if (!(exposure_ev >= min_exposure_ev && exposure_ev <= max_exposure_ev))
+        {
+            throw std::invalid_argument(
+                std::format("display.exposure_ev must be between {} and {}", min_exposure_ev, max_exposure_ev));
+        }
+    }
+};
+
+// Prepare the linear exposure multiplier once per image, before sRGB encoding.
+class DisplayTransform
+{
+  public:
+    explicit DisplayTransform(const DisplaySettings &settings)
+    {
+        settings.validate();
+        exposure_scale_ = std::exp2(settings.exposure_ev);
+    }
+
+    [[nodiscard]] std::array<std::uint8_t, 3> rgb8(LinearColor color) const noexcept
+    {
+        const auto exposed = scale_rgb(color, exposure_scale_);
+        const auto encode = [](float c) { return static_cast<std::uint8_t>(std::lround(linear_to_srgb(c) * 255.0f)); };
+        return {encode(exposed.r), encode(exposed.g), encode(exposed.b)};
+    }
+
+  private:
+    double exposure_scale_;
+};
 
 class ColorImage
 {

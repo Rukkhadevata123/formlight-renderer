@@ -63,7 +63,7 @@ auto main(int argc, char **argv) -> int
                 throw std::invalid_argument("Output image would overwrite the input model or scene");
             }
             const auto image = render_scene(request);
-            write_png(output, image);
+            write_png(output, image, config.display);
             std::println("Wrote {} ({} x {})", output.string(), request.extent.width, request.extent.height);
             return 0;
         }

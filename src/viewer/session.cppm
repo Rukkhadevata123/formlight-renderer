@@ -90,6 +90,7 @@ export class ViewerSession
         return draft_.light;
     }
     void apply_settings();
+    void set_display_settings(DisplaySettings display);
     [[nodiscard]] SceneConfig scene_snapshot() const;
     // Consume input against the displayed view before publishing a replacement image.
     [[nodiscard]] const ColorImage *update(const ViewportInput &input, Clock::time_point now = Clock::now());
@@ -154,6 +155,7 @@ export class ViewerSession
     AppliedSettings applied_;
     std::unique_ptr<ViewerScene> scene_;
     std::optional<Frame> frame_;
+    bool redisplay_{};
     std::optional<PixelCoord> selection_;
     std::optional<PixelDiagnostic> report_;
     bool focus_pending_{};
@@ -190,6 +192,14 @@ void ViewerSession::apply_settings()
     refine_after_ = Clock::time_point::min();
     gesture_quality_ = Quality::Full;
     full_cost_ = light_center_cost_ = {};
+}
+
+void ViewerSession::set_display_settings(DisplaySettings display)
+{
+    display.validate();
+    applied_.config.display = display;
+    draft_.display = display;
+    redisplay_ = true;
 }
 
 SceneConfig ViewerSession::scene_snapshot() const
@@ -352,6 +362,10 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
     navigate(input, now);
 
     const ColorImage *published = nullptr;
+    if (std::exchange(redisplay_, false) && frame_)
+    {
+        published = &frame_->result.image;
+    }
     if (rendering_ && rendering_->ready())
     {
         // Even a full-quality navigation frame may finish while more input accumulates.

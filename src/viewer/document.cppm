@@ -71,6 +71,15 @@ export class ViewerDocument
         }
     }
 
+    void set_display_settings(DisplaySettings display)
+    {
+        active_->set_display_settings(display);
+        if (opening_)
+        {
+            opening_->set_display_settings(display);
+        }
+    }
+
     [[nodiscard]] const ColorImage *update(const ViewportInput &input)
     {
         const auto *image = active_->update(input);

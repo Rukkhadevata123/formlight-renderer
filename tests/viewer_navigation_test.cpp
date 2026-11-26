@@ -146,6 +146,11 @@ void check_frame_replacement(const std::filesystem::path &asset)
     {
         throw std::runtime_error("Rejected settings disturbed the settled frame");
     }
+    document.set_display_settings({1});
+    if (document.update({}) != &latest || document.update({}) || session.updating())
+    {
+        throw std::runtime_error("Changing exposure must publish the same HDR frame once");
+    }
 
     // Supersede an in-flight navigation frame; the first frame published must already use the new settings.
     (void)session.update({.wheel = 1}, now);
@@ -161,7 +166,7 @@ void check_frame_replacement(const std::filesystem::path &asset)
     session.render_settings().sampling.samples = 0;
     const auto snapshot = session.scene_snapshot();
     if (snapshot.camera.auto_frame || snapshot.light.width != config.light.width ||
-        snapshot.render.sampling.samples != config.render.sampling.samples)
+        snapshot.render.sampling.samples != config.render.sampling.samples || snapshot.display.exposure_ev != 1)
     {
         throw std::runtime_error("Scene snapshot lost the explicit camera or applied settings");
     }
@@ -191,9 +196,11 @@ void check_frame_replacement(const std::filesystem::path &asset)
     session.render_settings().extent = {43, 67};
     document.apply_settings();           // This edit must reach the first frame of the new asset.
     session.light_settings().width = -1; // An unapplied draft survives the switch.
+    document.set_display_settings({-2});
     const auto *opened = finish_open();
     if (!opened || !document.open_error().empty() || document.display_path() != asset ||
-        document.session().light_settings().width != -1)
+        document.session().light_settings().width != -1 ||
+        document.session().scene_snapshot().display.exposure_ev != -2)
     {
         throw std::runtime_error("Model replacement failed to commit the first frame or preserve the draft");
     }

@@ -138,6 +138,7 @@ struct SceneConfig
     CameraSettings camera;
     RenderSettings render;
     LightSettings light;
+    DisplaySettings display;
 
     void fields(this auto &self, auto &&field)
     {
@@ -145,6 +146,7 @@ struct SceneConfig
         field("camera", self.camera);
         field("render", self.render);
         field("light", self.light);
+        field("display", self.display);
     }
 };
 
@@ -180,7 +182,8 @@ struct RenderRequest
 
 [[nodiscard]] RenderRequest prepare_render(const SceneConfig &config)
 {
-    const auto &[scene, camera, render, light] = config;
+    const auto &[scene, camera, render, light, display] = config;
+    display.validate();
     if (scene.asset.empty())
     {
         throw std::invalid_argument("scene.asset requires a model path");

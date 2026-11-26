@@ -106,7 +106,7 @@ template <class T> bool edit_value(T &value, InvalidIntegers &invalid)
     }
 }
 
-bool edit_group(const char *name, ConfigGroup auto &group, InvalidIntegers &invalid)
+bool edit_group(const char *name, ConfigGroup auto &group, auto edit)
 {
     ImGui::SeparatorText(name);
     if (!ImGui::BeginTable(name, 2, ImGuiTableFlags_SizingStretchProp))
@@ -125,7 +125,7 @@ bool edit_group(const char *name, ConfigGroup auto &group, InvalidIntegers &inva
             ImGui::TableNextColumn();
             ImGui::PushID(key);
             ImGui::SetNextItemWidth(-1);
-            if (edit_value(value, invalid))
+            if (edit(value))
             {
                 changed = true;
             }
@@ -142,9 +142,10 @@ export class SettingsPanel
     void draw(ViewerDocument &document, std::int64_t max_texture_size)
     {
         auto &session = document.session();
+        const auto edit = [&](auto &value) { return edit_value(value, invalid_); };
         ImGui::PushItemFlag(ImGuiItemFlags_LiveEditOnInput, true);
-        const bool render_changed = edit_group("Render", session.render_settings(), invalid_);
-        const bool light_changed = edit_group("Light", session.light_settings(), invalid_);
+        const bool render_changed = edit_group("Render", session.render_settings(), edit);
+        const bool light_changed = edit_group("Light", session.light_settings(), edit);
         ImGui::PopItemFlag();
         if (render_changed || light_changed)
         {
@@ -174,6 +175,17 @@ export class SettingsPanel
         if (!error_.empty())
         {
             ImGui::TextWrapped("%s", error_.c_str());
+        }
+
+        auto display = session.applied_config().display;
+        const auto slider = [](double &ev)
+        {
+            return ImGui::SliderScalar("##value", ImGuiDataType_Double, &ev, &DisplaySettings::min_exposure_ev,
+                                       &DisplaySettings::max_exposure_ev, "%.2f EV", ImGuiSliderFlags_AlwaysClamp);
+        };
+        if (edit_group("Display", display, slider))
+        {
+            document.set_display_settings(display);
         }
     }
 

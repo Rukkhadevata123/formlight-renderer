@@ -139,7 +139,7 @@ export class ViewerWindow
     };
     Drag drag_{};
     [[nodiscard]] ViewportInput read_input(ImageRect rect, ImageExtent extent);
-    void upload(const ColorImage &image);
+    void upload(const ColorImage &image, const DisplaySettings &display);
     SdlVideo video_;
     std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window_{nullptr, SDL_DestroyWindow};
     std::unique_ptr<SDL_Renderer, decltype(&SDL_DestroyRenderer)> renderer_{nullptr, SDL_DestroyRenderer};
@@ -200,8 +200,9 @@ bool ViewerWindow::poll()
     return open;
 }
 
-void ViewerWindow::upload(const ColorImage &image)
+void ViewerWindow::upload(const ColorImage &image, const DisplaySettings &display)
 {
+    const DisplayTransform transform{display};
     const auto [width, height] = image.extent();
     if (!texture_ || texture_->w != width || texture_->h != height)
     {
@@ -218,7 +219,7 @@ void ViewerWindow::upload(const ColorImage &image)
         auto *out = static_cast<std::uint8_t *>(pixels) + static_cast<std::size_t>(y) * pitch;
         for (int x = 0; x < width; ++x)
         {
-            out = std::ranges::copy(display_rgb8(image[y, x]), out).out;
+            out = std::ranges::copy(transform.rgb8(image[y, x]), out).out;
             *out++ = 255;
         }
     }
@@ -302,7 +303,7 @@ void ViewerWindow::draw()
     }
     if (const auto *image = document_.update(input))
     {
-        upload(*image);
+        upload(*image, document_.session().applied_config().display);
     }
     if (title_path_ != document_.display_path())
     {
