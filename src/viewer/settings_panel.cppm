@@ -178,12 +178,19 @@ export class SettingsPanel
         }
 
         auto display = session.applied_config().display;
-        const auto slider = [](double &ev)
+        const auto edit_display = [&]<class T>(T &value)
         {
-            return ImGui::SliderScalar("##value", ImGuiDataType_Double, &ev, &DisplaySettings::min_exposure_ev,
-                                       &DisplaySettings::max_exposure_ev, "%.2f EV", ImGuiSliderFlags_AlwaysClamp);
+            if constexpr (std::same_as<T, double>)
+            {
+                return ImGui::SliderScalar("##value", ImGuiDataType_Double, &value, &DisplaySettings::min_exposure_ev,
+                                           &DisplaySettings::max_exposure_ev, "%.2f EV", ImGuiSliderFlags_AlwaysClamp);
+            }
+            else
+            {
+                return edit(value);
+            }
         };
-        if (edit_group("Display", display, slider))
+        if (edit_group("Display", display, edit_display))
         {
             document.set_display_settings(display);
         }

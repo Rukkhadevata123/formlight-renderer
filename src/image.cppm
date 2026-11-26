@@ -37,14 +37,22 @@ struct LinearColor
     return value <= 0.0031308f ? 12.92f * value : 1.055f * std::pow(value, 1.0f / 2.4f) - 0.055f;
 }
 
+enum class ToneMapping
+{
+    Clip,
+    Reinhard
+};
+
 struct DisplaySettings
 {
     static constexpr double min_exposure_ev = -16, max_exposure_ev = 16;
     double exposure_ev{};
+    ToneMapping tone_mapping{ToneMapping::Clip};
 
     void fields(this auto &self, auto &&field)
     {
         field("exposure_ev", self.exposure_ev);
+        field("tone_mapping", self.tone_mapping);
     }
 
     void validate() const
@@ -61,7 +69,7 @@ struct DisplaySettings
 class DisplayTransform
 {
   public:
-    explicit DisplayTransform(const DisplaySettings &settings)
+    explicit DisplayTransform(const DisplaySettings &settings) : tone_mapping_(settings.tone_mapping)
     {
         settings.validate();
         exposure_scale_ = std::exp2(settings.exposure_ev);
@@ -69,12 +77,20 @@ class DisplayTransform
 
     [[nodiscard]] std::array<std::uint8_t, 3> rgb8(LinearColor color) const noexcept
     {
-        const auto exposed = scale_rgb(color, exposure_scale_);
-        const auto encode = [](float c) { return static_cast<std::uint8_t>(std::lround(linear_to_srgb(c) * 255.0f)); };
-        return {encode(exposed.r), encode(exposed.g), encode(exposed.b)};
+        return {encode(color.r), encode(color.g), encode(color.b)};
     }
 
   private:
+    [[nodiscard]] std::uint8_t encode(float channel) const noexcept
+    {
+        const double exposed = std::max(0.0, channel * exposure_scale_);
+        // Per-channel Reinhard: x / (1 + x). This form also maps positive infinity to white.
+        const double mapped =
+            tone_mapping_ == ToneMapping::Reinhard ? 1.0 - 1.0 / (1.0 + exposed) : std::min(1.0, exposed);
+        return static_cast<std::uint8_t>(std::lround(linear_to_srgb(static_cast<float>(mapped)) * 255.0f));
+    }
+
+    ToneMapping tone_mapping_;
     double exposure_scale_;
 };
 

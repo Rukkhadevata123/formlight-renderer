@@ -30,6 +30,8 @@ inline constexpr std::array render_modes{NamedValue{"raster", RenderMode::Raster
 inline constexpr std::array light_kinds{NamedValue{"none", LightKind::None},
                                         NamedValue{"directional", LightKind::Directional},
                                         NamedValue{"rectangle", LightKind::Rectangle}};
+inline constexpr std::array tone_mappings{NamedValue{"clip", ToneMapping::Clip},
+                                          NamedValue{"reinhard", ToneMapping::Reinhard}};
 
 constexpr auto &choices(RenderMode) noexcept
 {
@@ -38,6 +40,10 @@ constexpr auto &choices(RenderMode) noexcept
 constexpr auto &choices(LightKind) noexcept
 {
     return light_kinds;
+}
+constexpr auto &choices(ToneMapping) noexcept
+{
+    return tone_mappings;
 }
 
 template <class E> E parse_choice(std::string_view name)
