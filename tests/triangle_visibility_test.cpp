@@ -129,14 +129,55 @@ bool check_shadow_ray_interval()
         const std::array sheets{MeshInstance{InstanceId{0}, mesh, {axes, position}},
                                 MeshInstance{InstanceId{1}, mesh, {axes, position - Vec3{0, 0, gap}}}};
         const Ray ray = SurfaceRayOrigin{sheets.front(), mesh.front(), {0.25, 0.25, 0.5}}.along({0, 0, -1});
+        const TriangleBvh bvh{sheets};
         const auto hit = intersect(ray, sheets, {0, 2 * gap});
         if (!(ray.origin.z < position.z && hit && hit->surface.id.instance == sheets.back().id &&
-              occluded(ray, sheets, {0, 2 * gap}) && !occluded(ray, sheets, {0, hit->t}) &&
-              !occluded(ray, sheets, {hit->t, 2 * gap})))
+              bvh.occluded(ray, {0, 2 * gap}) && !bvh.occluded(ray, {0, hit->t}) &&
+              !bvh.occluded(ray, {hit->t, 2 * gap})))
         {
             std::cerr << std::format("Shadow ray missed the thin gap or included an interval endpoint at scale {}\n",
                                      scale);
             return false;
+        }
+    }
+    return true;
+}
+
+bool check_bvh_against_brute_force()
+{
+    // Adjacent instances meet at a vertex. At x=0 the smaller ID lives in the second subtree.
+    constexpr std::array mesh{Triangle{
+        PrimitiveId{31}, {TriangleVertex{{-1, -1, 0}}, TriangleVertex{{1, -1, 0}}, TriangleVertex{{0, 1, 0}}}}};
+    std::array<MeshInstance, 8> scene;
+    for (std::uint32_t i = 0; i < scene.size(); ++i)
+    {
+        scene[i] = {InstanceId{8 - i}, mesh, {Basis3{}, {2.0 * i - 7, 0, 0}}};
+    }
+    const TriangleBvh bvh{scene};
+    for (int x = -9; x <= 9; ++x)
+    {
+        for (double y : {-1.0, 0.0, 1.0})
+        {
+            const Ray ray{{static_cast<double>(x), y, 1}, {-0.0, 0, -1}};
+            constexpr RayInterval segment{0, 2};
+            const auto expected = intersect(ray, scene, segment);
+            const auto actual = bvh.intersect(ray, segment);
+            if (actual.has_value() != expected.has_value() ||
+                bvh.occluded(ray, segment) != occluded(ray, scene, segment))
+            {
+                std::cerr << std::format("BVH visibility differs at ({}, {})\n", x, y);
+                return false;
+            }
+            if (actual)
+            {
+                const auto &a = actual->surface.weights, &b = expected->surface.weights;
+                if (actual->t != expected->t || actual->surface.id != expected->surface.id ||
+                    std::tie(a.a, a.b, a.c) != std::tie(b.a, b.b, b.c))
+                {
+                    std::cerr << std::format("BVH nearest surface differs at ({}, {})\n", x, y);
+                    return false;
+                }
+            }
         }
     }
     return true;
@@ -290,6 +331,6 @@ auto main() -> int
     const bool passed = compare_triangle(camera, tilted, full, 672) && compare_triangle(camera, crossing, full, 600) &&
                         compare_triangle(camera, tilted, {2.5, 3.5}, 471) &&
                         compare_triangle(camera, tilted, {5, 6}, 0) && check_ground_and_panel() &&
-                        check_shadow_ray_interval();
+                        check_shadow_ray_interval() && check_bvh_against_brute_force();
     return passed ? 0 : 1;
 }

@@ -38,7 +38,7 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 
 export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, const SurfaceRayOrigin &receiver,
                                                 Vec3 unit_normal, LightSampling sampling, std::uint64_t pixel,
-                                                std::span<const MeshInstance> blockers)
+                                                const TriangleBvh &blockers)
 {
     if (sampling.samples == 0)
     {
@@ -54,7 +54,7 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);
         const double weight = light.diffuse_weight(receiver.position(), unit_normal, sample);
-        if (weight > 0 && (blockers.empty() || !occluded(receiver.to(sample), blockers, {0, 1})))
+        if (weight > 0 && (blockers.empty() || !blockers.occluded(receiver.to(sample), {0, 1})))
         {
             sum += weight;
         }

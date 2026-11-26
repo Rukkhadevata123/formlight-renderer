@@ -16,6 +16,54 @@ export struct RayHit
     double t;
 };
 
+// Optional counters owned by the caller, so the tree stays read-only between queries.
+export struct RayQueryStats
+{
+    std::uint64_t rays{}, triangle_tests{};
+};
+
+// Borrows the instances and their triangle storage. Rebuild after either geometry or transforms change.
+export class TriangleBvh
+{
+  public:
+    TriangleBvh() = default;
+    explicit TriangleBvh(std::span<const MeshInstance> instances);
+    [[nodiscard]] bool empty() const noexcept
+    {
+        return nodes_.empty();
+    }
+    [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, RayInterval interval,
+                                                  RayQueryStats *stats = nullptr) const noexcept;
+    [[nodiscard]] bool occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats = nullptr) const noexcept;
+
+  private:
+    struct Primitive
+    {
+        std::size_t instance, triangle;
+    };
+    struct BuildPrimitive;
+
+    struct Node
+    {
+        Bounds3 bounds;
+        // A leaf indexes primitives. An interior node's left child follows it immediately.
+        std::size_t first_primitive_or_right_child, count;
+    };
+    std::span<const MeshInstance> instances_;
+    std::vector<Node> nodes_;
+    std::vector<Primitive> primitives_;
+
+    std::size_t build(std::span<BuildPrimitive> primitives);
+    enum class Query
+    {
+        Closest,
+        Any
+    };
+    template <Query Kind>
+    [[nodiscard]] std::optional<RayHit> trace(const Ray &ray, RayInterval interval,
+                                              RayQueryStats *stats) const noexcept;
+};
+
 // Cache both sides of a hit when several light samples share the same receiver.
 export class SurfaceRayOrigin
 {
@@ -100,7 +148,16 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
     return RayHit{.surface = {{instance, triangle.id}, {1.0 - weight_b - weight_c, weight_b, weight_c}}, .t = t};
 }
 
-// Brute-force nearest hit in (min, max). Exact ties use the smaller (instance, primitive) pair.
+// Traversal order does not determine which surface owns an exact tie.
+void keep_nearest(std::optional<RayHit> &nearest, const RayHit &hit) noexcept
+{
+    if (!nearest || std::tie(hit.t, hit.surface.id) < std::tie(nearest->t, nearest->surface.id))
+    {
+        nearest = hit;
+    }
+}
+
+// Brute-force nearest hit in (min, max).
 export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<const MeshInstance> instances,
                                                      RayInterval interval) noexcept
 {
@@ -110,10 +167,9 @@ export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<c
         const Ray local = instance.transform.to_local_ray(ray);
         for (const auto &triangle : instance.triangles)
         {
-            const auto hit = intersect_triangle(local, triangle, instance.id, interval);
-            if (hit && (!nearest || std::tie(hit->t, hit->surface.id) < std::tie(nearest->t, nearest->surface.id)))
+            if (const auto hit = intersect_triangle(local, triangle, instance.id, interval))
             {
-                nearest = hit;
+                keep_nearest(nearest, *hit);
             }
         }
     }

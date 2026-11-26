@@ -122,6 +122,18 @@ export struct Bounds3
 {
     Vec3 low, high;
 
+    [[nodiscard]] static constexpr Bounds3 empty() noexcept
+    {
+        constexpr double inf = std::numeric_limits<double>::infinity();
+        return {{inf, inf, inf}, {-inf, -inf, -inf}};
+    }
+
+    void include(Vec3 point) noexcept
+    {
+        low = {std::min(low.x, point.x), std::min(low.y, point.y), std::min(low.z, point.z)};
+        high = {std::max(high.x, point.x), std::max(high.y, point.y), std::max(high.z, point.z)};
+    }
+
     [[nodiscard]] Vec3 center() const noexcept
     {
         return {std::midpoint(low.x, high.x), std::midpoint(low.y, high.y), std::midpoint(low.z, high.z)};
@@ -136,18 +148,14 @@ export struct Bounds3
 
 export [[nodiscard]] Bounds3 world_bounds(std::span<const MeshInstance> instances)
 {
-    constexpr double infinity = std::numeric_limits<double>::infinity();
-    Bounds3 bounds{{infinity, infinity, infinity}, {-infinity, -infinity, -infinity}};
+    auto bounds = Bounds3::empty();
     for (const auto &instance : instances)
     {
         for (const auto &triangle : instance.triangles)
         {
             for (const auto &vertex : triangle.vertices)
             {
-                const auto p = instance.transform.to_world_point(vertex.position);
-                auto &[lo, hi] = bounds;
-                lo = {std::min(lo.x, p.x), std::min(lo.y, p.y), std::min(lo.z, p.z)};
-                hi = {std::max(hi.x, p.x), std::max(hi.y, p.y), std::max(hi.z, p.z)};
+                bounds.include(instance.transform.to_world_point(vertex.position));
             }
         }
     }

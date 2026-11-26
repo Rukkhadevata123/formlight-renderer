@@ -73,7 +73,9 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
     {
         shadow_map.emplace(scene.instances(), directional->light);
     }
-    const auto in_shadow = [&](const MeshInstance &instance, const Triangle &face, Barycentrics weights)
+    const bool ray_shadows = (directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows);
+    const auto blockers = ray_shadows ? TriangleBvh{scene.instances()} : TriangleBvh{};
+    const auto in_directional_shadow = [&](const MeshInstance &instance, const Triangle &face, Barycentrics weights)
     {
         if (shadow_map)
         {
@@ -81,10 +83,10 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
             const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
             return !shadow_map->visible(world, geometric_normal);
         }
-        if (directional && directional->shadows == ShadowMethod::Ray)
+        if (!blockers.empty())
         {
             const Ray ray = SurfaceRayOrigin{instance, face, weights}.along(directional->light.toward_light());
-            return occluded(ray, scene.instances(), {0, std::numeric_limits<double>::infinity()});
+            return blockers.occluded(ray, {0, std::numeric_limits<double>::infinity()});
         }
         return false;
     };
@@ -102,7 +104,6 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
                 if (area)
                 {
                     const auto pixel = static_cast<std::uint64_t>(y) * extent.width + x;
-                    const auto blockers = area->shadows ? scene.instances() : std::span<const MeshInstance>{};
                     const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
                     const double weight = sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights},
                                                               normal, area->sampling, pixel, blockers);
@@ -113,7 +114,7 @@ export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const Pre
                 {
                     const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
                     color = directional->light.diffuse(color, normal);
-                    if ((color.r > 0 || color.g > 0 || color.b > 0) && in_shadow(instance, face, weights))
+                    if ((color.r > 0 || color.g > 0 || color.b > 0) && in_directional_shadow(instance, face, weights))
                     {
                         color = {0, 0, 0, color.a};
                     }

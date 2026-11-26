@@ -8,7 +8,7 @@ find_package(tomlplusplus CONFIG REQUIRED)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
-add_library(formlight_renderer_core STATIC src/raster/clipping.cpp)
+add_library(formlight_renderer_core STATIC src/raster/clipping.cpp src/ray/bvh.cpp)
 target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
