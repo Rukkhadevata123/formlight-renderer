@@ -15,9 +15,9 @@ try
     config.render.extent = {64, 32};
     const auto preview = load_preview(prepare_render(config));
     const Vec3 amber{0.25, 0.125, 0.0625};
-    // The first emissive texel is sRGB (128, 64, 32) with zero alpha.
-    const Vec3 warm{0.21586050 * 0.5, 0.05126946, 0.01444384 * 0.75};
-    const Vec3 cyan{0, 1, 0.75};
+    // The sheet has strength 4. Its first emissive texel is sRGB (128, 64, 32) with zero alpha.
+    const Vec3 warm = Vec3{0.21586050 * 0.5, 0.05126946, 0.01444384 * 0.75} * 4;
+    const Vec3 cyan{0, 4, 3};
     for (const auto mode : {RenderMode::Raster, RenderMode::Hybrid})
     {
         config.render.mode = mode;

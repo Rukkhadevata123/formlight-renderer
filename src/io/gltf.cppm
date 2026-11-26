@@ -29,7 +29,7 @@ export struct GltfMaterial
 {
     LinearColor base_color_factor{1, 1, 1, 1};
     std::optional<TextureBinding> base_color_texture{};
-    LinearColor emissive_factor{};
+    LinearColor emission_multiplier{};
     std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};
     float alpha_cutoff{0.5f};

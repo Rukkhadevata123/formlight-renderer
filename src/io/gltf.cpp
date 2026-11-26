@@ -247,8 +247,12 @@ GltfMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Materia
     const auto &pbr = material.pbrData;
     const auto &f = pbr.baseColorFactor;
     const auto &e = material.emissiveFactor;
+    if (!std::isfinite(material.emissiveStrength) || material.emissiveStrength < 0)
+    {
+        throw std::runtime_error("emissiveStrength must be finite and nonnegative");
+    }
     GltfMaterial result{.base_color_factor = {f[0], f[1], f[2], f[3]},
-                        .emissive_factor = {e[0], e[1], e[2]},
+                        .emission_multiplier = scale_rgb({e[0], e[1], e[2]}, material.emissiveStrength),
                         .double_sided = material.doubleSided};
     if (material.alphaMode == fastgltf::AlphaMode::Mask)
     {
@@ -300,7 +304,7 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
         {
             throw std::runtime_error("Could not open or read GLB file");
         }
-        fastgltf::Parser parser;
+        fastgltf::Parser parser{fastgltf::Extensions::KHR_materials_emissive_strength};
         auto parsed = parser.loadGltfBinary(file.get(), path.parent_path(), fastgltf::Options::GenerateMeshIndices);
         check(parsed.error());
         const auto &asset = parsed.get();
@@ -421,7 +425,7 @@ SurfaceColors GltfScene::surface_colors(const Triangle &face, Barycentrics weigh
     const auto &mat = material(face);
     auto color = sample_base_color(mat, face, weights);
     color.a = mat.alpha_mode == AlphaMode::Blend ? std::clamp(color.a, 0.0f, 1.0f) : 1.0f;
-    auto emission = mat.emissive_factor;
+    auto emission = mat.emission_multiplier;
     if (color.a > 0 && mat.emissive_texture)
     {
         const auto texel = sample(*mat.emissive_texture, face.uv_at(weights));

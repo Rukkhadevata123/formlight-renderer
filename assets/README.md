@@ -16,7 +16,7 @@ Two intersecting, half-opacity sheets change depth order across the image. An op
 
 ## EmissivePanels.glb
 
-A half-opacity sheet covers the right half of an amber panel. Its two emissive texels have different RGB and alpha values. In the backlit example, their RGB controls emission and the sheet's base-color alpha controls compositing. Created for Formlight and distributed under the [project license](../LICENSE).
+A half-opacity sheet covers the right half of an amber panel. Its two emissive texels have different RGB and alpha values. The sheet uses `KHR_materials_emissive_strength` to multiply emission by four. In the backlit example, the cyan texel exceeds 1 in linear RGB before compositing, and Reinhard tone mapping preserves the difference between its green and blue channels. Created for Formlight and distributed under the [project license](../LICENSE).
 
 ## Viewer font
 
