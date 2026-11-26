@@ -2,6 +2,7 @@ export module formlight.triangle;
 
 import std;
 export import formlight.geometry;
+export import formlight.image;
 
 export namespace formlight
 {
@@ -19,6 +20,7 @@ struct TriangleVertex
     Vec3 position{};
     TexCoord uv{};
     Vec3 normal{}; // Zero when the mesh has no vertex normals.
+    LinearColor color{1, 1, 1, 1};
 };
 
 // Weights always refer to vertices 0, 1 and 2 of the original triangle.
@@ -52,6 +54,15 @@ struct Triangle
     {
         const auto &[a, b, c] = vertices;
         return cross(b.position - a.position, c.position - a.position);
+    }
+
+    [[nodiscard]] constexpr LinearColor color_at(Barycentrics weights) const noexcept
+    {
+        const auto &a = vertices[0].color, &b = vertices[1].color, &c = vertices[2].color;
+        const auto interpolate = [weights](double v0, double v1, double v2)
+        { return static_cast<float>(v0 + (v1 - v0) * weights.b + (v2 - v0) * weights.c); };
+        return {interpolate(a.r, b.r, c.r), interpolate(a.g, b.g, c.g), interpolate(a.b, b.b, c.b),
+                interpolate(a.a, b.a, c.a)};
     }
 
     // Normalize after the instance's inverse transpose has taken the result to world space.

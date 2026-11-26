@@ -12,7 +12,8 @@ namespace formlight
 export class DirectionalShadowMap
 {
   public:
-    DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light);
+    DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
+                         const SurfaceFilter &accept = {});
     [[nodiscard]] bool visible(Vec3 world, Vec3 geometric_normal) const noexcept;
 
   private:
@@ -27,10 +28,11 @@ export class DirectionalShadowMap
         return {resolution * 0.5 + dot(offset, right_) / texel_size_,
                 resolution * 0.5 + dot(offset, down_) / texel_size_, dot(offset, forward_)};
     }
-    void rasterize(Vec3 a, Vec3 b, Vec3 c);
+    void rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, const SurfaceFilter &accept);
 };
 
-DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light)
+DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
+                                           const SurfaceFilter &accept)
     : depths_(resolution * resolution, std::numeric_limits<double>::infinity())
 {
     const auto bounds = world_bounds(instances);
@@ -50,12 +52,12 @@ DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instanc
         for (const auto &triangle : instance.triangles)
         {
             const auto &[a, b, c] = triangle.vertices;
-            rasterize(light_point(a), light_point(b), light_point(c));
+            rasterize(light_point(a), light_point(b), light_point(c), {instance.id, triangle.id}, accept);
         }
     }
 }
 
-void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c)
+void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, const SurfaceFilter &accept)
 {
     const ScreenTriangle coverage{{a.x, a.y}, {b.x, b.y}, {c.x, c.y}};
     const Vec3 plane = cross(b - a, c - a);
@@ -67,9 +69,14 @@ void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c)
     const double bias = 0.5 * (std::abs(plane.x) + std::abs(plane.y)) / std::abs(plane.z);
     const auto write_depth = [&](int x, int y, const auto &edges)
     {
-        const double depth = (edges[0] * a.z + edges[1] * b.z + edges[2] * c.z) / coverage.twice_area();
+        const double area = coverage.twice_area();
+        const double depth = (edges[0] * a.z + edges[1] * b.z + edges[2] * c.z) / area + bias;
         auto &nearest = depths_[y * resolution + x];
-        nearest = std::min(nearest, depth + bias);
+        // In the orthographic light view the screen weights are already the surface weights.
+        if (depth < nearest && (!accept || accept({source, {edges[0] / area, edges[1] / area, edges[2] / area}})))
+        {
+            nearest = depth;
+        }
     };
     coverage.for_each_sample({resolution, resolution}, write_depth);
 }

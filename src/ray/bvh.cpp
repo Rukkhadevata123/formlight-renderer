@@ -81,7 +81,8 @@ struct TriangleBvh::BuildPrimitive
     Primitive source;
 };
 
-TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances) : instances_(instances)
+TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept)
+    : instances_(instances), accept_(std::move(accept))
 {
     std::size_t count = 0;
     for (const auto &instance : instances)
@@ -142,7 +143,7 @@ std::size_t TriangleBvh::build(std::span<BuildPrimitive> primitives)
 }
 
 template <TriangleBvh::Query Kind>
-std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const noexcept
+std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
 {
     if (stats)
     {
@@ -174,7 +175,8 @@ std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, R
                 {
                     ++stats->triangle_tests;
                 }
-                if (const auto hit = intersect_triangle(local, instance.triangles[p.triangle], instance.id, interval))
+                if (const auto hit =
+                        intersect_triangle(local, instance.triangles[p.triangle], instance.id, interval, accept_))
                 {
                     if constexpr (Kind == Query::Any)
                     {
@@ -211,12 +213,12 @@ std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, R
     return nearest;
 }
 
-std::optional<RayHit> TriangleBvh::intersect(const Ray &ray, RayInterval interval, RayQueryStats *stats) const noexcept
+std::optional<RayHit> TriangleBvh::intersect(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
 {
     return trace<Query::Closest>(ray, interval, stats);
 }
 
-bool TriangleBvh::occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats) const noexcept
+bool TriangleBvh::occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
 {
     return trace<Query::Any>(ray, interval, stats).has_value();
 }

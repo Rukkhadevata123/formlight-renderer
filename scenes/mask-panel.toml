@@ -1,0 +1,16 @@
+[scene]
+asset = "../assets/MaskPanel.glb"
+ground = true
+
+[camera]
+auto_frame = false
+position = [3.8, 4.5, 6.3]
+target = [1.2, 0.7, -0.7]
+vertical_fov_degrees = 38.0
+
+[light]
+type = "directional"
+toward_light = [-2.5, 2, 2]
+
+[render]
+mode = "hybrid"

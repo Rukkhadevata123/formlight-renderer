@@ -23,6 +23,9 @@ export struct TrianglePoint
     Barycentrics weights;
 };
 
+// An empty filter accepts all geometric hits.
+export using SurfaceFilter = std::function<bool(const TrianglePoint &)>;
+
 // World-space vectors corresponding to one unit along each local axis.
 export struct Basis3
 {

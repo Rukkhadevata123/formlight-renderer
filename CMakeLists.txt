@@ -90,6 +90,10 @@ if(BUILD_TESTING)
     target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)
     add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
 
+    add_executable(mask_visibility_test tests/mask_visibility_test.cpp)
+    target_link_libraries(mask_visibility_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME mask_visibility COMMAND mask_visibility_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mask-panel.toml")
+
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
     add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/box-area-light.toml")

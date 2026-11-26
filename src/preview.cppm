@@ -110,6 +110,7 @@ export class PreviewRenderer
                                                  const Triangle &face, Barycentrics weights, Vec3 normal,
                                                  bool identify_blocker) const;
     const GltfScene &scene_;
+    SurfaceFilter coverage_;
     std::optional<PreviewLighting> lighting_;
     std::shared_ptr<const DirectionalShadowMap> shadow_map_;
     std::shared_ptr<const TriangleBvh> blockers_;

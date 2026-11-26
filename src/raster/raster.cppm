@@ -12,9 +12,11 @@ export struct RasterHit
     TrianglePoint surface;
     double view_depth;
 
-    void keep_nearest(std::optional<RasterHit> &pixel) const noexcept
+    void keep_nearest(std::optional<RasterHit> &pixel, const SurfaceFilter &accept = {}) const
     {
-        if (!pixel || std::tie(view_depth, surface.id) < std::tie(pixel->view_depth, pixel->surface.id))
+        const bool nearer = !pixel || std::tie(view_depth, surface.id) < std::tie(pixel->view_depth, pixel->surface.id);
+        // TODO: Profile SurfaceFilter dispatch and alpha sampling separately on a dense foliage scene.
+        if (nearer && (!accept || accept(surface)))
         {
             pixel = *this;
         }
@@ -39,7 +41,7 @@ export class RasterTriangle
                                                              ViewDepthRange range, std::stop_token stop = {});
     [[nodiscard]] std::optional<RasterHit> sample(ImagePoint point) const noexcept;
     // Keep the nearest pixel-center hit. Exact depth ties use the smaller (instance, primitive) pair.
-    void rasterize(VisibilityBuffer target) const noexcept;
+    void rasterize(VisibilityBuffer target, const SurfaceFilter &accept = {}) const;
 
   private:
     RasterTriangle(SurfaceId source, const RasterVertex &a, const RasterVertex &b, const RasterVertex &c);
@@ -86,9 +88,9 @@ RasterHit RasterTriangle::interpolate(const std::array<double, 3> &values) const
     return RasterHit{.surface = {source_, weights}, .view_depth = coverage_.twice_area() / sum};
 }
 
-void RasterTriangle::rasterize(VisibilityBuffer target) const noexcept
+void RasterTriangle::rasterize(VisibilityBuffer target, const SurfaceFilter &accept) const
 {
     coverage_.for_each_sample({target.extent(1), target.extent(0)}, [&](int x, int y, const auto &values)
-                              { interpolate(values).keep_nearest(target[y, x]); });
+                              { interpolate(values).keep_nearest(target[y, x], accept); });
 }
 } // namespace formlight

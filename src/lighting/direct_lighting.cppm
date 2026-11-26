@@ -45,7 +45,7 @@ export struct LightSample
 };
 
 export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, const Ray &ray, RayInterval interval,
-                                               bool identify_blocker) noexcept
+                                               bool identify_blocker)
 {
     if (blockers.empty())
     {

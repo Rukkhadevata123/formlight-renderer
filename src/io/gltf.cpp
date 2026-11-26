@@ -53,6 +53,29 @@ const fastgltf::Accessor &geometry_accessor(const fastgltf::Asset &asset, std::s
     return accessor;
 }
 
+void read_vertex_colors(const fastgltf::Asset &asset, const fastgltf::Accessor &colors,
+                        std::span<TriangleVertex> vertices)
+{
+    if (colors.count != vertices.size())
+    {
+        throw std::runtime_error("COLOR_0 and POSITION have different vertex counts");
+    }
+    if (colors.type == fastgltf::AccessorType::Vec3)
+    {
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, colors, [&](auto rgb, std::size_t i)
+                                                                  { vertices[i].color = {rgb[0], rgb[1], rgb[2], 1}; });
+    }
+    else if (colors.type == fastgltf::AccessorType::Vec4)
+    {
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+            asset, colors, [&](auto rgba, std::size_t i) { vertices[i].color = {rgba[0], rgba[1], rgba[2], rgba[3]}; });
+    }
+    else
+    {
+        throw std::runtime_error("COLOR_0 must supply VEC3 or VEC4 colors");
+    }
+}
+
 std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Mesh &mesh, GltfContent content)
 {
     std::vector<Triangle> triangles;
@@ -91,6 +114,11 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
                 { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
         }
         const auto texcoord = primitive.findAttribute("TEXCOORD_0");
+        if (const auto color = primitive.findAttribute("COLOR_0");
+            content == GltfContent::BaseColor && color != primitive.attributes.end())
+        {
+            read_vertex_colors(asset, geometry_accessor(asset, color->accessorIndex), vertices);
+        }
         const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
         if (content == GltfContent::BaseColor && texcoord == primitive.attributes.end() && primitive.materialIndex &&
             asset.materials.at(*primitive.materialIndex).pbrData.baseColorTexture)
@@ -190,13 +218,17 @@ WrapMode wrap_mode(fastgltf::Wrap wrap)
 BaseColorMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Material &material,
                                 std::vector<std::optional<ColorImage>> &images)
 {
-    if (material.alphaMode != fastgltf::AlphaMode::Opaque)
+    if (material.alphaMode == fastgltf::AlphaMode::Blend)
     {
-        throw std::runtime_error("Base-color preview requires opaque materials");
+        throw std::runtime_error("Base-color preview does not support alphaMode BLEND");
     }
     const auto &pbr = material.pbrData;
     const auto &f = pbr.baseColorFactor;
     BaseColorMaterial result{.factor = {f[0], f[1], f[2], f[3]}, .texture = {}};
+    if (material.alphaMode == fastgltf::AlphaMode::Mask)
+    {
+        result.alpha_cutoff = material.alphaCutoff;
+    }
     if (const auto &info = pbr.baseColorTexture)
     {
         if (info->texCoordIndex != 0)
@@ -349,16 +381,38 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
     instances_.push_back({id, meshes_.back(), {}});
 }
 
-LinearColor GltfScene::base_color(const Triangle &face, Barycentrics weights) const
+LinearColor GltfScene::sample_base_color(const BaseColorMaterial &material, const Triangle &face,
+                                         Barycentrics weights) const
 {
-    const auto &material = materials_.at(face.material_index).value();
-    auto color = material.factor;
+    const auto vertex = face.color_at(weights);
+    const auto &factor = material.factor;
+    LinearColor color{factor.r * vertex.r, factor.g * vertex.g, factor.b * vertex.b, factor.a * vertex.a};
     if (const auto &binding = material.texture)
     {
         const auto texel = sample_texture(images_[binding->image].value(), face.uv_at(weights), binding->sampler);
         color = {color.r * texel.r, color.g * texel.g, color.b * texel.b, color.a * texel.a};
     }
-    color.a = 1.0f; // OPAQUE materials ignore base color alpha.
     return color;
+}
+
+LinearColor GltfScene::base_color(const Triangle &face, Barycentrics weights) const
+{
+    auto color = sample_base_color(materials_.at(face.material_index).value(), face, weights);
+    color.a = 1.0f; // Both opaque surfaces and accepted mask samples fully cover the pixel.
+    return color;
+}
+
+SurfaceFilter GltfScene::coverage_filter() const &
+{
+    if (std::ranges::none_of(materials_, [](const auto &m) { return m && m->alpha_cutoff.has_value(); }))
+    {
+        return {};
+    }
+    return [this](const TrianglePoint &point)
+    {
+        const auto &face = instance(point.id.instance).triangles[std::to_underlying(point.id.primitive)];
+        const auto &material = materials_[face.material_index].value();
+        return !material.alpha_cutoff || sample_base_color(material, face, point.weights).a >= *material.alpha_cutoff;
+    };
 }
 } // namespace formlight

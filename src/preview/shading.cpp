@@ -21,7 +21,8 @@ std::uint64_t pixel_index(PixelCoord pixel, ImageExtent extent) noexcept
 }
 } // namespace
 
-PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting) : scene_(scene)
+PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting)
+    : scene_(scene), coverage_(scene.coverage_filter())
 {
     set_lighting(std::move(lighting));
 }
@@ -32,14 +33,14 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
     const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
     if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows)))
     {
-        blockers_ = std::make_shared<TriangleBvh>(scene_.instances());
+        blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), coverage_);
     }
     if (directional && directional->shadows == ShadowMethod::Map)
     {
         const auto direction = directional->light.toward_light();
         if (!shadow_map_ || std::get<DirectionalLighting>(*lighting_).light.toward_light() != direction)
         {
-            shadow_map_ = std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light);
+            shadow_map_ = std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light, coverage_);
         }
     }
     else
@@ -133,7 +134,7 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
         {
             throw std::runtime_error("Rendering cancelled");
         }
-        triangle.rasterize(visible);
+        triangle.rasterize(visible, coverage_);
     }
     // Visibility is complete; each worker shades disjoint pixels against the same read-only scene.
     const auto shade_row = [&](int y)
@@ -174,7 +175,7 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
         }
         if (const auto hit = triangle.sample(center))
         {
-            hit->keep_nearest(nearest);
+            hit->keep_nearest(nearest, coverage_);
         }
     }
 

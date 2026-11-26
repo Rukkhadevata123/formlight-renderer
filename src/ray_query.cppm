@@ -27,14 +27,14 @@ export class TriangleBvh
 {
   public:
     TriangleBvh() = default;
-    explicit TriangleBvh(std::span<const MeshInstance> instances);
+    explicit TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept = {});
     [[nodiscard]] bool empty() const noexcept
     {
         return nodes_.empty();
     }
     [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, RayInterval interval,
-                                                  RayQueryStats *stats = nullptr) const noexcept;
-    [[nodiscard]] bool occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats = nullptr) const noexcept;
+                                                  RayQueryStats *stats = nullptr) const;
+    [[nodiscard]] bool occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats = nullptr) const;
 
   private:
     struct Primitive
@@ -50,6 +50,7 @@ export class TriangleBvh
         std::size_t first_primitive_or_right_child, count;
     };
     std::span<const MeshInstance> instances_;
+    SurfaceFilter accept_;
     std::vector<Node> nodes_;
     std::vector<Primitive> primitives_;
 
@@ -60,8 +61,7 @@ export class TriangleBvh
         Any
     };
     template <Query Kind>
-    [[nodiscard]] std::optional<RayHit> trace(const Ray &ray, RayInterval interval,
-                                              RayQueryStats *stats) const noexcept;
+    [[nodiscard]] std::optional<RayHit> trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const;
 };
 
 // Cache both sides of a hit when several light samples share the same receiver.
@@ -115,7 +115,7 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
 
 // Two-sided Möller–Trumbore intersection in the open interval (min, max).
 [[nodiscard]] std::optional<RayHit> intersect_triangle(const Ray &ray, const Triangle &triangle, InstanceId instance,
-                                                       RayInterval interval) noexcept
+                                                       RayInterval interval, const SurfaceFilter &accept)
 {
     const auto &[a, b, c] = triangle.vertices;
     const Vec3 ab = b.position - a.position;
@@ -145,7 +145,12 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
     {
         return std::nullopt;
     }
-    return RayHit{.surface = {{instance, triangle.id}, {1.0 - weight_b - weight_c, weight_b, weight_c}}, .t = t};
+    const TrianglePoint surface{{instance, triangle.id}, {1.0 - weight_b - weight_c, weight_b, weight_c}};
+    if (accept && !accept(surface))
+    {
+        return std::nullopt;
+    }
+    return RayHit{surface, t};
 }
 
 // Traversal order does not determine which surface owns an exact tie.
@@ -159,7 +164,7 @@ void keep_nearest(std::optional<RayHit> &nearest, const RayHit &hit) noexcept
 
 // Brute-force nearest hit in (min, max).
 export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<const MeshInstance> instances,
-                                                     RayInterval interval) noexcept
+                                                     RayInterval interval, const SurfaceFilter &accept = {})
 {
     std::optional<RayHit> nearest;
     for (const auto &instance : instances)
@@ -167,7 +172,7 @@ export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<c
         const Ray local = instance.transform.to_local_ray(ray);
         for (const auto &triangle : instance.triangles)
         {
-            if (const auto hit = intersect_triangle(local, triangle, instance.id, interval))
+            if (const auto hit = intersect_triangle(local, triangle, instance.id, interval, accept))
             {
                 keep_nearest(nearest, *hit);
             }
@@ -176,16 +181,16 @@ export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<c
     return nearest;
 }
 
-// For opaque triangles, any hit in the open interval blocks the ray.
-export [[nodiscard]] bool occluded(const Ray &ray, std::span<const MeshInstance> instances,
-                                   RayInterval interval) noexcept
+// Any accepted hit in the open interval blocks the ray.
+export [[nodiscard]] bool occluded(const Ray &ray, std::span<const MeshInstance> instances, RayInterval interval,
+                                   const SurfaceFilter &accept = {})
 {
     for (const auto &instance : instances)
     {
         const Ray local = instance.transform.to_local_ray(ray);
         for (const auto &triangle : instance.triangles)
         {
-            if (intersect_triangle(local, triangle, instance.id, interval))
+            if (intersect_triangle(local, triangle, instance.id, interval, accept))
             {
                 return true;
             }

@@ -22,6 +22,7 @@ struct BaseColorMaterial
 {
     LinearColor factor{1, 1, 1, 1};
     std::optional<BaseColorTexture> texture;
+    std::optional<float> alpha_cutoff{};
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -34,6 +35,9 @@ export class GltfScene
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
     [[nodiscard]] LinearColor base_color(const Triangle &face, Barycentrics weights) const;
+    // The filter borrows this scene for the lifetime of the visibility pass or BVH.
+    [[nodiscard]] SurfaceFilter coverage_filter() const &;
+    SurfaceFilter coverage_filter() const && = delete;
     void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
     {
@@ -52,6 +56,8 @@ export class GltfScene
 
   private:
     GltfScene() = default;
+    [[nodiscard]] LinearColor sample_base_color(const BaseColorMaterial &material, const Triangle &face,
+                                                Barycentrics weights) const;
     std::vector<std::vector<Triangle>> meshes_;
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
