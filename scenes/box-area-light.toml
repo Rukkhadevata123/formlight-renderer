@@ -1,15 +1,25 @@
-[scene]
-asset = "../assets/BoxTextured.glb"
-ground = true
+[camera]
+auto_frame = false
+position = [ 1.290865598350263, 0.93881134425473678, 1.7602712704776315 ]
+target = [ 0.0, 0.0, 0.0 ]
+up = [ 0.0, 1.0, 0.0 ]
+vertical_fov_degrees = 45.0
 
 [light]
-type = "rectangle"
-center = [3, 3, 0.75]
-width = 1.5
+center = [ 3.0, 3.0, 0.75 ]
 height = 1.5
-power = 240
+power = 240.0
+shadows = true
+type = 'rectangle'
+width = 1.5
 
 [render]
-mode = "hybrid"
+height = 480
 light_samples = 64
+mode = 'hybrid'
 seed = 7
+width = 640
+
+[scene]
+asset = '../assets/BoxTextured.glb'
+ground = true
