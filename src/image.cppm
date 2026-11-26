@@ -9,10 +9,22 @@ struct ImageExtent
     int width, height;
 };
 
+// Integer image coordinates, measured right and down from the top-left pixel.
+struct PixelCoord
+{
+    int x, y;
+};
+
 struct LinearColor
 {
     float r{}, g{}, b{}, a{1};
 };
+
+[[nodiscard]] constexpr LinearColor scale_rgb(LinearColor color, double weight) noexcept
+{
+    return {static_cast<float>(color.r * weight), static_cast<float>(color.g * weight),
+            static_cast<float>(color.b * weight), color.a};
+}
 
 [[nodiscard]] inline float srgb_to_linear(float value) noexcept
 {

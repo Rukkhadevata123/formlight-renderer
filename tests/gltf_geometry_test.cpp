@@ -88,20 +88,61 @@ bool check_ground_shadow(formlight::GltfScene &scene)
             return false;
         }
     }
-    // From this floor point the top edge of the box cuts through the center of the light.
-    const PinholeCamera probe{{.position = {0, 1, -1.5},
-                               .target = {0, 0, -1.5},
-                               .up = {0, 0, -1},
-                               .vertical_fov_radians = std::numbers::pi / 3},
-                              {1, 1}};
-    AreaLighting area{RectangleLight{{0, 2.5, 1.5}, {1, 0, 0}, {0, 0, 1}, 240}, {64, 7}};
-    const float partial = render_preview(scene, {probe, {0.1, 3}}, area)[0, 0].r;
-    area.shadows = false;
-    const float full = render_preview(scene, {probe, {0.1, 3}}, area)[0, 0].r;
-    if (!(partial > 0.3f * full && partial < 0.7f * full))
+    const AreaLighting area{RectangleLight{{0, 2.5, 1.5}, {1, 0, 0}, {0, 0, 1}, 240}, {64, 7}};
+    const auto frame = render_preview(scene, view, area);
+    auto unshadowed = area;
+    unshadowed.shadows = false;
+    struct Probe
     {
-        std::cerr << "Expected partial area-light visibility at the edge of the box shadow\n";
-        return false;
+        double z;
+        int min_blocked, max_blocked;
+    };
+    // At z = -1.5 the top edge of the box cuts through the center of the rectangle.
+    for (const auto [z, min_blocked, max_blocked] : {Probe{-0.6, 64, 64}, Probe{-1.5, 20, 44}, Probe{-2.4, 0, 0}})
+    {
+        const auto p = overhead.project({0, -0.5, z}).value().image;
+        const PixelCoord pixel{static_cast<int>(p.x), static_cast<int>(p.y)};
+        const auto report = diagnose_pixel(scene, view, pixel, area);
+        const auto &floor = scene.instances().back();
+        if (!report.surface || report.surface->hit.surface.id.instance != floor.id ||
+            report.surface->material_index != floor.triangles.front().material_index || report.samples.size() != 64)
+        {
+            std::cerr << "Expected 64 rectangle samples on the ground material\n";
+            return false;
+        }
+        int blocked = 0;
+        Vec3 sum{};
+        for (std::size_t i = 0; i < report.samples.size(); ++i)
+        {
+            const auto &shadow = report.samples[i].shadow;
+            if (shadow.state == ShadowState::Blocked)
+            {
+                if (!shadow.blocker || shadow.blocker->instance != scene.instances().front().id)
+                {
+                    std::cerr << "Expected the box to block the ground sample\n";
+                    return false;
+                }
+                ++blocked;
+            }
+            sum = sum + report.sample_contribution(i);
+        }
+        const auto color = frame[pixel.y, pixel.x];
+        if (min_blocked != max_blocked)
+        {
+            const auto full = diagnose_pixel(scene, view, pixel, unshadowed).color.r;
+            if (!(color.r > 0.3f * full && color.r < 0.7f * full))
+            {
+                std::cerr << "Expected partial light at the edge of the box shadow\n";
+                return false;
+            }
+        }
+        if (std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b) ||
+            std::max({std::abs(sum.x - color.r), std::abs(sum.y - color.g), std::abs(sum.z - color.b)}) > 1e-6 ||
+            blocked < min_blocked || blocked > max_blocked)
+        {
+            std::cerr << std::format("Pixel replay at z={} disagrees with the shadow footprint or linear RGB\n", z);
+            return false;
+        }
     }
     return true;
 }

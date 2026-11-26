@@ -33,7 +33,7 @@ target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES F
 target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
-add_library(formlight_gltf STATIC src/io/gltf.cpp)
+add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
 target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_io)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -43,7 +43,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIAN
     target_link_libraries(formlight_gltf PRIVATE "${clang_builtins}")
 endif()
 
-add_executable(formlight-renderer src/main.cpp)
+add_executable(formlight-renderer src/main.cpp src/cli/pixel_report.cpp)
 target_sources(formlight-renderer PRIVATE FILE_SET CXX_MODULES FILES src/cli/render_options.cppm)
 target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_io)
 

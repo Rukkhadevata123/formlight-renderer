@@ -11,6 +11,14 @@ export struct RasterHit
 {
     TrianglePoint surface;
     double view_depth;
+
+    void keep_nearest(std::optional<RasterHit> &pixel) const noexcept
+    {
+        if (!pixel || std::tie(view_depth, surface.id) < std::tie(pixel->view_depth, pixel->surface.id))
+        {
+            pixel = *this;
+        }
+    }
 };
 
 // Row-major [row, column] view of caller-owned pixels. An empty cell is background.
@@ -80,16 +88,7 @@ RasterHit RasterTriangle::interpolate(const std::array<double, 3> &values) const
 
 void RasterTriangle::rasterize(VisibilityBuffer target) const noexcept
 {
-    coverage_.for_each_sample({target.extent(1), target.extent(0)},
-                              [&](int x, int y, const auto &values)
-                              {
-                                  const auto hit = interpolate(values);
-                                  auto &pixel = target[y, x];
-                                  if (!pixel || std::tie(hit.view_depth, hit.surface.id) <
-                                                    std::tie(pixel->view_depth, pixel->surface.id))
-                                  {
-                                      pixel = hit;
-                                  }
-                              });
+    coverage_.for_each_sample({target.extent(1), target.extent(0)}, [&](int x, int y, const auto &values)
+                              { interpolate(values).keep_nearest(target[y, x]); });
 }
 } // namespace formlight

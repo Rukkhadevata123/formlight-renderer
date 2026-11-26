@@ -12,6 +12,50 @@ export struct LightSampling
     std::uint64_t seed{};
 };
 
+export enum class ShadowState
+{
+    ZeroWeight,
+    Disabled,
+    Visible,
+    Blocked
+};
+
+export struct ShadowResult
+{
+    ShadowState state{ShadowState::ZeroWeight};
+    std::optional<SurfaceId> blocker{};
+};
+
+export struct LightSample
+{
+    std::optional<Vec3> position; // A directional light has no finite endpoint.
+    double diffuse_weight;
+    ShadowResult shadow;
+
+    [[nodiscard]] double visible_weight() const noexcept
+    {
+        return shadow.state == ShadowState::Blocked || shadow.state == ShadowState::ZeroWeight ? 0.0 : diffuse_weight;
+    }
+};
+
+export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, const Ray &ray, RayInterval interval,
+                                               bool identify_blocker) noexcept
+{
+    if (blockers.empty())
+    {
+        return {ShadowState::Disabled};
+    }
+    if (identify_blocker)
+    {
+        if (const auto hit = blockers.intersect(ray, interval))
+        {
+            return {ShadowState::Blocked, hit->surface.id};
+        }
+        return {ShadowState::Visible};
+    }
+    return {blockers.occluded(ray, interval) ? ShadowState::Blocked : ShadowState::Visible};
+}
+
 namespace
 {
 // SplitMix64 finalizer for the per-pixel random shift.
@@ -38,7 +82,7 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 
 export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, const SurfaceRayOrigin &receiver,
                                                 Vec3 unit_normal, LightSampling sampling, std::uint64_t pixel,
-                                                const TriangleBvh &blockers)
+                                                const TriangleBvh &blockers, std::vector<LightSample> *record = nullptr)
 {
     if (sampling.samples == 0)
     {
@@ -54,9 +98,13 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);
         const double weight = light.diffuse_weight(receiver.position(), unit_normal, sample);
-        if (weight > 0 && (blockers.empty() || !blockers.occluded(receiver.to(sample), {0, 1})))
+        const auto shadow =
+            weight > 0 ? trace_shadow(blockers, receiver.to(sample), {0, 1}, record != nullptr) : ShadowResult{};
+        const LightSample evaluated{sample, weight, shadow};
+        sum += evaluated.visible_weight();
+        if (record)
         {
-            sum += weight;
+            record->push_back(evaluated);
         }
     }
     return sum / sampling.samples;

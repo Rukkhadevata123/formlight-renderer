@@ -4,8 +4,6 @@ import std;
 export import formlight.gltf;
 export import formlight.scene_config;
 export import formlight.raster;
-import formlight.ray_query;
-import formlight.shadow_map;
 
 namespace formlight
 {
@@ -51,82 +49,43 @@ export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent
     return clip_to_bounds(camera, bounds, distance * 1e-5);
 }
 
-export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
-                                               std::optional<PreviewLighting> lighting = std::nullopt)
+export struct DiagnosticSurface
 {
-    const ImageExtent extent = view.camera.extent();
-    if (extent.width > std::numeric_limits<int>::max() / extent.height)
-    {
-        throw std::invalid_argument("Preview exceeds visibility buffer capacity");
-    }
-    ColorImage image{extent, {0.035f, 0.045f, 0.06f, 1.0f}};
-    std::vector<std::optional<RasterHit>> pixels(static_cast<std::size_t>(extent.width) * extent.height);
-    const VisibilityBuffer visible{pixels.data(), extent.height, extent.width};
-    for (const auto &triangle : RasterTriangle::prepare(view.camera, scene.instances(), view.depth))
-    {
-        triangle.rasterize(visible);
-    }
-    const auto *directional = lighting ? std::get_if<DirectionalLighting>(&*lighting) : nullptr;
-    const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
-    std::optional<DirectionalShadowMap> shadow_map;
-    if (directional && directional->shadows == ShadowMethod::Map)
-    {
-        shadow_map.emplace(scene.instances(), directional->light);
-    }
-    const bool ray_shadows = (directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows);
-    const auto blockers = ray_shadows ? TriangleBvh{scene.instances()} : TriangleBvh{};
-    const auto in_directional_shadow = [&](const MeshInstance &instance, const Triangle &face, Barycentrics weights)
-    {
-        if (shadow_map)
-        {
-            const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
-            const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
-            return !shadow_map->visible(world, geometric_normal);
-        }
-        if (!blockers.empty())
-        {
-            const Ray ray = SurfaceRayOrigin{instance, face, weights}.along(directional->light.toward_light());
-            return blockers.occluded(ray, {0, std::numeric_limits<double>::infinity()});
-        }
-        return false;
-    };
+    RasterHit hit;
+    std::size_t material_index;
+    LinearColor base_color;
+};
 
-    for (int y = 0; y < extent.height; ++y)
-    {
-        for (int x = 0; x < extent.width; ++x)
-        {
-            if (const auto &hit = visible[y, x])
-            {
-                const auto &[id, weights] = hit->surface;
-                const auto &instance = scene.instance(id.instance);
-                const auto &face = instance.triangles[std::to_underlying(id.primitive)];
-                auto color = scene.base_color(face, weights);
-                if (area)
-                {
-                    const auto pixel = static_cast<std::uint64_t>(y) * extent.width + x;
-                    const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
-                    const double weight = sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights},
-                                                              normal, area->sampling, pixel, blockers);
-                    color = {static_cast<float>(color.r * weight), static_cast<float>(color.g * weight),
-                             static_cast<float>(color.b * weight), color.a};
-                }
-                else if (directional)
-                {
-                    const Vec3 normal = instance.transform.to_world_normal(face.normal_at(weights));
-                    color = directional->light.diffuse(color, normal);
-                    if ((color.r > 0 || color.g > 0 || color.b > 0) && in_directional_shadow(instance, face, weights))
-                    {
-                        color = {0, 0, 0, color.a};
-                    }
-                }
-                image[y, x] = color;
-            }
-        }
-    }
-    return image;
-}
+export struct PixelDiagnostic
+{
+    PixelCoord pixel;
+    std::optional<DiagnosticSurface> surface{};
+    LightKind light{LightKind::None};
+    std::uint64_t sampling_seed{};
+    std::vector<LightSample> samples{};
+    LinearColor color{};
 
-export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)
+    // Linear RGB contribution to the final pixel, including the sample's share of the mean.
+    [[nodiscard]] Vec3 sample_contribution(std::size_t index) const
+    {
+        const auto &sample = samples.at(index);
+        const auto &base = surface.value().base_color;
+        return Vec3{base.r, base.g, base.b} * (sample.visible_weight() / static_cast<double>(samples.size()));
+    }
+};
+
+export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
+                                               std::optional<PreviewLighting> lighting = std::nullopt);
+export [[nodiscard]] PixelDiagnostic diagnose_pixel(const GltfScene &scene, const PreviewView &view, PixelCoord pixel,
+                                                    std::optional<PreviewLighting> lighting = std::nullopt);
+
+struct ScenePreview
+{
+    GltfScene scene;
+    PreviewView view;
+};
+
+ScenePreview load_preview(const RenderRequest &request)
 {
     auto scene = GltfScene::load_glb(request.asset, GltfContent::BaseColor);
     if (!scene)
@@ -139,13 +98,27 @@ export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)
         subject = world_bounds(scene->instances());
         add_preview_ground(*scene, *subject);
     }
-    if (request.camera)
+    const auto view = [&]
     {
-        const auto bounds = world_bounds(scene->instances());
-        const auto view = clip_to_bounds(*request.camera, bounds, bounds.radius() * 1e-5);
-        return render_preview(*scene, view, request.lighting);
-    }
-    return render_preview(*scene, frame_scene(*scene, request.extent, subject, request.vertical_fov_radians),
-                          request.lighting);
+        if (request.camera)
+        {
+            const auto bounds = world_bounds(scene->instances());
+            return clip_to_bounds(*request.camera, bounds, bounds.radius() * 1e-5);
+        }
+        return frame_scene(*scene, request.extent, subject, request.vertical_fov_radians);
+    }();
+    return {std::move(*scene), view};
+}
+
+export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)
+{
+    const auto [scene, view] = load_preview(request);
+    return render_preview(scene, view, request.lighting);
+}
+
+export [[nodiscard]] PixelDiagnostic diagnose_pixel(const RenderRequest &request, PixelCoord pixel)
+{
+    const auto [scene, view] = load_preview(request);
+    return diagnose_pixel(scene, view, pixel, request.lighting);
 }
 } // namespace formlight

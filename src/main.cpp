@@ -9,9 +9,10 @@ auto main(int argc, char **argv) -> int
     if (argc == 1 || (argc == 2 && std::string_view{argv[1]} == "--help"))
     {
         std::println("Usage: formlight-renderer --inspect MODEL.glb\n"
-                     "       formlight-renderer --render MODEL.glb --output IMAGE.png\n"
-                     "       formlight-renderer --scene SCENE.toml --output IMAGE.png\n"
-                     "                         [--mode raster|hybrid] [--light-samples N] [--seed N]");
+                     "       formlight-renderer --render MODEL.glb (--output IMAGE.png | --pixel X Y)\n"
+                     "       formlight-renderer --scene SCENE.toml (--output IMAGE.png | --pixel X Y)\n"
+                     "                         [--mode raster|hybrid] [--light-samples N] [--seed N]\n"
+                     "Pixel coordinates start at (0, 0) in the top-left corner.");
         return 0;
     }
 
@@ -48,8 +49,14 @@ auto main(int argc, char **argv) -> int
             {
                 config.scene.asset = std::filesystem::absolute(input);
             }
-            const auto output = apply_render_options(config, {argv + 3, static_cast<std::size_t>(argc - 3)});
+            const auto action = apply_render_options(config, {argv + 3, static_cast<std::size_t>(argc - 3)});
             const auto request = prepare_render(config);
+            if (const auto *pixel = std::get_if<PixelCoord>(&action))
+            {
+                print_pixel_report(diagnose_pixel(request, *pixel));
+                return 0;
+            }
+            const auto &output = std::get<std::filesystem::path>(action);
             if (std::filesystem::exists(output) &&
                 (std::filesystem::equivalent(input, output) || std::filesystem::equivalent(request.asset, output)))
             {

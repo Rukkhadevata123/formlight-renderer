@@ -2,7 +2,6 @@ export module formlight.lighting;
 
 import std;
 import formlight.geometry;
-import formlight.image;
 
 export namespace formlight
 {
@@ -20,10 +19,9 @@ class DirectionalLight
         return toward_light_;
     }
 
-    [[nodiscard]] LinearColor diffuse(LinearColor base_color, Vec3 unit_world_normal) const noexcept
+    [[nodiscard]] float diffuse_weight(Vec3 unit_world_normal) const noexcept
     {
-        const auto cosine = static_cast<float>(std::max(0.0, dot(unit_world_normal, toward_light_)));
-        return {base_color.r * cosine, base_color.g * cosine, base_color.b * cosine, base_color.a};
+        return static_cast<float>(std::max(0.0, dot(unit_world_normal, toward_light_)));
     }
 
   private:
