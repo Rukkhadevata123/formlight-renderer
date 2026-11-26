@@ -13,8 +13,8 @@ constexpr LinearColor background{0.035f, 0.045f, 0.06f, 1.0f};
 class PreviewShader
 {
   public:
-    PreviewShader(const GltfScene &scene, const std::optional<PreviewLighting> &lighting)
-        : scene_(scene), directional_(lighting ? std::get_if<DirectionalLighting>(&*lighting) : nullptr),
+    PreviewShader(const GltfScene &scene, const std::optional<PreviewLighting> &lighting, const std::stop_token &stop)
+        : scene_(scene), stop_(stop), directional_(lighting ? std::get_if<DirectionalLighting>(&*lighting) : nullptr),
           area_(lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr)
     {
         if (directional_ && directional_->shadows == ShadowMethod::Map)
@@ -52,7 +52,7 @@ class PreviewShader
             }
             const double weight =
                 sample_area_diffuse(area_->light, SurfaceRayOrigin{instance, face, weights}, normal, area_->sampling,
-                                    pixel, blockers_, record ? &record->samples : nullptr);
+                                    pixel, blockers_, record ? &record->samples : nullptr, stop_);
             return scale_rgb(base, weight);
         }
 
@@ -94,6 +94,7 @@ class PreviewShader
     }
 
     const GltfScene &scene_;
+    const std::stop_token &stop_;
     const DirectionalLighting *directional_;
     const AreaLighting *area_;
     std::optional<DirectionalShadowMap> shadow_map_;
@@ -106,7 +107,8 @@ std::uint64_t pixel_index(PixelCoord pixel, ImageExtent extent) noexcept
 }
 } // namespace
 
-ColorImage render_preview(const GltfScene &scene, const PreviewView &view, std::optional<PreviewLighting> lighting)
+ColorImage render_preview(const GltfScene &scene, const PreviewView &view, std::optional<PreviewLighting> lighting,
+                          std::stop_token stop)
 {
     const ImageExtent extent = view.camera.extent();
     if (extent.width > std::numeric_limits<int>::max() / extent.height)
@@ -118,11 +120,19 @@ ColorImage render_preview(const GltfScene &scene, const PreviewView &view, std::
     const VisibilityBuffer visible{pixels.data(), extent.height, extent.width};
     for (const auto &triangle : RasterTriangle::prepare(view.camera, scene.instances(), view.depth))
     {
+        if (stop.stop_requested())
+        {
+            throw std::runtime_error("Rendering cancelled");
+        }
         triangle.rasterize(visible);
     }
-    const PreviewShader shader{scene, lighting};
+    const PreviewShader shader{scene, lighting, stop};
     for (int y = 0; y < extent.height; ++y)
     {
+        if (stop.stop_requested())
+        {
+            throw std::runtime_error("Rendering cancelled");
+        }
         for (int x = 0; x < extent.width; ++x)
         {
             if (const auto &hit = visible[y, x])
@@ -135,7 +145,7 @@ ColorImage render_preview(const GltfScene &scene, const PreviewView &view, std::
 }
 
 PixelDiagnostic diagnose_pixel(const GltfScene &scene, const PreviewView &view, PixelCoord pixel,
-                               std::optional<PreviewLighting> lighting)
+                               std::optional<PreviewLighting> lighting, std::stop_token stop)
 {
     const ImageExtent extent = view.camera.extent();
     if (pixel.x < 0 || pixel.x >= extent.width || pixel.y < 0 || pixel.y >= extent.height)
@@ -147,6 +157,10 @@ PixelDiagnostic diagnose_pixel(const GltfScene &scene, const PreviewView &view, 
     std::optional<RasterHit> nearest;
     for (const auto &triangle : RasterTriangle::prepare(view.camera, scene.instances(), view.depth))
     {
+        if (stop.stop_requested())
+        {
+            throw std::runtime_error("Pixel inspection cancelled");
+        }
         if (const auto hit = triangle.sample(center))
         {
             hit->keep_nearest(nearest);
@@ -156,7 +170,7 @@ PixelDiagnostic diagnose_pixel(const GltfScene &scene, const PreviewView &view, 
     PixelDiagnostic report{.pixel = pixel, .color = background};
     if (nearest)
     {
-        const PreviewShader shader{scene, lighting};
+        const PreviewShader shader{scene, lighting, stop};
         report.color = shader.shade(*nearest, pixel_index(pixel, extent), &report);
     }
     return report;

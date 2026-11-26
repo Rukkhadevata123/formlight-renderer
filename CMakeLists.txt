@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 4.5)
+option(FORMLIGHT_BUILD_VIEWER "Build the SDL3 and Dear ImGui preview window" OFF)
+if(FORMLIGHT_BUILD_VIEWER)
+    list(APPEND VCPKG_MANIFEST_FEATURES viewer)
+endif()
 project(formlight-renderer LANGUAGES C CXX)
 
 find_package(fastgltf CONFIG REQUIRED)
@@ -46,6 +50,14 @@ endif()
 add_executable(formlight-renderer src/main.cpp src/cli/pixel_report.cpp)
 target_sources(formlight-renderer PRIVATE FILE_SET CXX_MODULES FILES src/cli/render_options.cppm)
 target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_io)
+
+if(FORMLIGHT_BUILD_VIEWER)
+    find_package(SDL3 CONFIG REQUIRED)
+    find_package(imgui CONFIG REQUIRED)
+    add_executable(formlight-viewer src/viewer/main.cpp)
+    target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES src/viewer/window.cppm)
+    target_link_libraries(formlight-viewer PRIVATE formlight_gltf formlight_io SDL3::SDL3 imgui::imgui)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)

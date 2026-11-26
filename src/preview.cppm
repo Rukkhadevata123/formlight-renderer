@@ -75,17 +75,19 @@ export struct PixelDiagnostic
 };
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
-                                               std::optional<PreviewLighting> lighting = std::nullopt);
+                                               std::optional<PreviewLighting> lighting = std::nullopt,
+                                               std::stop_token stop = {});
 export [[nodiscard]] PixelDiagnostic diagnose_pixel(const GltfScene &scene, const PreviewView &view, PixelCoord pixel,
-                                                    std::optional<PreviewLighting> lighting = std::nullopt);
+                                                    std::optional<PreviewLighting> lighting = std::nullopt,
+                                                    std::stop_token stop = {});
 
-struct ScenePreview
+export struct ScenePreview
 {
     GltfScene scene;
     PreviewView view;
 };
 
-ScenePreview load_preview(const RenderRequest &request)
+export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 {
     auto scene = GltfScene::load_glb(request.asset, GltfContent::BaseColor);
     if (!scene)

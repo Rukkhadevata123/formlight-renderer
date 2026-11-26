@@ -37,6 +37,13 @@ struct LinearColor
     return value <= 0.0031308f ? 12.92f * value : 1.055f * std::pow(value, 1.0f / 2.4f) - 0.055f;
 }
 
+// RGB uses the same display transfer function for PNG files and window textures.
+[[nodiscard]] inline std::array<std::uint8_t, 3> display_rgb8(LinearColor color) noexcept
+{
+    const auto encode = [](float c) { return static_cast<std::uint8_t>(std::lround(linear_to_srgb(c) * 255.0f)); };
+    return {encode(color.r), encode(color.g), encode(color.b)};
+}
+
 class ColorImage
 {
   public:

@@ -82,7 +82,8 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 
 export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, const SurfaceRayOrigin &receiver,
                                                 Vec3 unit_normal, LightSampling sampling, std::uint64_t pixel,
-                                                const TriangleBvh &blockers, std::vector<LightSample> *record = nullptr)
+                                                const TriangleBvh &blockers, std::vector<LightSample> *record = nullptr,
+                                                const std::stop_token &stop = {})
 {
     if (sampling.samples == 0)
     {
@@ -94,6 +95,10 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
     double sum = 0;
     for (std::uint32_t i = 0; i < sampling.samples; ++i)
     {
+        if ((i % 256 == 0) && stop.stop_requested())
+        {
+            throw std::runtime_error("Rendering cancelled");
+        }
         const double u = shifted_radical_inverse<2>(i, shift_u);
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);

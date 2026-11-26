@@ -64,11 +64,7 @@ void write_png(const std::filesystem::path &path, const ColorImage &image)
     {
         for (int x = 0; x < width; ++x)
         {
-            const auto color = image[y, x];
-            for (float value : {color.r, color.g, color.b})
-            {
-                *out++ = static_cast<unsigned char>(std::lround(linear_to_srgb(value) * 255.0f));
-            }
+            out = std::ranges::copy(display_rgb8(image[y, x]), out).out;
         }
     }
     const auto write = [](void *stream, void *data, int size)
