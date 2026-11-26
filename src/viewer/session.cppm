@@ -43,33 +43,44 @@ template <class T, class Request = std::uint64_t> class PreviewJob
     std::jthread worker_;
 };
 
-// Lives at a stable address for the render and inspection jobs that borrow its renderer.
+// Render and inspection jobs borrow the mesh and texture storage at this stable address.
 struct ViewerScene
 {
-    explicit ViewerScene(const RenderRequest &request)
-        : preview(load_preview(request)), renderer(preview.scene, request.lighting), orbit(preview.view.camera)
+    explicit ViewerScene(const RenderRequest &request) : preview(load_preview(request)), orbit(preview.view.camera)
     {
-        const auto *area = request.lighting ? std::get_if<AreaLighting>(&*request.lighting) : nullptr;
-        can_reduce_samples = area && area->sampling.samples > 1;
     }
     ViewerScene(const ViewerScene &) = delete;
     ViewerScene &operator=(const ViewerScene &) = delete;
     ScenePreview preview;
-    PreviewRenderer renderer;
     OrbitCamera orbit;
-    bool can_reduce_samples{};
+
+    void resize(ImageExtent extent)
+    {
+        auto &camera = preview.view.camera;
+        camera = PinholeCamera{camera.view(), extent};
+        orbit.resize(extent);
+    }
 };
 
 export class ViewerSession
 {
   public:
     using Clock = std::chrono::steady_clock;
-    explicit ViewerSession(RenderRequest request);
+    explicit ViewerSession(SceneConfig config);
+    [[nodiscard]] RenderSettings &render_settings()
+    {
+        return draft_.render;
+    }
+    [[nodiscard]] LightSettings &light_settings()
+    {
+        return draft_.light;
+    }
+    void apply_settings();
     // Consume input against the displayed view before publishing a replacement image.
     [[nodiscard]] const ColorImage *update(const ViewportInput &input, Clock::time_point now = Clock::now());
-    [[nodiscard]] ImageExtent extent() const
+    [[nodiscard]] ImageExtent display_extent() const
     {
-        return extent_;
+        return frame_ ? frame_->request.full_extent : settings_.extent;
     }
     [[nodiscard]] auto selection() const
     {
@@ -100,30 +111,33 @@ export class ViewerSession
         std::uint64_t revision;
         Quality quality;
         bool navigation;
+        ImageExtent full_extent;
         PreviewView view;
     };
     struct TimedImage
     {
         ColorImage image;
         Clock::duration elapsed;
+        PreviewRenderer renderer;
     };
     struct Frame
     {
         FrameRequest request;
-        ColorImage image;
+        TimedImage result;
     };
     void select(std::optional<PixelCoord> pixel);
     void navigate(const ViewportInput &input, Clock::time_point now);
     void schedule_render(Clock::time_point now);
     [[nodiscard]] Quality navigation_quality(Clock::duration budget) const;
 
-    ImageExtent extent_;
+    SceneConfig draft_;
+    RenderRequest settings_;
     std::unique_ptr<ViewerScene> scene_;
     std::optional<Frame> frame_;
     std::optional<PixelCoord> selection_;
     std::optional<PixelDiagnostic> report_;
     bool focus_pending_{};
-    std::uint64_t requested_{1}, pick_revision_{};
+    std::uint64_t requested_{1}, settings_revision_{1}, pick_revision_{};
     Clock::time_point refine_after_{Clock::time_point::min()};
     Quality gesture_quality_{Quality::Full};
     Clock::duration full_cost_{}, light_center_cost_{};
@@ -133,10 +147,29 @@ export class ViewerSession
     std::optional<PreviewJob<PixelDiagnostic>> inspecting_;
 };
 
-ViewerSession::ViewerSession(RenderRequest request)
-    : extent_(request.extent),
-      loading_(0, [request = std::move(request)](std::stop_token) { return std::make_unique<ViewerScene>(request); })
+ViewerSession::ViewerSession(SceneConfig config)
+    : draft_(std::move(config)), settings_(prepare_render(draft_)),
+      loading_(0, [request = settings_](std::stop_token) { return std::make_unique<ViewerScene>(request); })
 {
+}
+
+void ViewerSession::apply_settings()
+{
+    auto settings = prepare_render(draft_);
+    if (scene_)
+    {
+        scene_->resize(settings.extent);
+    }
+    settings_ = std::move(settings);
+    settings_revision_ = ++requested_;
+    select(std::nullopt);
+    if (rendering_)
+    {
+        rendering_->cancel();
+    }
+    refine_after_ = Clock::time_point::min();
+    gesture_quality_ = Quality::Full;
+    full_cost_ = light_center_cost_ = {};
 }
 
 void ViewerSession::select(std::optional<PixelCoord> pixel)
@@ -157,7 +190,8 @@ ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget)
     {
         return Quality::Full;
     }
-    if (scene_->can_reduce_samples && light_center_cost_ <= budget)
+    const auto *area = settings_.lighting ? std::get_if<AreaLighting>(&*settings_.lighting) : nullptr;
+    if (area && area->sampling.samples > 1 && light_center_cost_ <= budget)
     {
         return Quality::LightCenter;
     }
@@ -221,7 +255,7 @@ void ViewerSession::schedule_render(Clock::time_point now)
         return;
     }
     auto view = scene_->preview.view;
-    const bool navigating = frame_ && frame_->request.revision != requested_;
+    const bool navigating = frame_ && frame_->request.revision != requested_ && requested_ > settings_revision_;
     if (!navigating && now < refine_after_)
     {
         return;
@@ -230,20 +264,24 @@ void ViewerSession::schedule_render(Clock::time_point now)
     if (quality == Quality::HalfResolution)
     {
         // Round up so odd extents retain their last row/column and a one-pixel axis stays valid.
-        const ImageExtent half{extent_.width / 2 + extent_.width % 2, extent_.height / 2 + extent_.height % 2};
+        const auto [width, height] = settings_.extent;
+        const ImageExtent half{width / 2 + width % 2, height / 2 + height % 2};
         view.camera = PinholeCamera{view.camera.view(), half};
     }
     if (quality != Quality::Full)
     {
         view.area_light_pattern = AreaLightPattern::Center;
     }
-    rendering_.emplace(FrameRequest{requested_, quality, navigating, view},
-                       [&renderer = scene_->renderer, view](std::stop_token stop)
-                       {
-                           const auto start = Clock::now();
-                           auto image = renderer.render(view, stop);
-                           return TimedImage{std::move(image), Clock::now() - start};
-                       });
+    auto renderer = frame_ ? frame_->result.renderer : PreviewRenderer{scene_->preview.scene};
+    rendering_.emplace(
+        FrameRequest{requested_, quality, navigating, settings_.extent, view},
+        [renderer = std::move(renderer), lighting = settings_.lighting, view](std::stop_token stop) mutable
+        {
+            renderer.set_lighting(std::move(lighting));
+            const auto start = Clock::now();
+            auto image = renderer.render(view, stop);
+            return TimedImage{std::move(image), Clock::now() - start, std::move(renderer)};
+        });
 }
 
 const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_point now)
@@ -251,6 +289,7 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
     if (loading_.ready())
     {
         scene_ = loading_.take();
+        scene_->resize(settings_.extent);
     }
     if (!scene_)
     {
@@ -280,23 +319,23 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
     {
         // Even a full-quality navigation frame may finish while more input accumulates.
         const auto &request = rendering_->request;
-        if (request.navigation || request.revision == requested_)
+        if (request.revision == requested_ || (request.navigation && request.revision >= settings_revision_))
         {
-            auto [image, elapsed] = rendering_->take();
+            auto result = rendering_->take();
             // A half-size preview has about a quarter of the native pixel count.
-            const auto estimate = request.quality == Quality::HalfResolution ? 4 * elapsed : elapsed;
+            const auto estimate = request.quality == Quality::HalfResolution ? 4 * result.elapsed : result.elapsed;
             auto &cost = request.quality == Quality::Full ? full_cost_ : light_center_cost_;
-            cost = frame_ ? cost + (estimate - cost) / 4 : estimate;
-            frame_ = Frame{request, std::move(image)};
+            cost = cost == Clock::duration::zero() ? estimate : cost + (estimate - cost) / 4;
+            frame_.emplace(request, std::move(result));
             select(std::nullopt);
-            published = &frame_->image;
+            published = &frame_->result.image;
         }
         rendering_.reset();
     }
     schedule_render(now);
     if (selection_ && !report_ && !inspecting_)
     {
-        inspecting_.emplace(pick_revision_, [&renderer = scene_->renderer, view = frame_->request.view,
+        inspecting_.emplace(pick_revision_, [renderer = frame_->result.renderer, view = frame_->request.view,
                                              pixel = *selection_](std::stop_token stop)
                             { return renderer.diagnose(view, pixel, stop); });
     }

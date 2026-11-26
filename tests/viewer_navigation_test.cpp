@@ -33,6 +33,27 @@ const ColorImage &await_frame(ViewerSession &session, ViewerSession::Clock::time
     }
 }
 
+void check_image(const ColorImage &actual, const SceneConfig &config)
+{
+    const auto reference = render_scene(prepare_render(config));
+    const auto [width, height] = reference.extent();
+    if (actual.extent().width != width || actual.extent().height != height)
+    {
+        throw std::runtime_error("Displayed frame has the wrong resolution");
+    }
+    for (int y = 0; y < height; ++y)
+    {
+        for (int x = 0; x < width; ++x)
+        {
+            const auto a = actual[y, x], b = reference[y, x];
+            if (std::max({std::abs(a.r - b.r), std::abs(a.g - b.g), std::abs(a.b - b.b)}) > 1e-5f)
+            {
+                throw std::runtime_error("Displayed frame differs from the CLI camera or lighting");
+            }
+        }
+    }
+}
+
 void check_frame_replacement(const std::filesystem::path &asset)
 {
     SceneConfig config;
@@ -45,7 +66,7 @@ void check_frame_replacement(const std::filesystem::path &asset)
     config.camera.position = {0.25, 0, 4};
     config.camera.target = {0.25, 0, 0};
     const auto request = prepare_render(config);
-    ViewerSession session{request};
+    ViewerSession session{config};
     auto now = ViewerSession::Clock::now();
     if (await_frame(session, now).extent().width != 81 || session.updating())
     {
@@ -107,18 +128,32 @@ void check_frame_replacement(const std::filesystem::path &asset)
     const double distance = framing_distance(std::sqrt(0.75), request.extent, request.vertical_fov_radians) / 1.15;
     config.camera.target = {};
     config.camera.position = Vec3{std::sin(yaw), 0, std::cos(yaw)} * distance;
-    const auto reference = render_scene(prepare_render(config));
-    for (int y = 0; y < request.extent.height; ++y)
+    check_image(latest, config);
+
+    session.render_settings().mode = RenderMode::Raster;
+    try
     {
-        for (int x = 0; x < request.extent.width; ++x)
-        {
-            const auto a = latest[y, x], b = reference[y, x];
-            if (std::max({std::abs(a.r - b.r), std::abs(a.g - b.g), std::abs(a.b - b.b)}) > 1e-5f)
-            {
-                throw std::runtime_error("Latest frame differs from the focused and zoomed CLI camera");
-            }
-        }
+        session.apply_settings();
+        throw std::runtime_error("Accepted rectangle ray shadows in raster mode");
     }
+    catch (const std::invalid_argument &)
+    {
+    }
+    if (session.updating())
+    {
+        throw std::runtime_error("Rejected settings disturbed the settled frame");
+    }
+
+    // Supersede an in-flight navigation frame; the first frame published must already use the new settings.
+    (void)session.update({.wheel = 1}, now);
+    config.camera.position = config.camera.position / 1.15;
+    config.render.extent = {97, 53};
+    config.light.width = 0.4;
+    config.light.shadows = false;
+    session.light_settings() = config.light;
+    session.render_settings() = config.render;
+    session.apply_settings();
+    check_image(await_frame(session, now), config);
 }
 } // namespace
 

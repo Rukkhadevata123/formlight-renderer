@@ -7,6 +7,8 @@ export namespace formlight
 struct Vec3
 {
     double x, y, z;
+
+    bool operator==(const Vec3 &) const = default;
 };
 
 [[nodiscard]] constexpr Vec3 operator+(Vec3 a, Vec3 b) noexcept

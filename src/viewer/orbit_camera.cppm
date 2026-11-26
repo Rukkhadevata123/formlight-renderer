@@ -14,6 +14,10 @@ export class OrbitCamera
     void pan(double dx, double dy);
     void zoom(double notches);
     void focus(const Bounds3 &instance);
+    void resize(ImageExtent extent)
+    {
+        extent_ = extent;
+    }
     [[nodiscard]] PreviewView view(const Bounds3 &scene) const;
 
   private:

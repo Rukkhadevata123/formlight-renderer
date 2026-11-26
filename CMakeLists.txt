@@ -60,7 +60,8 @@ if(FORMLIGHT_BUILD_VIEWER)
         src/viewer/orbit_camera.cppm src/viewer/session.cppm)
     target_link_libraries(formlight_viewer_session PUBLIC formlight_gltf)
     add_executable(formlight-viewer src/viewer/main.cpp)
-    target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES src/viewer/window.cppm)
+    target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES
+        src/viewer/settings_panel.cppm src/viewer/window.cppm)
     target_link_libraries(formlight-viewer PRIVATE formlight_viewer_session formlight_io SDL3::SDL3 imgui::imgui)
 endif()
 

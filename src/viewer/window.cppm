@@ -10,6 +10,7 @@ export module formlight.viewer.window;
 import std;
 import formlight.preview;
 import formlight.viewer.session;
+import formlight.viewer.settings_panel;
 
 namespace formlight
 {
@@ -90,20 +91,13 @@ struct ImageRect
     }
 };
 
-std::optional<ImageRect> place_image(ImageExtent extent)
+ImageRect fit_image(ImVec2 origin, ImVec2 space, ImageExtent extent)
 {
-    const auto space = ImGui::GetContentRegionAvail();
-    const auto origin = ImGui::GetCursorScreenPos();
-    if (space.x < 1 || space.y < 1)
-    {
-        return {};
-    }
     const float scale =
         std::min(space.x / static_cast<float>(extent.width), space.y / static_cast<float>(extent.height));
     const ImVec2 size{static_cast<float>(extent.width) * scale, static_cast<float>(extent.height) * scale};
-    ImGui::SetCursorScreenPos({origin.x + (space.x - size.x) / 2, origin.y + (space.y - size.y) / 2});
-    ImGui::InvisibleButton("##image", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
-    return ImageRect{ImGui::GetItemRectMin(), ImGui::GetItemRectMax()};
+    const ImVec2 lo{origin.x + (space.x - size.x) / 2, origin.y + (space.y - size.y) / 2};
+    return {lo, {lo.x + size.x, lo.y + size.y}};
 }
 
 void draw_image(SDL_Texture *texture, ImageRect rect, std::optional<PixelCoord> selection)
@@ -148,6 +142,8 @@ export class ViewerWindow
     std::unique_ptr<ImGuiContext, GuiShutdown> context_;
     std::unique_ptr<SDL_Texture, decltype(&SDL_DestroyTexture)> texture_{nullptr, SDL_DestroyTexture};
     bool vsync_{};
+    std::int64_t max_texture_size_{};
+    SettingsPanel settings_;
 };
 
 ViewerWindow::ViewerWindow(const char *title)
@@ -156,6 +152,8 @@ ViewerWindow::ViewerWindow(const char *title)
     require_sdl(window_ != nullptr, "SDL_CreateWindow");
     renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
     require_sdl(renderer_ != nullptr, "SDL_CreateRenderer");
+    max_texture_size_ =
+        SDL_GetNumberProperty(SDL_GetRendererProperties(renderer_.get()), SDL_PROP_RENDERER_MAX_TEXTURE_SIZE_NUMBER, 0);
     vsync_ = SDL_SetRenderVSync(renderer_.get(), 1);
     IMGUI_CHECKVERSION();
     context_.reset(ImGui::CreateContext());
@@ -265,34 +263,43 @@ void ViewerWindow::draw(ViewerSession &session)
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
                      ImGuiWindowFlags_NoScrollWithMouse);
     const float width = ImGui::GetContentRegionAvail().x;
-    const float panel = std::min(width * 0.4f, 16 * ImGui::GetFontSize());
-    std::optional<ImageRect> rect;
-    if (ImGui::BeginChild("Viewport", {std::max(1.0f, width - panel - ImGui::GetStyle().ItemSpacing.x), 0}, 0,
-                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse))
+    const float panel = std::min(width * 0.4f, 20 * ImGui::GetFontSize());
+    const bool visible =
+        ImGui::BeginChild("Viewport", {std::max(1.0f, width - panel - ImGui::GetStyle().ItemSpacing.x), 0}, 0,
+                          ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const auto origin = ImGui::GetCursorScreenPos(), space = ImGui::GetContentRegionAvail();
+    const bool show_image = visible && space.x >= 1 && space.y >= 1;
+    ViewportInput input;
+    if (show_image && texture_)
     {
-        rect = place_image(session.extent());
+        const auto rect = fit_image(origin, space, session.display_extent());
+        ImGui::SetCursorScreenPos(rect.lo);
+        ImGui::InvisibleButton("##image", {rect.hi.x - rect.lo.x, rect.hi.y - rect.lo.y},
+                               ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
+        input = read_input(rect, {texture_->w, texture_->h});
     }
-    // Layout follows the configured aspect ratio. Picking follows the texture currently on screen.
-    const ViewportInput input = rect && texture_ ? read_input(*rect, {texture_->w, texture_->h}) : ViewportInput{};
     if (const auto *image = session.update(input))
     {
         upload(*image);
     }
-    if (rect)
+    if (show_image)
     {
+        // A newly published frame may have a different aspect ratio from the image just picked.
+        const auto rect = fit_image(origin, space, session.display_extent());
         if (texture_)
         {
-            draw_image(texture_.get(), *rect, session.selection());
+            draw_image(texture_.get(), rect, session.selection());
         }
         else
         {
-            ImGui::GetWindowDrawList()->AddText(rect->lo, ImGui::GetColorU32(ImGuiCol_Text), "Rendering scene...");
+            ImGui::GetWindowDrawList()->AddText(rect.lo, ImGui::GetColorU32(ImGuiCol_Text), "Rendering scene...");
         }
     }
     ImGui::EndChild();
     ImGui::SameLine();
     if (ImGui::BeginChild("Inspector"))
     {
+        settings_.draw(session, max_texture_size_);
         ImGui::SeparatorText("Pixel inspector");
         if (session.selection() && !session.report())
         {

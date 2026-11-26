@@ -88,7 +88,7 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 
 export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, const SurfaceRayOrigin &receiver,
                                                 Vec3 unit_normal, LightSampling sampling, std::uint64_t pixel,
-                                                const TriangleBvh &blockers,
+                                                const TriangleBvh *blockers,
                                                 AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
                                                 std::vector<LightSample> *record = nullptr,
                                                 const std::stop_token &stop = {})
@@ -118,8 +118,12 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);
         const double weight = light.diffuse_weight(receiver.position(), unit_normal, sample);
-        const auto shadow =
-            weight > 0 ? trace_shadow(blockers, receiver.to(sample), {0, 1}, record != nullptr) : ShadowResult{};
+        ShadowResult shadow;
+        if (weight > 0)
+        {
+            shadow = blockers ? trace_shadow(*blockers, receiver.to(sample), {0, 1}, record != nullptr)
+                              : ShadowResult{ShadowState::Disabled};
+        }
         const LightSample evaluated{sample, weight, shadow};
         sum += evaluated.visible_weight();
         if (record)

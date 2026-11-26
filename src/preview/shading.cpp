@@ -21,23 +21,32 @@ std::uint64_t pixel_index(PixelCoord pixel, ImageExtent extent) noexcept
 }
 } // namespace
 
-PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting)
-    : scene_(scene), lighting_(std::move(lighting))
+PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting) : scene_(scene)
 {
-    if (!lighting_)
+    set_lighting(std::move(lighting));
+}
+
+void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
+{
+    const auto *directional = lighting ? std::get_if<DirectionalLighting>(&*lighting) : nullptr;
+    const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
+    if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows)))
     {
-        return;
+        blockers_ = std::make_shared<TriangleBvh>(scene_.instances());
     }
-    const auto *directional = std::get_if<DirectionalLighting>(&*lighting_);
-    const auto *area = std::get_if<AreaLighting>(&*lighting_);
     if (directional && directional->shadows == ShadowMethod::Map)
     {
-        shadow_map_.emplace(scene.instances(), directional->light);
+        const auto direction = directional->light.toward_light();
+        if (!shadow_map_ || std::get<DirectionalLighting>(*lighting_).light.toward_light() != direction)
+        {
+            shadow_map_ = std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light);
+        }
     }
-    else if ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows))
+    else
     {
-        blockers_ = TriangleBvh{scene.instances()};
+        shadow_map_.reset();
     }
+    lighting_ = std::move(lighting);
 }
 
 LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, AreaLightPattern area_light_pattern,
@@ -64,9 +73,9 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, Ar
             record->light = LightKind::Rectangle;
             record->sampling_seed = area->sampling.seed;
         }
-        const double weight =
-            sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal, area->sampling, pixel,
-                                blockers_, area_light_pattern, record ? &record->samples : nullptr, stop);
+        const double weight = sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal,
+                                                  area->sampling, pixel, area->shadows ? blockers_.get() : nullptr,
+                                                  area_light_pattern, record ? &record->samples : nullptr, stop);
         return scale_rgb(base, weight);
     }
 
@@ -99,7 +108,7 @@ LightSample PreviewRenderer::directional_sample(const DirectionalLighting &light
     else if (light.shadows == ShadowMethod::Ray)
     {
         const Ray ray = SurfaceRayOrigin{instance, face, weights}.along(light.light.toward_light());
-        shadow = trace_shadow(blockers_, ray, {0, std::numeric_limits<double>::infinity()}, identify_blocker);
+        shadow = trace_shadow(*blockers_, ray, {0, std::numeric_limits<double>::infinity()}, identify_blocker);
     }
     else
     {

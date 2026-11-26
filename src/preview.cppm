@@ -91,6 +91,8 @@ export class PreviewRenderer
 {
   public:
     explicit PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting = {});
+    // Copies share immutable shadow data. Relighting one copy leaves in-flight frames and picks intact.
+    void set_lighting(std::optional<PreviewLighting> lighting);
     [[nodiscard]] ColorImage render(const PreviewView &view, std::stop_token stop = {}) const;
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
@@ -102,8 +104,8 @@ export class PreviewRenderer
                                                  bool identify_blocker) const;
     const GltfScene &scene_;
     std::optional<PreviewLighting> lighting_;
-    std::optional<DirectionalShadowMap> shadow_map_;
-    TriangleBvh blockers_;
+    std::shared_ptr<const DirectionalShadowMap> shadow_map_;
+    std::shared_ptr<const TriangleBvh> blockers_;
 };
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,

@@ -57,7 +57,8 @@ bool check_area_light()
     const auto with_panel = [&](double height)
     {
         const std::array panels{MeshInstance{InstanceId{1}, mesh, {Basis3{}, {0, height, 0}}}};
-        return sample_area_diffuse(light, receiver, up, {16, 7}, 0, TriangleBvh{panels});
+        const TriangleBvh blockers{panels};
+        return sample_area_diffuse(light, receiver, up, {16, 7}, 0, &blockers);
     };
     const double unobstructed = sample_area_diffuse(light, receiver, up, {16, 7}, 0, {});
     if (!(unobstructed > 0 && with_panel(1) == 0 && with_panel(3) == unobstructed))
