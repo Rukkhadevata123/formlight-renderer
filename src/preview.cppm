@@ -20,7 +20,10 @@ export struct PreviewView
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
 {
     const auto center = subject.center();
-    const double half = 3 * subject.radius(), y = subject.low.y;
+    const double radius = subject.radius();
+    const double half = 3 * radius;
+    // Separate the floor from coplanar bottom faces, even if the gap rounds away at large world coordinates.
+    const double y = std::nextafter(subject.low.y - radius * 1e-7, -std::numeric_limits<double>::infinity());
     const TriangleVertex a{{center.x - half, y, center.z - half}}, b{{center.x - half, y, center.z + half}},
         c{{center.x + half, y, center.z + half}}, d{{center.x + half, y, center.z - half}};
     scene.add_solid_mesh({Triangle{.vertices = {a, b, c}}, Triangle{.vertices = {a, c, d}}}, {0.4f, 0.4f, 0.4f, 1});

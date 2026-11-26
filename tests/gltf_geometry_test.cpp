@@ -73,6 +73,22 @@ bool check_ground_shadow(formlight::GltfScene &scene)
 {
     using namespace formlight;
     add_preview_ground(scene, world_bounds(scene.instances()));
+    // These rays look up through the floor into the footprint of the box.
+    const PinholeCamera below{{{0.85, -1.8, 1.35}, {0, -0.5, 0}, {0, 1, 0}, 0.15}, {4, 4}};
+    const auto underside = clip_to_bounds(below, world_bounds(scene.instances()));
+    const PreviewRenderer renderer{scene};
+    for (int y = 0; y < below.extent().height; ++y)
+    {
+        for (int x = 0; x < below.extent().width; ++x)
+        {
+            const auto hit = renderer.diagnose(underside, {x, y}).surface;
+            if (!hit || hit->hit.surface.id.instance != scene.instances().back().id)
+            {
+                std::cerr << "Box bottom shows through the opaque preview ground\n";
+                return false;
+            }
+        }
+    }
     // Look down from the shadow side so the box top does not hide its contact edge.
     const PinholeCamera overhead{{.position = {0, 4, -0.75},
                                   .target = {0, 0, -0.75},
