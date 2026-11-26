@@ -13,6 +13,8 @@ export struct PreviewView
 {
     PinholeCamera camera;
     ViewDepthRange depth{};
+    // Pixel replay uses the same sampling budget as the image made from this view.
+    std::uint32_t area_sample_limit{std::numeric_limits<std::uint32_t>::max()};
 };
 
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
@@ -93,8 +95,8 @@ export class PreviewRenderer
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
   private:
-    [[nodiscard]] LinearColor shade(const RasterHit &hit, std::uint64_t pixel, const std::stop_token &stop,
-                                    PixelDiagnostic *record = nullptr) const;
+    [[nodiscard]] LinearColor shade(const RasterHit &hit, std::uint64_t pixel, std::uint32_t area_sample_limit,
+                                    const std::stop_token &stop, PixelDiagnostic *record = nullptr) const;
     [[nodiscard]] LightSample directional_sample(const DirectionalLighting &light, const MeshInstance &instance,
                                                  const Triangle &face, Barycentrics weights, Vec3 normal,
                                                  bool identify_blocker) const;

@@ -21,11 +21,11 @@ void check_pan_from_above()
     }
 }
 
-const ColorImage &await_frame(ViewerSession &session)
+const ColorImage &await_frame(ViewerSession &session, ViewerSession::Clock::time_point now)
 {
     while (true)
     {
-        if (const auto *image = session.update({}))
+        if (const auto *image = session.update({}, now))
         {
             return *image;
         }
@@ -37,39 +37,66 @@ void check_frame_replacement(const std::filesystem::path &asset)
 {
     SceneConfig config;
     config.scene = {asset, true};
-    config.render.extent = {80, 60};
+    config.render.extent = {81, 61};
     config.render.mode = RenderMode::Hybrid;
-    config.light.type = LightKind::Directional;
+    config.render.sampling = {16, 7};
+    config.light.type = LightKind::Rectangle;
     config.camera.auto_frame = false;
     config.camera.position = {0.25, 0, 4};
     config.camera.target = {0.25, 0, 0};
     const auto request = prepare_render(config);
     ViewerSession session{request};
-    constexpr PixelCoord center{40, 30};
-    const auto old_color = await_frame(session)[center.y, center.x];
-
-    // Keep superseding the render while inspecting the image that is still on screen.
-    (void)session.update({.orbit_pixels = {40, 0}, .picked = center});
+    auto now = ViewerSession::Clock::now();
+    if (await_frame(session, now).extent().width != 81 || session.updating())
+    {
+        throw std::runtime_error("Expected an initial full-quality frame");
+    }
+    (void)session.update({.orbit_pixels = {40, 0}}, now);
+    // Submit a new pose on every poll. At least two previews must finish during this drag.
+    double dx = 0.002;
+    for (int frames = 0; frames < 2;)
+    {
+        if (const auto *image = session.update({.pan_heights = {dx, 0}}, now))
+        {
+            if (!session.showing_preview() || image->extent().width != 41 || image->extent().height != 31)
+            {
+                throw std::runtime_error("Expected half-resolution feedback while moving");
+            }
+            ++frames;
+        }
+        dx = -dx;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    constexpr PixelCoord center{20, 15};
+    const auto preview_color = await_frame(session, now)[center.y, center.x];
+    (void)session.update({.picked = center}, now);
     while (!session.report())
     {
-        if (session.update({.pan_heights = {0.01, 0}}))
-        {
-            throw std::runtime_error("Published a superseded view");
-        }
+        (void)session.update({}, now);
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
     const auto &pick = *session.report();
-    if (!pick.surface || pick.surface->hit.surface.id.instance != InstanceId{1} ||
-        std::tie(old_color.r, old_color.g, old_color.b) != std::tie(pick.color.r, pick.color.g, pick.color.b))
+    if (!pick.surface || pick.surface->hit.surface.id.instance != InstanceId{1} || pick.samples.size() != 1 ||
+        pick.sampling_seed != 7 ||
+        std::tie(preview_color.r, preview_color.g, preview_color.b) !=
+            std::tie(pick.color.r, pick.color.g, pick.color.b))
     {
-        throw std::runtime_error("Pick did not use the displayed camera");
+        throw std::runtime_error("Pick did not reproduce the displayed preview sample");
     }
-    (void)session.update({.focus = true});
-    (void)session.update({.wheel = 1});
-    const auto &latest = await_frame(session);
-    if (session.selection() || session.report())
+    (void)session.update({.focus = true}, now);
+    (void)await_frame(session, now);
+    now += std::chrono::seconds{1};
+    (void)session.update({}, now); // Start refining the focused pose, then interrupt with another gesture.
+    (void)session.update({.wheel = 1}, now);
+    (void)await_frame(session, now);
+    if (!session.showing_preview() || session.selection() || session.report())
     {
-        throw std::runtime_error("Old selection survived frame replacement");
+        throw std::runtime_error("Old refinement or selection survived a new gesture");
+    }
+    const auto &latest = await_frame(session, now + std::chrono::seconds{1});
+    if (session.updating() || latest.extent().width != 81 || latest.extent().height != 61)
+    {
+        throw std::runtime_error("The settled camera did not return to full resolution");
     }
 
     // The box is centered at the origin with unit sides. Focus discards the preceding pan.

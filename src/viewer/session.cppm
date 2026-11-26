@@ -15,10 +15,10 @@ export struct ViewportInput
     std::optional<PixelCoord> picked{};
 };
 
-template <class T> class PreviewJob
+template <class T, class Request = std::uint64_t> class PreviewJob
 {
   public:
-    explicit PreviewJob(std::uint64_t revision, auto work) : revision(revision)
+    explicit PreviewJob(Request request, auto work) : request(std::move(request))
     {
         std::packaged_task<T(std::stop_token)> task{std::move(work)};
         result_ = task.get_future();
@@ -36,7 +36,7 @@ template <class T> class PreviewJob
     {
         worker_.request_stop();
     }
-    const std::uint64_t revision;
+    const Request request;
 
   private:
     std::future<T> result_;
@@ -60,9 +60,10 @@ struct ViewerScene
 export class ViewerSession
 {
   public:
+    using Clock = std::chrono::steady_clock;
     explicit ViewerSession(RenderRequest request);
     // Consume input against the displayed view before publishing a replacement image.
-    [[nodiscard]] const ColorImage *update(const ViewportInput &input);
+    [[nodiscard]] const ColorImage *update(const ViewportInput &input, Clock::time_point now = Clock::now());
     [[nodiscard]] ImageExtent extent() const
     {
         return extent_;
@@ -77,17 +78,33 @@ export class ViewerSession
     }
     [[nodiscard]] bool updating() const
     {
-        return requested_ != displayed_;
+        return !frame_ || frame_->request.revision != requested_ || showing_preview();
+    }
+    [[nodiscard]] bool showing_preview() const
+    {
+        return frame_ && frame_->request.quality == Quality::Interactive;
     }
 
   private:
+    enum class Quality
+    {
+        Interactive,
+        Full
+    };
+    struct FrameRequest
+    {
+        std::uint64_t revision;
+        Quality quality;
+        PreviewView view;
+    };
     struct Frame
     {
-        PreviewView view;
+        FrameRequest request;
         ColorImage image;
     };
     void select(std::optional<PixelCoord> pixel);
-    void navigate(const ViewportInput &input);
+    void navigate(const ViewportInput &input, Clock::time_point now);
+    void schedule_render(Clock::time_point now);
 
     ImageExtent extent_;
     std::unique_ptr<ViewerScene> scene_;
@@ -95,10 +112,11 @@ export class ViewerSession
     std::optional<PixelCoord> selection_;
     std::optional<PixelDiagnostic> report_;
     bool focus_pending_{};
-    std::uint64_t requested_{1}, displayed_{}, pick_revision_{};
+    std::uint64_t requested_{1}, pick_revision_{};
+    Clock::time_point refine_after_{Clock::time_point::min()};
     // Destroy workers before the scene and published frame.
     PreviewJob<std::unique_ptr<ViewerScene>> loading_;
-    std::optional<PreviewJob<Frame>> rendering_;
+    std::optional<PreviewJob<ColorImage, FrameRequest>> rendering_;
     std::optional<PreviewJob<PixelDiagnostic>> inspecting_;
 };
 
@@ -120,7 +138,7 @@ void ViewerSession::select(std::optional<PixelCoord> pixel)
     }
 }
 
-void ViewerSession::navigate(const ViewportInput &input)
+void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
 {
     auto &camera = scene_->orbit;
     bool changed = false;
@@ -153,14 +171,40 @@ void ViewerSession::navigate(const ViewportInput &input)
     {
         scene_->preview.view = camera.view(scene_->preview.bounds);
         ++requested_;
-        if (rendering_)
+        refine_after_ = now + std::chrono::milliseconds{120};
+        if (rendering_ && rendering_->request.quality == Quality::Full)
         {
             rendering_->cancel();
         }
     }
 }
 
-const ColorImage *ViewerSession::update(const ViewportInput &input)
+void ViewerSession::schedule_render(Clock::time_point now)
+{
+    if (rendering_ || !updating())
+    {
+        return;
+    }
+    auto view = scene_->preview.view;
+    auto quality = Quality::Full;
+    if (frame_ && frame_->request.revision != requested_)
+    {
+        // Round up so odd extents retain their last row/column and a one-pixel axis stays valid.
+        const ImageExtent half{extent_.width / 2 + extent_.width % 2, extent_.height / 2 + extent_.height % 2};
+        view.camera = PinholeCamera{view.camera.view(), half};
+        view.area_sample_limit = 1;
+        quality = Quality::Interactive;
+    }
+    else if (now < refine_after_)
+    {
+        return;
+    }
+    rendering_.emplace(FrameRequest{requested_, quality, view},
+                       [&renderer = scene_->renderer, view](std::stop_token stop)
+                       { return renderer.render(view, stop); });
+}
+
+const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_point now)
 {
     if (loading_.ready())
     {
@@ -181,35 +225,33 @@ const ColorImage *ViewerSession::update(const ViewportInput &input)
     }
     if (inspecting_ && inspecting_->ready())
     {
-        if (inspecting_->revision == pick_revision_)
+        if (inspecting_->request == pick_revision_)
         {
             report_ = inspecting_->take();
         }
         inspecting_.reset();
     }
-    navigate(input);
+    navigate(input, now);
 
     const ColorImage *published = nullptr;
     if (rendering_ && rendering_->ready())
     {
-        if (rendering_->revision == requested_)
+        // Finish the in-flight preview while input accumulates. A full render must still match the desired pose.
+        const auto &request = rendering_->request;
+        if (request.quality == Quality::Interactive || request.revision == requested_)
         {
-            frame_ = rendering_->take();
-            displayed_ = requested_;
+            frame_ = Frame{request, rendering_->take()};
             select(std::nullopt);
             published = &frame_->image;
         }
         rendering_.reset();
     }
-    if (updating() && !rendering_)
-    {
-        rendering_.emplace(requested_, [&renderer = scene_->renderer, view = scene_->preview.view](std::stop_token stop)
-                           { return Frame{view, renderer.render(view, stop)}; });
-    }
+    schedule_render(now);
     if (selection_ && !report_ && !inspecting_)
     {
-        inspecting_.emplace(pick_revision_, [&renderer = scene_->renderer, view = frame_->view, pixel = *selection_](
-                                                std::stop_token stop) { return renderer.diagnose(view, pixel, stop); });
+        inspecting_.emplace(pick_revision_, [&renderer = scene_->renderer, view = frame_->request.view,
+                                             pixel = *selection_](std::stop_token stop)
+                            { return renderer.diagnose(view, pixel, stop); });
     }
     return published;
 }

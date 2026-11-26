@@ -272,7 +272,8 @@ void ViewerWindow::draw(ViewerSession &session)
     {
         rect = place_image(session.extent());
     }
-    const ViewportInput input = rect && texture_ ? read_input(*rect, session.extent()) : ViewportInput{};
+    // Layout follows the configured aspect ratio. Picking follows the texture currently on screen.
+    const ViewportInput input = rect && texture_ ? read_input(*rect, {texture_->w, texture_->h}) : ViewportInput{};
     if (const auto *image = session.update(input))
     {
         upload(*image);
@@ -307,7 +308,11 @@ void ViewerWindow::draw(ViewerSession &session)
         }
         ImGui::SeparatorText("Navigation");
         ImGui::TextWrapped("Middle-drag to orbit\nShift + middle-drag to pan\nScroll to zoom\nF to frame selection");
-        if (texture_ && session.updating())
+        if (texture_ && session.showing_preview())
+        {
+            ImGui::TextDisabled("Navigation preview: %d x %d", texture_->w, texture_->h);
+        }
+        else if (texture_ && session.updating())
         {
             ImGui::TextDisabled("Updating view...");
         }

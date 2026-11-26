@@ -35,8 +35,8 @@ PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLi
     }
 }
 
-LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, const std::stop_token &stop,
-                                   PixelDiagnostic *record) const
+LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, std::uint32_t area_sample_limit,
+                                   const std::stop_token &stop, PixelDiagnostic *record) const
 {
     const auto &[id, weights] = hit.surface;
     const auto &instance = scene_.instance(id.instance);
@@ -59,8 +59,9 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, co
             record->light = LightKind::Rectangle;
             record->sampling_seed = area->sampling.seed;
         }
+        const LightSampling sampling{std::min(area->sampling.samples, area_sample_limit), area->sampling.seed};
         const double weight =
-            sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal, area->sampling, pixel,
+            sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal, sampling, pixel,
                                 blockers_, record ? &record->samples : nullptr, stop);
         return scale_rgb(base, weight);
     }
@@ -131,7 +132,7 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
         {
             if (const auto &hit = visible[y, x])
             {
-                image[y, x] = shade(*hit, pixel_index({x, y}, extent), stop);
+                image[y, x] = shade(*hit, pixel_index({x, y}, extent), view.area_sample_limit, stop);
             }
         }
     }
@@ -163,7 +164,7 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
     PixelDiagnostic report{.pixel = pixel, .color = background};
     if (nearest)
     {
-        report.color = shade(*nearest, pixel_index(pixel, extent), stop, &report);
+        report.color = shade(*nearest, pixel_index(pixel, extent), view.area_sample_limit, stop, &report);
     }
     return report;
 }
