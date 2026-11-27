@@ -33,7 +33,7 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 ### 路径追踪
 
-在 CLI 加上 `--mode path`，或在 TOML 的 `[render]` 中设置 `mode = "path"`。积分器从相机发射主射线，经 BVH 取最近的可见表面。默认 `max_bounces = 0`，返回材质自发光与显式矩形灯的直接反射。未命中时环境为黑色。射线接受 OPAQUE 和通过阈值的 MASK，跳过 BLEND，按材质的单双面设置求交。光线命中纹理时使用第零层 mip。
+在 CLI 加上 `--mode path`，或在 TOML 的 `[render]` 中设置 `mode = "path"`。积分器从相机发射主射线，经 BVH 取最近的可见表面。默认 `max_bounces = 0`，返回材质自发光与显式矩形灯的直接反射。主射线和反弹射线离开场景时读取 `[scene]` 的 `environment`（线性 RGB），默认值为黑色。射线接受 OPAQUE 和通过阈值的 MASK，跳过 BLEND，按材质的单双面设置求交。光线命中纹理时使用第零层 mip。
 
 运行 `formlight-renderer --scene scenes/materials/emissive-panels.toml --mode path --pixel 200 160`，可在背光的不透明面板上重放首命中，预期线性 RGB 为 (0.25, 0.125, 0.0625)。将像素参数换成 `--output build/release/path-emission.png` 可输出整图。[场景](scenes/materials/emissive-panels.toml) · [积分器](src/path/integrator.cppm)
 
@@ -56,6 +56,14 @@ build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bo
 在玻璃球场景的 `[scene]` 中，`sampling_targets = [1]` 指定 glTF 节点 1 的网格实例为额外方向采样目标。漫反射路径有 1/2 的概率采样余弦半球、1/4 采样顶灯、1/4 均匀采样玻璃球包围球张开的立体角。光线随后仍与真实网格求交，玻璃的自发光为零。将列表改为 `[]` 即可在同一场景比较只采样余弦半球与顶灯的效果。固定 128 条路径、64 个种子，球底三个地面探针的线性红通道综合 RMS 误差由 0.264 降到 0.232，球外对照点由 0.028 升到 0.045。[采样实现](src/path/target_sampling.cppm) · [焦散回归](tests/cornell_caustic_test.cpp)
 
 [Cornell 解析球](scenes/path/cornell-analytic.toml)沿用网格球的机位、球心、半径和折射率。这个版本在 TOML 的 `[[scene.spheres]]` 中直接指定世界坐标 `center` 和 `radius`。在 `path` 模式下，三角形和球共用一个 BVH；每个球占一个图元，像素诊断会显示球的序号和曲面法线。球可使用 `diffuse`、`mirror` 或 `dielectric` 材质，`sampling_target = true` 将它加入方向采样。只含球的场景可以省略 `scene.asset`。用 `--pixel 46 96` 对照两份 Cornell 配置，解析球的视深为 3.32187887，网格球为 3.32302275。[求交回归](tests/sphere_query_test.cpp)
+
+[Many Balls](scenes/path/many-balls.toml) 使用针孔相机观察固定布局的静止球，环境辐亮度为 (0.7, 0.8, 1.0)。默认场景种子 42 生成 480 个小球，另有三个半径为 1 的主球和一个地面球。当前金属球使用理想镜面。默认预览为 256×144，每像素 32 条路径，最多反弹 8 次。
+
+```powershell
+build/release/formlight-renderer.exe --preset many_balls --scene-seed 42 --seed 7 --output build/release/many-balls.png
+```
+
+`--scene-seed` 控制小球的位置和材质，`--seed` 控制路径采样。CLI 和 viewer 均可用 `--scene scenes/path/many-balls.toml` 加载同一预设，再用 TOML 覆盖相机、环境色或采样数。[布局与环境光回归](tests/many_balls_test.cpp)
 
 ### 自定义光栅 shader
 

@@ -116,6 +116,22 @@ void check_sphere_scene(const std::filesystem::path &destination)
         throw std::runtime_error("Automatic framing missed the sphere-only scene");
     }
 }
+void check_preset_round_trip(const std::filesystem::path &destination)
+{
+    using namespace formlight;
+    auto config = preset_config(ScenePreset::ManyBalls);
+    config.scene.seed = std::numeric_limits<std::uint64_t>::max();
+    config.render.sampling.seed = 17;
+    config.scene.environment = {0.4, 0.5, 0.6};
+    save_scene_config(destination, config);
+    const auto loaded = load_scene_config(destination);
+    if (loaded.scene.preset != ScenePreset::ManyBalls || loaded.scene.seed != config.scene.seed ||
+        loaded.render.sampling.seed != 17 || loaded.scene.environment != config.scene.environment ||
+        !loaded.scene.spheres.empty())
+    {
+        throw std::runtime_error("Preset, seeds or environment changed during TOML round trip");
+    }
+}
 } // namespace
 
 auto main(int argc, char **argv) -> int
@@ -136,6 +152,7 @@ auto main(int argc, char **argv) -> int
         round_trip(argv[1], saved, formlight::LightKind::Rectangle);
         round_trip(argv[1], saved, formlight::LightKind::Point);
         check_sphere_scene(saved);
+        check_preset_round_trip(saved);
     }
     catch (const std::exception &error)
     {

@@ -14,7 +14,7 @@ find_package(tomlplusplus CONFIG REQUIRED)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
-add_library(formlight_renderer_core STATIC src/raster/clipping.cpp src/ray/bvh.cpp)
+add_library(formlight_renderer_core STATIC src/raster/clipping.cpp src/ray/bvh.cpp src/config/many_balls.cpp)
 target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
@@ -208,6 +208,11 @@ if(BUILD_TESTING)
     add_executable(sphere_query_test tests/sphere_query_test.cpp)
     target_link_libraries(sphere_query_test PRIVATE formlight_renderer_core)
     add_test(NAME sphere_query COMMAND sphere_query_test)
+
+    add_executable(many_balls_test tests/many_balls_test.cpp)
+    target_link_libraries(many_balls_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME many_balls COMMAND many_balls_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/many-balls.toml")
+    add_test(NAME cli_many_balls COMMAND formlight-renderer --preset many_balls --scene-seed 42 --seed 7 --pixel 128 72)
 
     add_executable(cornell_caustic_test tests/cornell_caustic_test.cpp)
     target_link_libraries(cornell_caustic_test PRIVATE formlight_gltf formlight_io)

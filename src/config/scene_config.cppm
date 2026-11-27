@@ -16,6 +16,12 @@ enum class RenderMode
     Path
 };
 
+enum class ScenePreset
+{
+    None,
+    ManyBalls
+};
+
 enum class BounceSampling
 {
     Cosine,
@@ -40,6 +46,12 @@ inline constexpr std::array tone_mappings{NamedValue{"clip", ToneMapping::Clip},
 constexpr auto &choices(RenderMode) noexcept
 {
     return render_modes;
+}
+inline constexpr std::array scene_presets{NamedValue{"none", ScenePreset::None},
+                                          NamedValue{"many_balls", ScenePreset::ManyBalls}};
+constexpr auto &choices(ScenePreset) noexcept
+{
+    return scene_presets;
 }
 inline constexpr std::array path_surfaces{NamedValue{"diffuse", PathSurface::Diffuse},
                                           NamedValue{"mirror", PathSurface::Mirror},
@@ -128,6 +140,9 @@ struct SceneSettings
     std::vector<PathMaterialSettings> path_materials{};
     std::vector<std::uint32_t> sampling_targets{}; // glTF node indices in the active scene.
     std::vector<SphereSettings> spheres{};
+    ScenePreset preset{ScenePreset::None};
+    std::uint64_t seed{42};
+    Vec3 environment{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -136,6 +151,12 @@ struct SceneSettings
         field("path_materials", self.path_materials);
         field("sampling_targets", self.sampling_targets);
         field("spheres", self.spheres);
+        field("preset", self.preset);
+        field("environment", self.environment);
+        if (self.preset != ScenePreset::None)
+        {
+            field("seed", self.seed);
+        }
     }
 };
 
@@ -254,6 +275,9 @@ struct SceneConfig
     }
 };
 
+[[nodiscard]] SceneConfig preset_config(ScenePreset preset);
+void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed);
+
 enum class ShadowMethod
 {
     None,
@@ -314,6 +338,7 @@ struct RenderRequest
     std::vector<PathMaterialSettings> path_materials{};
     std::vector<std::uint32_t> sampling_targets{};
     std::vector<SphereSettings> spheres{};
+    Vec3 environment{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -365,11 +390,15 @@ struct RenderRequest
 {
     const auto &[scene, camera, render, lighting, display] = config;
     display.validate();
-    if (scene.asset.empty() && scene.spheres.empty())
+    if (!finite_nonnegative_components(scene.environment))
+    {
+        throw std::invalid_argument("scene.environment requires three finite, nonnegative channels");
+    }
+    if (scene.asset.empty() && scene.spheres.empty() && scene.preset == ScenePreset::None)
     {
         throw std::invalid_argument("Scene requires a model path or a sphere");
     }
-    if (!scene.spheres.empty() && render.mode != RenderMode::Path)
+    if ((!scene.spheres.empty() || scene.preset == ScenePreset::ManyBalls) && render.mode != RenderMode::Path)
     {
         throw std::invalid_argument("Analytic spheres require path mode");
     }
@@ -424,7 +453,12 @@ struct RenderRequest
                           {render.path_samples, render.max_bounces, render.sampling.seed, render.bounce_sampling},
                           scene.path_materials,
                           scene.sampling_targets,
-                          scene.spheres};
+                          scene.spheres,
+                          scene.environment};
+    if (scene.preset == ScenePreset::ManyBalls)
+    {
+        append_many_balls(request.spheres, scene.seed);
+    }
     if (!camera.auto_frame)
     {
         try

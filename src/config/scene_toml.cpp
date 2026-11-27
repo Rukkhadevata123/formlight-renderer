@@ -276,7 +276,8 @@ SceneConfig load_scene_config(const Path &path)
             throw std::runtime_error("cannot open scene configuration");
         }
         const auto table = toml::parse(file);
-        SceneConfig config;
+        const auto preset = table["scene"]["preset"].value_exact<std::string_view>();
+        SceneConfig config = preset_config(preset ? parse_choice<ScenePreset>(*preset) : ScenePreset::None);
         read_group(table, config, "", std::filesystem::absolute(path).parent_path());
         return config;
     }

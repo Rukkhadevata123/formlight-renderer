@@ -12,6 +12,7 @@ auto main(int argc, char **argv) -> int
             "Usage: formlight-renderer --inspect MODEL\n"
             "       formlight-renderer --render MODEL (--output IMAGE.png | --pixel X Y)\n"
             "       formlight-renderer --scene SCENE.toml (--output IMAGE.png | --pixel X Y)\n"
+            "       formlight-renderer --preset many_balls (--output IMAGE.png | --pixel X Y) [--scene-seed N]\n"
             "                         [--mode raster|hybrid|path] [--ssaa 1|2] [--light-samples N] [--seed N]\n"
             "                         [--path-samples N] [--max-bounces N] [--bounce-sampling cosine|light_mixture]\n"
             "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
@@ -36,14 +37,19 @@ auto main(int argc, char **argv) -> int
         return 0;
     }
 
-    if (argc >= 3 && (std::string_view{argv[1]} == "--render" || std::string_view{argv[1]} == "--scene"))
+    const std::string_view command = argv[1];
+    if (argc >= 3 && (command == "--render" || command == "--scene" || command == "--preset"))
     {
         using namespace formlight;
         try
         {
             const std::filesystem::path input = argv[2];
             SceneConfig config;
-            if (std::string_view{argv[1]} == "--scene")
+            if (command == "--preset")
+            {
+                config = preset_config(parse_choice<ScenePreset>(argv[2]));
+            }
+            else if (command == "--scene")
             {
                 config = load_scene_config(input);
             }
@@ -59,7 +65,7 @@ auto main(int argc, char **argv) -> int
                 return 0;
             }
             const auto &output = std::get<std::filesystem::path>(action);
-            if (std::filesystem::exists(output) && std::filesystem::equivalent(input, output))
+            if (command != "--preset" && std::filesystem::exists(output) && std::filesystem::equivalent(input, output))
             {
                 throw std::invalid_argument("Output image would overwrite the input model or scene");
             }

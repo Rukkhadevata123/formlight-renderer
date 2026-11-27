@@ -70,6 +70,7 @@ export struct GltfMaterial
 export class GltfScene
 {
   public:
+    Vec3 environment{}; // Constant incident radiance for path rays that leave the scene.
     GltfScene(GltfScene &&) noexcept = default;
     GltfScene &operator=(GltfScene &&) noexcept = default;
     [[nodiscard]] static GltfScene empty_scene();

@@ -82,7 +82,8 @@ export class PathIntegrator
             {
                 record->reset();
             }
-            return {}; // Black environment.
+            const Vec3 e = scene_.environment;
+            return {static_cast<float>(e.x), static_cast<float>(e.y), static_cast<float>(e.z), 1};
         }
         const auto surface = interaction(*hit, ray);
         PathHit *first = record ? &record->emplace(*hit, surface.material, surface.back_face) : nullptr;
@@ -271,18 +272,19 @@ export class PathIntegrator
                 break;
             }
             const auto &weight = bounce->weight;
-            throughput = {throughput.x * weight.x, throughput.y * weight.y, throughput.z * weight.z};
+            throughput = component_product(throughput, weight);
             const Ray ray = bounce->ray;
             const auto hit = surfaces_->intersect_surface(ray, {0, std::numeric_limits<double>::infinity()});
             if (!hit)
             {
+                radiance = radiance + component_product(throughput, scene_.environment);
                 break;
             }
             surface = interaction(*hit, ray);
             incident = ray.direction;
             const auto &e = surface.material.emission;
             const Vec3 incoming = Vec3{e.r, e.g, e.b} + direct_light(surface, ray, sampler.next_bits(), pattern, stop);
-            radiance = radiance + Vec3{throughput.x * incoming.x, throughput.y * incoming.y, throughput.z * incoming.z};
+            radiance = radiance + component_product(throughput, incoming);
         }
         return radiance;
     }

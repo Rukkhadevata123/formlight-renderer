@@ -183,6 +183,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
         scene->mark_sampling_target(node);
     }
     scene->add_spheres(request.spheres);
+    scene->environment = request.environment;
     const auto subject = scene->bounds();
     auto bounds = subject;
     if (request.ground)

@@ -26,6 +26,11 @@ struct Vec3
     return {v.x * scale, v.y * scale, v.z * scale};
 }
 
+[[nodiscard]] constexpr Vec3 component_product(Vec3 a, Vec3 b) noexcept
+{
+    return {a.x * b.x, a.y * b.y, a.z * b.z};
+}
+
 [[nodiscard]] constexpr Vec3 operator/(Vec3 v, double scale) noexcept
 {
     return {v.x / scale, v.y / scale, v.z / scale};
