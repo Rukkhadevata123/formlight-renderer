@@ -18,6 +18,7 @@ add_library(formlight_renderer_core STATIC src/raster/clipping.cpp src/ray/bvh.c
 target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
+        src/sampling.cppm
         src/image.cppm
         src/texture.cppm
         src/camera.cppm
@@ -190,6 +191,10 @@ if(BUILD_TESTING)
     add_executable(path_direct_light_test tests/path_direct_light_test.cpp)
     target_link_libraries(path_direct_light_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME path_direct_light COMMAND path_direct_light_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
+
+    add_executable(cornell_diffuse_test tests/cornell_diffuse_test.cpp)
+    target_link_libraries(cornell_diffuse_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME cornell_diffuse COMMAND cornell_diffuse_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/cornell-diffuse.toml")
 
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)

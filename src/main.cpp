@@ -13,6 +13,7 @@ auto main(int argc, char **argv) -> int
             "       formlight-renderer --render MODEL (--output IMAGE.png | --pixel X Y)\n"
             "       formlight-renderer --scene SCENE.toml (--output IMAGE.png | --pixel X Y)\n"
             "                         [--mode raster|hybrid|path] [--ssaa 1|2] [--light-samples N] [--seed N]\n"
+            "                         [--path-samples N] [--max-bounces N]\n"
             "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
         return 0;
     }

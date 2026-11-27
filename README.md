@@ -16,6 +16,7 @@ Formlight Renderer 是一个用 C++23 编写的 CPU 渲染器。下图是光栅�
 | --- | --- |
 | 方盒的灯光与阴影 | 在 [lighting](scenes/lighting/) 中，从[方向光硬阴影](scenes/lighting/box-directional.toml)或[矩形灯软阴影](scenes/lighting/box-area-light.toml)开始。 |
 | 材质、纹理与透明层 | 在 [materials](scenes/materials/) 中，用[材质球](scenes/materials/material-spheres.toml)比较金属度与粗糙度，用[交叠透明层](scenes/materials/blend-layers.toml)观察遮挡和混合。 |
+| 漫反射间接光 | 用 [Cornell 漫反射房间](scenes/path/cornell-diffuse.toml)观察顶灯照亮白墙，以及红绿侧墙向墙角反射的颜色。 |
 
 [方盒阴影对照](docs/box-shadows.md) 并排展示同机位的阴影图、阴影射线与矩形灯软阴影，并给出本影、半影、亮区的像素重放命令。
 
@@ -29,13 +30,23 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 默认每个像素采样一次。在 TOML 的 `[render]` 中设置 `ssaa = 2`，或在命令行加上 `--ssaa 2`，即可启用 2×2 超采样。四个子样本各自处理深度、镂空、光照和透明层，然后在线性空间取平均。用 `--pixel X Y` 可以查看每个子样本的位置、权重、命中表面和颜色，以及合成后的像素颜色。
 
-### 路径追踪的首命中与矩形灯
+### 路径追踪
 
-在 CLI 加上 `--mode path`，或在 TOML 的 `[render]` 中设置 `mode = "path"`。积分器从相机发射主射线，经 BVH 取最近的可见表面，将材质自发光与各矩形灯的直接反射相加。未命中时环境为黑色。主射线接受 OPAQUE 和通过阈值的 MASK，跳过 BLEND，按材质的单双面设置求交。当前直接光支持矩形灯，光线命中纹理时使用第零层 mip；间接反弹留到下一阶段。
+在 CLI 加上 `--mode path`，或在 TOML 的 `[render]` 中设置 `mode = "path"`。积分器从相机发射主射线，经 BVH 取最近的可见表面。默认 `max_bounces = 0`，返回材质自发光与显式矩形灯的直接反射。未命中时环境为黑色。射线接受 OPAQUE 和通过阈值的 MASK，跳过 BLEND，按材质的单双面设置求交。光线命中纹理时使用第零层 mip。
 
 运行 `formlight-renderer --scene scenes/materials/emissive-panels.toml --mode path --pixel 200 160`，可在背光的不透明面板上重放首命中，预期线性 RGB 为 (0.25, 0.125, 0.0625)。将像素参数换成 `--output build/release/path-emission.png` 可输出整图。[场景](scenes/materials/emissive-panels.toml) · [积分器](src/path/integrator.cppm)
 
 运行 `formlight-renderer --scene scenes/lighting/box-area-light.toml --mode path --pixel 85 310` 可重放半影。种子 7 下，方盒挡住了 64 个灯面样本中的 35 个，地面的线性 RGB 三个通道均为 0.06451683。把模式切换为 `hybrid` 可逐样本核对灯面位置、遮挡物与直接光贡献。[方盒阴影对照](docs/box-shadows.md)
+
+将 `max_bounces` 设为正数会从首命中继续追踪漫反射。每个相机样本平均 `path_samples` 条路径，按余弦加权的半球分布采样方向；Lambertian 反射的 BRDF 乘以余弦再除以采样密度，得到该表面的漫反射颜色。当前反弹按底色乘以非金属占比着色。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Diffuse bounces` 为它们带回的线性 RGB。
+
+Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：
+
+```powershell
+$scene = "scenes/path/cornell-diffuse.toml"
+build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bounces 1 --output build/release/cornell-direct.png
+build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bounces 3 --output build/release/cornell-bounces.png
+```
 
 ### 自定义光栅 shader
 

@@ -4,6 +4,7 @@ import std;
 import formlight.lighting;
 import formlight.material;
 import formlight.ray_query;
+import formlight.sampling;
 
 namespace formlight
 {
@@ -107,14 +108,6 @@ export [[nodiscard]] LightSample evaluate_finite_light_sample(const MetallicRoug
 
 namespace
 {
-// SplitMix64 finalizer for the per-pixel random shift.
-std::uint64_t mix_bits(std::uint64_t value) noexcept
-{
-    value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
-    value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
-    return value ^ (value >> 31);
-}
-
 // Reflect the sample index's base digits across the radix point (Halton), then wrap the shift into [0, 1).
 template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index, double shift) noexcept
 {
@@ -145,7 +138,7 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
     std::uint32_t count = 1;
     if (pattern == AreaLightPattern::ShiftedHalton)
     {
-        const std::uint64_t bits = mix_bits(mix_bits(pixel + 1) ^ sampling.seed);
+        const std::uint64_t bits = splitmix64_finalize(splitmix64_finalize(pixel + 1) ^ sampling.seed);
         shift_u = static_cast<double>(bits >> 32) * 0x1p-32;
         shift_v = static_cast<double>(static_cast<std::uint32_t>(bits)) * 0x1p-32;
         count = sampling.samples;

@@ -70,6 +70,14 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
         {
             config.render.sampling.seed = integer_option<std::uint64_t>(option, value);
         }
+        else if (option == "--path-samples")
+        {
+            config.render.path_samples = integer_option<std::uint32_t>(option, value);
+        }
+        else if (option == "--max-bounces")
+        {
+            config.render.max_bounces = integer_option<std::uint32_t>(option, value);
+        }
         else
         {
             throw std::invalid_argument(std::format("Unexpected render option: {}", option));

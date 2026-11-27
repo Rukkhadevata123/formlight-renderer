@@ -80,6 +80,10 @@ export class SurfaceRayOrigin
     {
         return {dot(normal_, direction) < 0 ? negative_ : positive_, direction};
     }
+    [[nodiscard]] Vec3 geometric_normal() const noexcept
+    {
+        return normal_;
+    }
 
     // The sampled endpoint is at t = 1 even after offsetting the origin.
     [[nodiscard]] Ray to(Vec3 endpoint) const noexcept

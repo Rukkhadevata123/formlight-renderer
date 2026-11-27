@@ -50,6 +50,10 @@ void print_sample(const SampleDiagnostic &report)
         const auto ambient = surface->ambient;
         std::println("Occlusion: {}  Surface ambient (linear RGB): ({}, {}, {})", occlusion, ambient.x, ambient.y,
                      ambient.z);
+        if (const auto &bounce = report.bounce_radiance)
+        {
+            std::println("Diffuse bounces (linear RGB): ({}, {}, {})", bounce->x, bounce->y, bounce->z);
+        }
         if (base.a < 1)
         {
             std::println("Front layer opacity: {}", base.a);

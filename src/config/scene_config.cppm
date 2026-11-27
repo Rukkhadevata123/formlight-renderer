@@ -95,6 +95,7 @@ struct RenderSettings
     ImageExtent extent{640, 480};
     LightSampling sampling{};
     int ssaa{1}; // Samples per image axis.
+    std::uint32_t path_samples{1}, max_bounces{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -104,6 +105,8 @@ struct RenderSettings
         field("ssaa", self.ssaa);
         field("light_samples", self.sampling.samples);
         field("seed", self.sampling.seed);
+        field("path_samples", self.path_samples);
+        field("max_bounces", self.max_bounces);
     }
 };
 
@@ -218,6 +221,12 @@ struct PreviewLighting
     }
 };
 
+struct PathSampling
+{
+    std::uint32_t samples{1}, max_bounces{};
+    std::uint64_t seed{};
+};
+
 // A render owns a snapshot. The editor can continue changing its SceneConfig.
 struct RenderRequest
 {
@@ -229,6 +238,7 @@ struct RenderRequest
     std::optional<PreviewLighting> lighting;
     int ssaa{1};
     RenderMode mode{RenderMode::Raster};
+    PathSampling path_sampling{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -289,13 +299,17 @@ struct RenderRequest
     {
         throw std::invalid_argument("render.light_samples must be positive");
     }
+    if (render.path_samples == 0)
+    {
+        throw std::invalid_argument("render.path_samples must be positive");
+    }
     if (!(camera.vertical_fov_degrees > 0 && camera.vertical_fov_degrees < 180))
     {
         throw std::invalid_argument("camera.vertical_fov_degrees must be between 0 and 180");
     }
     RenderRequest request{
-        scene.asset, scene.ground, render.extent, camera.vertical_fov_degrees * (std::numbers::pi / 180),
-        {},          {},           render.ssaa,   render.mode};
+        scene.asset, scene.ground, render.extent, camera.vertical_fov_degrees * (std::numbers::pi / 180),         {},
+        {},          render.ssaa,  render.mode,   {render.path_samples, render.max_bounces, render.sampling.seed}};
     if (!camera.auto_frame)
     {
         try

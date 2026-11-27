@@ -72,6 +72,10 @@ void show_sample(const SampleDiagnostic &report)
         const auto ambient = surface->ambient;
         ImGui::Text("Occlusion   %.3g", occlusion);
         ImGui::Text("Surface ambient (linear RGB)   %.3g  %.3g  %.3g", ambient.x, ambient.y, ambient.z);
+        if (const auto &bounce = report.bounce_radiance)
+        {
+            ImGui::Text("Diffuse bounces (linear RGB)   %.3g  %.3g  %.3g", bounce->x, bounce->y, bounce->z);
+        }
         if (base.a < 1)
         {
             ImGui::Text("Front layer opacity   %.3g", base.a);

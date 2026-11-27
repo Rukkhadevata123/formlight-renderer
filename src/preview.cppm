@@ -17,6 +17,7 @@ export struct PreviewView
     // Pixel inspection replays the light samples used by the displayed frame.
     AreaLightPattern area_light_pattern{AreaLightPattern::ShiftedHalton};
     int ssaa{1};
+    PathSampling path_sampling{};
 };
 
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
@@ -86,6 +87,7 @@ export struct SampleDiagnostic
     std::optional<DiagnosticSurface> surface{};
     std::vector<DiagnosticLight> lights{};
     LinearColor color{};
+    std::optional<Vec3> bounce_radiance{};
 
     // Selected surface's contribution to the final pixel, including opacity and the sample's share of the mean.
     [[nodiscard]] Vec3 sample_contribution(std::size_t light, std::size_t index) const
@@ -175,6 +177,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     auto view = request.camera ? clip_to_bounds(*request.camera, bounds)
                                : frame_bounds(bounds, subject, request.extent, request.vertical_fov_radians);
     view.ssaa = request.ssaa;
+    view.path_sampling = request.path_sampling;
     return {std::move(*scene), view, bounds, subject};
 }
 

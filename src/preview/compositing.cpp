@@ -20,7 +20,7 @@ PreviewView sample_grid_view(const PreviewView &view)
     {
         return view;
     }
-    return {PinholeCamera{view.camera.view(), extent}, view.depth, view.area_light_pattern};
+    return {PinholeCamera{view.camera.view(), extent}, view.depth, view.area_light_pattern, 1, view.path_sampling};
 }
 
 LinearColor resolve_samples(int count, auto color_at)
@@ -259,8 +259,8 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
         std::nextafter(view.depth.far_depth / depth_per_unit, std::numeric_limits<double>::infinity())};
     std::optional<PathHit> first;
     const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
-    const auto color =
-        path_->radiance(ray, interval, record ? &first : nullptr, pixel_index, view.area_light_pattern, stop);
+    const auto color = path_->radiance(ray, interval, record ? &first : nullptr, pixel_index, view.area_light_pattern,
+                                       stop, view.path_sampling);
     if (record && first)
     {
         const auto &hit = first->intersection;
@@ -273,6 +273,7 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
                                             {},
                                             first->shading_normal};
         record->lights = std::move(first->lights);
+        record->bounce_radiance = first->bounce_radiance;
     }
     return color;
 }

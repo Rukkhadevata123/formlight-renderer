@@ -318,6 +318,7 @@ void ViewerSession::schedule_render(Clock::time_point now)
     }
     auto view = scene_->preview.view;
     view.ssaa = applied_.request.ssaa;
+    view.path_sampling = applied_.request.path_sampling;
     const bool navigating = frame_ && frame_->request.revision != requested_ && requested_ > settings_revision_;
     if (!navigating && now < refine_after_)
     {

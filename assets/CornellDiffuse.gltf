@@ -1,0 +1,200 @@
+{
+  "asset": {
+    "version": "2.0"
+  },
+  "extensionsUsed": [
+    "KHR_materials_emissive_strength"
+  ],
+  "scene": 0,
+  "scenes": [
+    {
+      "nodes": [
+        0
+      ]
+    }
+  ],
+  "nodes": [
+    {
+      "mesh": 0
+    }
+  ],
+  "materials": [
+    {
+      "name": "White",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.73,
+          0.73,
+          0.73,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "name": "Red",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.65,
+          0.05,
+          0.05,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "name": "Green",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0.12,
+          0.55,
+          0.12,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      }
+    },
+    {
+      "name": "Ceiling emitter",
+      "pbrMetallicRoughness": {
+        "baseColorFactor": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "metallicFactor": 0,
+        "roughnessFactor": 1
+      },
+      "emissiveFactor": [
+        1,
+        1,
+        1
+      ],
+      "extensions": {
+        "KHR_materials_emissive_strength": {
+          "emissiveStrength": 8
+        }
+      }
+    }
+  ],
+  "meshes": [
+    {
+      "name": "Cornell diffuse room",
+      "primitives": [
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 1,
+          "material": 0
+        },
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 2,
+          "material": 1
+        },
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 3,
+          "material": 2
+        },
+        {
+          "attributes": {
+            "POSITION": 0
+          },
+          "indices": 4,
+          "material": 3
+        }
+      ]
+    }
+  ],
+  "buffers": [
+    {
+      "byteLength": 660,
+      "uri": "data:application/octet-stream;base64,AACAvwAAAAAAAIC/AACAvwAAAAAAAIA/AACAPwAAAAAAAIA/AACAPwAAAAAAAIC/AACAvwAAAEAAAIC/AACAPwAAAEAAAIC/AACAPwAAAEAAAIA/AACAvwAAAEAAAIA/AACAvwAAAAAAAIC/AACAPwAAAAAAAIC/AACAPwAAAEAAAIC/AACAvwAAAEAAAIC/AACAvwAAAAAAAIC/AACAvwAAAEAAAIC/AACAvwAAAEAAAIA/AACAvwAAAAAAAIA/AACAPwAAAAAAAIC/AACAPwAAAAAAAIA/AACAPwAAAEAAAIA/AACAPwAAAEAAAIC/j8L1vilc/z/NzMy+j8L1Pilc/z/NzMy+j8L1Pilc/z/NzMw+j8L1vilc/z/NzMw+csXhvWZmJj9TwLq+Vk9iPWZmJj9dUy4+9hkXP2ZmJj/NmZs7pXjZPmZmJj/NvQe/csXhvQAAAABTwLq+csXhvWZmJj9TwLq+pXjZPmZmJj/NvQe/pXjZPgAAAADNvQe/pXjZPgAAAADNvQe/pXjZPmZmJj/NvQe/9hkXP2ZmJj/NmZs79hkXPwAAAADNmZs79hkXPwAAAADNmZs79hkXP2ZmJj/NmZs7Vk9iPWZmJj9dUy4+Vk9iPQAAAABdUy4+Vk9iPQAAAABdUy4+Vk9iPWZmJj9dUy4+csXhvWZmJj9TwLq+csXhvQAAAABTwLq+AAABAAIAAAACAAMABAAFAAYABAAGAAcACAAJAAoACAAKAAsAGAAZABoAGAAaABsAHAAdAB4AHAAeAB8AIAAhACIAIAAiACMAJAAlACYAJAAmACcAKAApACoAKAAqACsADAANAA4ADAAOAA8AEAARABIAEAASABMAFAAVABYAFAAWABcA"
+    }
+  ],
+  "bufferViews": [
+    {
+      "buffer": 0,
+      "byteOffset": 0,
+      "byteLength": 528,
+      "target": 34962
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 528,
+      "byteLength": 96,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 624,
+      "byteLength": 12,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 636,
+      "byteLength": 12,
+      "target": 34963
+    },
+    {
+      "buffer": 0,
+      "byteOffset": 648,
+      "byteLength": 12,
+      "target": 34963
+    }
+  ],
+  "accessors": [
+    {
+      "bufferView": 0,
+      "componentType": 5126,
+      "count": 44,
+      "type": "VEC3",
+      "min": [
+        -1,
+        0,
+        -1
+      ],
+      "max": [
+        1,
+        2,
+        1
+      ]
+    },
+    {
+      "bufferView": 1,
+      "componentType": 5123,
+      "count": 48,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 2,
+      "componentType": 5123,
+      "count": 6,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 3,
+      "componentType": 5123,
+      "count": 6,
+      "type": "SCALAR"
+    },
+    {
+      "bufferView": 4,
+      "componentType": 5123,
+      "count": 6,
+      "type": "SCALAR"
+    }
+  ]
+}

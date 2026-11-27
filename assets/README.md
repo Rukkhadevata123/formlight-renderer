@@ -40,6 +40,10 @@ A floor uses UV1 to repeat a 64×64 checker at 32 texels per world unit. UV0 is 
 
 The [normal-map scene](../scenes/materials/normal-panels.toml) pairs authored tangents (left) with MikkTSpace tangents (right). The lower pair shares a mirrored, nonuniform scale; the center triangle supplies neither normals nor tangents. UV0 is constant. UV1 has negative handedness and samples a two-texel normal map with scale 0.5. Occlusion reads the same image as scalar data. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## CornellDiffuse.gltf
+
+An open Cornell-style room with red and green side walls, a rotated white block, and a downward-facing emissive ceiling patch. The geometry and embedded vertex buffer were created for Formlight and are distributed under the [project license](../LICENSE). The [diffuse scene](../scenes/path/cornell-diffuse.toml) uses this mesh light to measure color bleeding.
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)
