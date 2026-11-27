@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/BoxTextured.glb"
+asset = "../../assets/BoxTextured.glb"
 ground = true
 
 [lighting]

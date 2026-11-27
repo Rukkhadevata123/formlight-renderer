@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/MaterialSpheres.glb"
+asset = "../../assets/MaterialSpheres.glb"
 
 [camera]
 auto_frame = false

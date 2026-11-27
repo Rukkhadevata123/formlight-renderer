@@ -140,15 +140,15 @@ if(BUILD_TESTING)
 
     add_executable(texture_minification_test tests/texture_minification_test.cpp)
     target_link_libraries(texture_minification_test PRIVATE formlight_gltf formlight_io)
-    add_test(NAME texture_minification COMMAND texture_minification_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mip-checker.toml")
+    add_test(NAME texture_minification COMMAND texture_minification_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/mip-checker.toml")
 
     add_executable(normal_mapping_test tests/normal_mapping_test.cpp)
     target_link_libraries(normal_mapping_test PRIVATE formlight_gltf formlight_io)
-    add_test(NAME normal_mapping COMMAND normal_mapping_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/normal-panels.toml")
+    add_test(NAME normal_mapping COMMAND normal_mapping_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/normal-panels.toml")
 
     add_executable(mask_visibility_test tests/mask_visibility_test.cpp)
     target_link_libraries(mask_visibility_test PRIVATE formlight_gltf formlight_io)
-    add_test(NAME mask_visibility COMMAND mask_visibility_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mask-panel.toml")
+    add_test(NAME mask_visibility COMMAND mask_visibility_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/mask-panel.toml")
 
     add_executable(material_sidedness_test tests/material_sidedness_test.cpp)
     target_link_libraries(material_sidedness_test PRIVATE formlight_gltf)
@@ -177,12 +177,12 @@ if(BUILD_TESTING)
 
     add_executable(emissive_panels_test tests/emissive_panels_test.cpp)
     target_link_libraries(emissive_panels_test PRIVATE formlight_gltf formlight_io)
-    add_test(NAME emissive_panels COMMAND emissive_panels_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/emissive-panels.toml")
+    add_test(NAME emissive_panels COMMAND emissive_panels_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/emissive-panels.toml")
 
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
-    add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/box-area-light.toml")
-    add_test(NAME external_scene_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/dual-uv-panel.toml")
+    add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
+    add_test(NAME external_scene_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/dual-uv-panel.toml")
 
     if(FORMLIGHT_BUILD_VIEWER)
         add_executable(viewer_navigation_test tests/viewer_navigation_test.cpp)

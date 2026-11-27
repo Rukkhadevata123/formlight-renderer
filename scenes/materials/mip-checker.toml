@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/MipChecker.glb"
+asset = "../../assets/MipChecker.glb"
 
 [camera]
 auto_frame = false

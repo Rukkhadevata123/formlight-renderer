@@ -24,7 +24,7 @@ Six spheres share one untextured geometry and the same copper-colored base. The 
 
 ## MetallicRoughnessPanel.glb
 
-A square panel uses one two-texel PNG for base color, metallic-roughness, and ambient occlusion. The RGB bytes are (32, 64, 192) and (224, 160, 48). The metallic and roughness factors are both 0.5. The red channel controls occlusion with strength 0.25. The sampler uses linear filtering. The [ambient lighting scene](../scenes/occlusion-panel.toml) shows the panel under uniform colored light. Created for Formlight and distributed under the [project license](../LICENSE).
+A square panel uses one two-texel PNG for base color, metallic-roughness, and ambient occlusion. The RGB bytes are (32, 64, 192) and (224, 160, 48). The metallic and roughness factors are both 0.5. The red channel controls occlusion with strength 0.25. The sampler uses linear filtering. The [ambient lighting scene](../scenes/materials/occlusion-panel.toml) shows the panel under uniform colored light. Created for Formlight and distributed under the [project license](../LICENSE).
 
 ## DualUvPanel.glb
 
@@ -34,11 +34,11 @@ The [multi-file version](DualUvPanel/DualUvPanel.gltf) uses the same mesh and PN
 
 ## MipChecker.glb
 
-A floor uses UV1 to repeat a 64×64 checker at 32 texels per world unit. UV0 is constant. The same image supplies sRGB base color and linear metallic-roughness data. The sampler uses nearest magnification and trilinear minification. In the [oblique camera view](../scenes/mip-checker.toml), distant squares converge to the average of the decoded texels. Created for Formlight and distributed under the [project license](../LICENSE).
+A floor uses UV1 to repeat a 64×64 checker at 32 texels per world unit. UV0 is constant. The same image supplies sRGB base color and linear metallic-roughness data. The sampler uses nearest magnification and trilinear minification. In the [oblique camera view](../scenes/materials/mip-checker.toml), distant squares converge to the average of the decoded texels. Created for Formlight and distributed under the [project license](../LICENSE).
 
 ## NormalPanels.glb
 
-The [normal-map scene](../scenes/normal-panels.toml) pairs authored tangents (left) with MikkTSpace tangents (right). The lower pair shares a mirrored, nonuniform scale; the center triangle supplies neither normals nor tangents. UV0 is constant. UV1 has negative handedness and samples a two-texel normal map with scale 0.5. Occlusion reads the same image as scalar data. Created for Formlight and distributed under the [project license](../LICENSE).
+The [normal-map scene](../scenes/materials/normal-panels.toml) pairs authored tangents (left) with MikkTSpace tangents (right). The lower pair shares a mirrored, nonuniform scale; the center triangle supplies neither normals nor tangents. UV0 is constant. UV1 has negative handedness and samples a two-texel normal map with scale 0.5. Occlusion reads the same image as scalar data. Created for Formlight and distributed under the [project license](../LICENSE).
 
 ## Viewer font
 

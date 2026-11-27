@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/BlendLayers.glb"
+asset = "../../assets/BlendLayers.glb"
 ground = true
 
 [camera]

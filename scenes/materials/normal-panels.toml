@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/NormalPanels.glb"
+asset = "../../assets/NormalPanels.glb"
 
 [camera]
 auto_frame = false

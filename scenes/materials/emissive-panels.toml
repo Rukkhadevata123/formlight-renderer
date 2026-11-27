@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/EmissivePanels.glb"
+asset = "../../assets/EmissivePanels.glb"
 
 [camera]
 auto_frame = false

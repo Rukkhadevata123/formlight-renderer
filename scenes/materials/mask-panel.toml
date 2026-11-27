@@ -1,5 +1,5 @@
 [scene]
-asset = "../assets/MaskPanel.glb"
+asset = "../../assets/MaskPanel.glb"
 ground = true
 
 [camera]
