@@ -62,7 +62,8 @@ void check_frame_replacement(const std::filesystem::path &asset)
     config.render.extent = {81, 61};
     config.render.mode = RenderMode::Hybrid;
     config.render.sampling = {16, 7};
-    config.light.type = LightKind::Rectangle;
+    config.lighting.emplace().lights.push_back({.type = LightKind::Rectangle});
+    config.lighting->lights.push_back({.type = LightKind::Directional});
     config.camera.auto_frame = false;
     config.camera.position = {0.25, 0, 4};
     config.camera.target = {0.25, 0, 0};
@@ -104,7 +105,7 @@ void check_frame_replacement(const std::filesystem::path &asset)
     }
     const auto &pick = *session.report();
     if (!pick.surface || pick.surface->hit.surface.id.instance != InstanceId{1} ||
-        pick.samples.size() != expected_samples || pick.sampling_seed != 7 ||
+        pick.lights.at(0).samples.size() != expected_samples || pick.lights.at(0).sampling_seed != 7 ||
         std::tie(preview_color.r, preview_color.g, preview_color.b) !=
             std::tie(pick.color.r, pick.color.g, pick.color.b))
     {
@@ -156,16 +157,16 @@ void check_frame_replacement(const std::filesystem::path &asset)
     (void)session.update({.wheel = 1}, now);
     config.camera.position = config.camera.position / 1.15;
     config.render.extent = {97, 53};
-    config.light.width = 0.4;
-    config.light.shadows = false;
-    session.light_settings() = config.light;
+    config.lighting->lights[0].width = 0.4;
+    config.lighting->lights[0].shadows = false;
+    session.light_settings() = config.lighting;
     session.render_settings() = config.render;
     session.apply_settings();
     // Save before this pose is published, with newer edits still in the panel.
-    session.light_settings().width = 9;
+    session.light_settings()->lights[0].width = 9;
     session.render_settings().sampling.samples = 0;
     const auto snapshot = session.scene_snapshot();
-    if (snapshot.camera.auto_frame || snapshot.light.width != config.light.width ||
+    if (snapshot.camera.auto_frame || snapshot.lighting->lights[0].width != config.lighting->lights[0].width ||
         snapshot.render.sampling.samples != config.render.sampling.samples || snapshot.display.exposure_ev != 1)
     {
         throw std::runtime_error("Scene snapshot lost the explicit camera or applied settings");
@@ -194,12 +195,12 @@ void check_frame_replacement(const std::filesystem::path &asset)
     document.open_model(asset);
     session.render_settings().sampling.samples = 4;
     session.render_settings().extent = {43, 67};
-    document.apply_settings();           // This edit must reach the first frame of the new asset.
-    session.light_settings().width = -1; // An unapplied draft survives the switch.
+    document.apply_settings();                      // This edit must reach the first frame of the new asset.
+    session.light_settings()->lights[0].width = -1; // An unapplied draft survives the switch.
     document.set_display_settings({-2});
     const auto *opened = finish_open();
     if (!opened || !document.open_error().empty() || document.display_path() != asset ||
-        document.session().light_settings().width != -1 ||
+        document.session().light_settings()->lights[0].width != -1 ||
         document.session().scene_snapshot().display.exposure_ev != -2)
     {
         throw std::runtime_error("Model replacement failed to commit the first frame or preserve the draft");
@@ -207,7 +208,7 @@ void check_frame_replacement(const std::filesystem::path &asset)
     config.camera.auto_frame = true;
     config.render.sampling.samples = 4;
     config.render.extent = {43, 67};
-    config.light.width = 9; // The earlier unapplied width was accepted by Apply during this load.
+    config.lighting->lights[0].width = 9; // The earlier unapplied width was accepted by Apply during this load.
     check_image(*opened, config);
 }
 } // namespace

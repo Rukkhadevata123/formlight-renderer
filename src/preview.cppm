@@ -76,18 +76,26 @@ export struct DiagnosticSurface
     Vec3 ambient;
 };
 
+export struct DiagnosticLight
+{
+    std::size_t scene_index{};
+    LightKind kind{};
+    std::uint64_t sampling_seed{};
+    std::vector<LightSample> samples{};
+    Vec3 direct{}; // Mean visible direct light on the selected surface, before opacity.
+};
+
 export struct PixelDiagnostic
 {
     PixelCoord pixel;
     std::optional<DiagnosticSurface> surface{};
-    LightKind light{LightKind::None};
-    std::uint64_t sampling_seed{};
-    std::vector<LightSample> samples{};
+    std::vector<DiagnosticLight> lights{};
     LinearColor color{};
 
     // Selected surface's contribution to the final pixel, including opacity and the sample's share of the mean.
-    [[nodiscard]] Vec3 sample_contribution(std::size_t index) const
+    [[nodiscard]] Vec3 sample_contribution(std::size_t light, std::size_t index) const
     {
+        const auto &samples = lights.at(light).samples;
         const auto &sample = samples.at(index);
         return sample.direct * (surface.value().material.base_color.a / static_cast<double>(samples.size()));
     }
@@ -107,13 +115,16 @@ export class PreviewRenderer
     [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
                                     const std::stop_token &stop, bool back_face,
                                     PixelDiagnostic *record = nullptr) const;
-    [[nodiscard]] ShadowResult directional_shadow(const DirectionalLighting &light, const MeshInstance &instance,
-                                                  const Triangle &face, Barycentrics weights,
-                                                  bool identify_blocker) const;
+    [[nodiscard]] Vec3 shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
+                                   const Triangle &face, Barycentrics weights, std::uint64_t pixel,
+                                   AreaLightPattern pattern, std::stop_token stop, DiagnosticLight *record) const;
+    [[nodiscard]] ShadowResult directional_shadow(const DirectionalLighting &light, const DirectionalShadowMap *map,
+                                                  const MeshInstance &instance, const Triangle &face,
+                                                  Barycentrics weights, bool identify_blocker) const;
     const GltfScene &scene_;
     SurfaceFilter solid_filter_;
     std::optional<PreviewLighting> lighting_;
-    std::shared_ptr<const DirectionalShadowMap> shadow_map_;
+    std::vector<std::shared_ptr<const DirectionalShadowMap>> shadow_maps_;
     std::shared_ptr<const TriangleBvh> blockers_;
 };
 

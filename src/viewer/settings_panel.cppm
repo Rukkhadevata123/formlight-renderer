@@ -134,6 +134,51 @@ bool edit_group(const char *name, ConfigGroup auto &group, auto edit)
     ImGui::EndTable();
     return changed;
 }
+bool edit_lighting(std::optional<LightingSettings> &lighting, auto edit)
+{
+    ImGui::SeparatorText("Lighting");
+    if (!lighting)
+    {
+        if (!ImGui::Button("Add scene lighting"))
+        {
+            return false;
+        }
+        lighting.emplace().lights.emplace_back();
+        return true;
+    }
+    ImGui::PushID("ambient");
+    ImGui::TextUnformatted("Ambient RGB");
+    bool changed = edit(lighting->ambient);
+    ImGui::PopID();
+    auto &lights = lighting->lights;
+    for (std::size_t i = 0; i < lights.size(); ++i)
+    {
+        ImGui::PushID(static_cast<int>(i));
+        const auto name = std::format("Light {}", i);
+        if (edit_group(name.c_str(), lights[i], edit))
+        {
+            changed = true;
+        }
+        const bool remove = ImGui::SmallButton("Remove light");
+        ImGui::PopID();
+        if (remove)
+        {
+            lights.erase(lights.begin() + i);
+            return true;
+        }
+    }
+    if (ImGui::Button("Add light"))
+    {
+        lights.emplace_back();
+        return true;
+    }
+    if (lights.empty() && ImGui::Button("Use base color preview"))
+    {
+        lighting.reset();
+        return true;
+    }
+    return changed;
+}
 } // namespace
 
 export class SettingsPanel
@@ -145,7 +190,7 @@ export class SettingsPanel
         const auto edit = [&](auto &value) { return edit_value(value, invalid_); };
         ImGui::PushItemFlag(ImGuiItemFlags_LiveEditOnInput, true);
         const bool render_changed = edit_group("Render", session.render_settings(), edit);
-        const bool light_changed = edit_group("Light", session.light_settings(), edit);
+        const bool light_changed = edit_lighting(session.light_settings(), edit);
         ImGui::PopItemFlag();
         if (render_changed || light_changed)
         {

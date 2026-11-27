@@ -113,7 +113,33 @@ void read_group(const toml::table &table, ConfigGroup auto &group, std::string_v
             }
             remaining.erase(key);
             const auto name = std::string(prefix) + std::string(key);
-            if constexpr (ConfigGroup<std::remove_cvref_t<decltype(value)>>)
+            using T = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<T, std::optional<LightingSettings>>)
+            {
+                if (!node->is_table())
+                {
+                    throw std::invalid_argument(name + ": expected a table");
+                }
+                read_group(*node->as_table(), value.emplace(), name + ".", directory);
+            }
+            else if constexpr (std::same_as<T, std::vector<LightSettings>>)
+            {
+                const auto *entries = node->as_array();
+                if (!entries)
+                {
+                    throw std::invalid_argument(name + ": expected an array of light tables");
+                }
+                for (const auto &entry : *entries)
+                {
+                    const auto prefix = std::format("{}[{}].", name, value.size());
+                    if (!entry.is_table())
+                    {
+                        throw std::invalid_argument(prefix + "expected a light table");
+                    }
+                    read_group(*entry.as_table(), value.emplace_back(), prefix, directory);
+                }
+            }
+            else if constexpr (ConfigGroup<T>)
             {
                 if (!node->is_table())
                 {
@@ -146,7 +172,23 @@ toml::table write_group(const ConfigGroup auto &group, const Path &directory)
         [&](std::string_view key, const auto &value)
         {
             using T = std::remove_cvref_t<decltype(value)>;
-            if constexpr (ConfigGroup<T>)
+            if constexpr (std::same_as<T, std::optional<LightingSettings>>)
+            {
+                if (value)
+                {
+                    table.insert(key, write_group(*value, directory));
+                }
+            }
+            else if constexpr (std::same_as<T, std::vector<LightSettings>>)
+            {
+                toml::array lights;
+                for (const auto &light : value)
+                {
+                    lights.push_back(write_group(light, directory));
+                }
+                table.insert(key, std::move(lights));
+            }
+            else if constexpr (ConfigGroup<T>)
             {
                 table.insert(key, write_group(value, directory));
             }

@@ -41,8 +41,9 @@ try
             const PixelCoord pixel{static_cast<int>(p.x), static_cast<int>(p.y)};
             const auto report = renderer.diagnose(preview.view, pixel);
             const auto color = frame[pixel.y, pixel.x];
-            if (!report.surface || report.surface->hit.surface.id.instance != instance || report.samples.size() != 1 ||
-                report.samples.front().shadow.state != shadow || (color.r > 0) != (shadow == ShadowState::Visible) ||
+            if (!report.surface || report.surface->hit.surface.id.instance != instance ||
+                report.lights.at(0).samples.size() != 1 || report.lights.at(0).samples.front().shadow.state != shadow ||
+                (color.r > 0) != (shadow == ShadowState::Visible) ||
                 std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b))
             {
                 throw std::runtime_error(

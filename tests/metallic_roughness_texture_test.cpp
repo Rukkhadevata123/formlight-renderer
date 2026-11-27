@@ -34,7 +34,9 @@ void check_lighting(const GltfScene &scene, Vec3 base)
             throw std::runtime_error(std::format("{}: got ({}, {}, {})", label, actual.x, actual.y, actual.z));
         }
     };
-    check_rgb(frame_color({std::monostate{}, ambient}), expected_ambient, "Ambient only");
+    PreviewLighting ambient_only;
+    ambient_only.ambient = ambient;
+    check_rgb(frame_color(ambient_only), expected_ambient, "Ambient only");
 
     const DirectionalLighting direct{DirectionalLight{{0.3, 0.4, 1}}};
     const Vec3 eye = camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;

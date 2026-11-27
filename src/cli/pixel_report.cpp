@@ -51,30 +51,36 @@ void print_pixel_report(const PixelDiagnostic &report)
         {
             std::println("Front layer opacity: {}", base.a);
         }
-        if (report.light == LightKind::Rectangle)
+        for (std::size_t index = 0; index < report.lights.size(); ++index)
         {
-            const auto blocked = std::ranges::count_if(report.samples, [](const auto &sample)
-                                                       { return sample.shadow.state == ShadowState::Blocked; });
-            std::println("Rectangle light: {} samples, {} blocked, seed {}", report.samples.size(), blocked,
-                         report.sampling_seed);
-        }
-        else if (report.light == LightKind::Directional)
-        {
-            std::println("Directional light");
-        }
-        else if (report.light == LightKind::Point)
-        {
-            std::println("Point light");
-        }
-        for (std::size_t i = 0; i < report.samples.size(); ++i)
-        {
-            const auto &sample = report.samples[i];
-            const auto point = sample.position ? std::format(" at ({:.7g}, {:.7g}, {:.7g})", sample.position->x,
-                                                             sample.position->y, sample.position->z)
-                                               : std::string{};
-            const auto rgb = report.sample_contribution(i);
-            std::println("  [{}]{} {} | linear RGB contribution ({:.9g}, {:.9g}, {:.9g})", i, point,
-                         describe_shadow(sample.shadow), rgb.x, rgb.y, rgb.z);
+            const auto &light = report.lights[index];
+            std::println("Light {} surface direct RGB: ({}, {}, {})", light.scene_index, light.direct.x, light.direct.y,
+                         light.direct.z);
+            if (light.kind == LightKind::Rectangle)
+            {
+                const auto blocked = std::ranges::count_if(light.samples, [](const auto &sample)
+                                                           { return sample.shadow.state == ShadowState::Blocked; });
+                std::println("Rectangle light: {} samples, {} blocked, seed {}", light.samples.size(), blocked,
+                             light.sampling_seed);
+            }
+            else if (light.kind == LightKind::Directional)
+            {
+                std::println("Directional light");
+            }
+            else if (light.kind == LightKind::Point)
+            {
+                std::println("Point light");
+            }
+            for (std::size_t i = 0; i < light.samples.size(); ++i)
+            {
+                const auto &sample = light.samples[i];
+                const auto point = sample.position ? std::format(" at ({:.7g}, {:.7g}, {:.7g})", sample.position->x,
+                                                                 sample.position->y, sample.position->z)
+                                                   : std::string{};
+                const auto rgb = report.sample_contribution(index, i);
+                std::println("  [{}]{} {} | linear RGB contribution ({:.9g}, {:.9g}, {:.9g})", i, point,
+                             describe_shadow(sample.shadow), rgb.x, rgb.y, rgb.z);
+            }
         }
     }
     else

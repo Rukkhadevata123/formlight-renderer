@@ -1,0 +1,21 @@
+[scene]
+asset = "../assets/BoxTextured.glb"
+ground = true
+
+[lighting]
+ambient = [0.06, 0.06, 0.06]
+
+[[lighting.lights]]
+type = "directional"
+toward_light = [3, 3, 0.75]
+color = [1, 0.3, 0.08]
+intensity = 4
+
+[[lighting.lights]]
+type = "point"
+position = [-1, 1.2, 2]
+color = [0.08, 0.45, 1]
+intensity = 6
+
+[render]
+mode = "hybrid"

@@ -66,7 +66,7 @@ export class ViewerDocument
         if (opening_)
         {
             opening_->render_settings() = active_->applied_config().render;
-            opening_->light_settings() = active_->applied_config().light;
+            opening_->light_settings() = active_->applied_config().lighting;
             opening_->apply_settings();
         }
     }

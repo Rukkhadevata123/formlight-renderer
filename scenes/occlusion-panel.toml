@@ -7,8 +7,7 @@ position = [0, 0, 3]
 target = [0, 0, 0]
 vertical_fov_degrees = 45
 
-[light]
-type = "ambient"
+[lighting]
 ambient = [0.8, 0.6, 0.4]
 
 [render]

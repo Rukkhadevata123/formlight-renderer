@@ -14,8 +14,6 @@ enum class RenderMode
 };
 enum class LightKind
 {
-    None,
-    Ambient,
     Directional,
     Point,
     Rectangle
@@ -29,8 +27,7 @@ template <class E> struct NamedValue
 
 inline constexpr std::array render_modes{NamedValue{"raster", RenderMode::Raster},
                                          NamedValue{"hybrid", RenderMode::Hybrid}};
-inline constexpr std::array light_kinds{NamedValue{"none", LightKind::None}, NamedValue{"ambient", LightKind::Ambient},
-                                        NamedValue{"directional", LightKind::Directional},
+inline constexpr std::array light_kinds{NamedValue{"directional", LightKind::Directional},
                                         NamedValue{"point", LightKind::Point},
                                         NamedValue{"rectangle", LightKind::Rectangle}};
 inline constexpr std::array tone_mappings{NamedValue{"clip", ToneMapping::Clip},
@@ -114,7 +111,8 @@ struct RenderSettings
 
 struct LightSettings
 {
-    LightKind type{LightKind::None};
+    LightKind type{LightKind::Directional};
+    bool enabled{true};
     bool shadows{true};
     Vec3 toward_light{1, 4, 3};
     Vec3 position{3, 3, 0.75}, attenuation{PointLight::default_attenuation};
@@ -122,19 +120,12 @@ struct LightSettings
     double intensity{DirectionalLight::default_intensity};
     Vec3 center{3, 3, 0.75};
     double width{1.5}, height{1.5}, power{240};
-    Vec3 ambient{};
 
     void fields(this auto &self, auto &&field)
     {
         field("type", self.type);
-        if (self.type != LightKind::None)
-        {
-            field("ambient", self.ambient);
-        }
-        if (self.type != LightKind::None && self.type != LightKind::Ambient)
-        {
-            field("shadows", self.shadows);
-        }
+        field("enabled", self.enabled);
+        field("shadows", self.shadows);
         if (self.type == LightKind::Directional || self.type == LightKind::Point)
         {
             field("color", self.color);
@@ -159,12 +150,24 @@ struct LightSettings
     }
 };
 
+struct LightingSettings
+{
+    Vec3 ambient{};
+    std::vector<LightSettings> lights{};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("ambient", self.ambient);
+        field("lights", self.lights);
+    }
+};
+
 struct SceneConfig
 {
     SceneSettings scene;
     CameraSettings camera;
     RenderSettings render;
-    LightSettings light;
+    std::optional<LightingSettings> lighting;
     DisplaySettings display;
 
     void fields(this auto &self, auto &&field)
@@ -172,7 +175,7 @@ struct SceneConfig
         field("scene", self.scene);
         field("camera", self.camera);
         field("render", self.render);
-        field("light", self.light);
+        field("lighting", self.lighting);
         field("display", self.display);
     }
 };
@@ -199,15 +202,23 @@ struct PointLighting
     PointLight light;
     bool shadows{true};
 };
-using DirectLight = std::variant<std::monostate, DirectionalLighting, PointLighting, AreaLighting>;
+using DirectLight = std::variant<DirectionalLighting, PointLighting, AreaLighting>;
+
+struct ActiveLight
+{
+    std::size_t scene_index;
+    DirectLight source;
+};
 
 struct PreviewLighting
 {
-    DirectLight direct;
-    Vec3 ambient;
+    std::vector<ActiveLight> direct;
+    Vec3 ambient{};
+
+    PreviewLighting() = default;
 
     PreviewLighting(std::convertible_to<DirectLight> auto light, Vec3 ambient_rgb = {})
-        : direct{std::move(light)}, ambient{ambient_rgb}
+        : direct{{0, DirectLight{std::move(light)}}}, ambient{ambient_rgb}
     {
     }
 };
@@ -223,9 +234,39 @@ struct RenderRequest
     std::optional<PreviewLighting> lighting;
 };
 
+[[nodiscard]] DirectLight prepare_light(const LightSettings &light, const RenderSettings &render)
+{
+    if (light.type == LightKind::Directional)
+    {
+        const auto method = render.mode == RenderMode::Hybrid ? ShadowMethod::Ray : ShadowMethod::Map;
+        const DirectionalLight directional{light.toward_light, light.color, light.intensity};
+        return DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None};
+    }
+    else if (light.type == LightKind::Point)
+    {
+        if (light.shadows && render.mode != RenderMode::Hybrid)
+        {
+            throw std::invalid_argument("light.shadows for a point light requires render.mode = 'hybrid'");
+        }
+        const PointLight point{light.position, light.color, light.intensity, light.attenuation};
+        return PointLighting{point, light.shadows};
+    }
+
+    if (light.shadows && render.mode != RenderMode::Hybrid)
+    {
+        throw std::invalid_argument("light.shadows for a rectangle requires render.mode = 'hybrid'");
+    }
+    if (!(light.width > 0 && light.height > 0) || !std::isfinite(light.width) || !std::isfinite(light.height))
+    {
+        throw std::invalid_argument("light.width and light.height must be finite and positive");
+    }
+    const RectangleLight rectangle{light.center, {light.width, 0, 0}, {0, 0, light.height}, light.power};
+    return AreaLighting{rectangle, render.sampling, light.shadows};
+}
+
 [[nodiscard]] RenderRequest prepare_render(const SceneConfig &config)
 {
-    const auto &[scene, camera, render, light, display] = config;
+    const auto &[scene, camera, render, lighting, display] = config;
     display.validate();
     if (scene.asset.empty())
     {
@@ -258,46 +299,31 @@ struct RenderRequest
             throw std::invalid_argument(std::format("camera: {}", error.what()));
         }
     }
-    if (light.type == LightKind::None)
+    if (lighting)
     {
-        return request;
-    }
-    if (!finite_nonnegative_components(light.ambient))
-    {
-        throw std::invalid_argument("light.ambient requires three finite, nonnegative channels");
-    }
-    if (light.type == LightKind::Ambient)
-    {
-        request.lighting.emplace(std::monostate{}, light.ambient);
-    }
-    else if (light.type == LightKind::Directional)
-    {
-        const auto method = render.mode == RenderMode::Hybrid ? ShadowMethod::Ray : ShadowMethod::Map;
-        const DirectionalLight directional{light.toward_light, light.color, light.intensity};
-        request.lighting.emplace(DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None},
-                                 light.ambient);
-    }
-    else if (light.type == LightKind::Point)
-    {
-        if (light.shadows && render.mode != RenderMode::Hybrid)
+        if (!finite_nonnegative_components(lighting->ambient))
         {
-            throw std::invalid_argument("light.shadows for a point light requires render.mode = 'hybrid'");
+            throw std::invalid_argument("lighting.ambient requires three finite, nonnegative channels");
         }
-        const PointLight point{light.position, light.color, light.intensity, light.attenuation};
-        request.lighting.emplace(PointLighting{point, light.shadows}, light.ambient);
-    }
-    else if (light.type == LightKind::Rectangle)
-    {
-        if (light.shadows && render.mode != RenderMode::Hybrid)
+        auto &prepared = request.lighting.emplace();
+        prepared.ambient = lighting->ambient;
+        prepared.direct.reserve(lighting->lights.size());
+        for (std::size_t i = 0; i < lighting->lights.size(); ++i)
         {
-            throw std::invalid_argument("light.shadows for a rectangle requires render.mode = 'hybrid'");
+            const auto &light = lighting->lights[i];
+            if (!light.enabled)
+            {
+                continue;
+            }
+            try
+            {
+                prepared.direct.push_back({i, prepare_light(light, render)});
+            }
+            catch (const std::invalid_argument &error)
+            {
+                throw std::invalid_argument(std::format("lighting.lights[{}]: {}", i, error.what()));
+            }
         }
-        if (!(light.width > 0 && light.height > 0) || !std::isfinite(light.width) || !std::isfinite(light.height))
-        {
-            throw std::invalid_argument("light.width and light.height must be finite and positive");
-        }
-        const RectangleLight rectangle{light.center, {light.width, 0, 0}, {0, 0, light.height}, light.power};
-        request.lighting.emplace(AreaLighting{rectangle, render.sampling, light.shadows}, light.ambient);
     }
     return request;
 }

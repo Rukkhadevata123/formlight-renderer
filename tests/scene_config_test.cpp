@@ -16,16 +16,20 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.camera.auto_frame = false;
     config.camera.position = {2, 1, 3};
     config.camera.target = {0, -0.2, 0};
-    config.light.width = 0.75;
-    config.light.ambient = {0.2, 0.1, 0.4};
-    config.light.type = kind;
+    auto &light = config.lighting.value().lights.at(0);
+    light.width = 0.75;
+    config.lighting->ambient = {0.2, 0.1, 0.4};
+    light.type = kind;
     if (kind == LightKind::Point)
     {
-        config.light.position = {-1, 2, 1};
-        config.light.attenuation = {0.8, 0.25, 0.1};
-        config.light.color = {1, 0.2, 0.4};
-        config.light.intensity = 6;
+        light.position = {-1, 2, 1};
+        light.attenuation = {0.8, 0.25, 0.1};
+        light.color = {1, 0.2, 0.4};
+        light.intensity = 6;
     }
+
+    config.lighting->lights.push_back({.type = LightKind::Directional, .enabled = false});
+    config.lighting->lights.push_back({.type = LightKind::Directional, .color = {0.1, 0.6, 1}});
 
     // Change worker counts across the round trip; fixed samples must give identical linear pixels.
     const auto before = oneapi::tbb::task_arena{1}.execute([&] { return render_scene(prepare_render(config)); });

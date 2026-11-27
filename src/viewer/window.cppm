@@ -78,11 +78,13 @@ void show_report(const PixelDiagnostic &report)
     {
         ImGui::TextUnformatted("Background");
     }
-    if (!report.samples.empty())
+    for (const auto &light : report.lights)
     {
-        const auto blocked = std::ranges::count_if(report.samples, [](const LightSample &sample)
+        ImGui::Text("Light %zu direct RGB   %.3g  %.3g  %.3g", light.scene_index, light.direct.x, light.direct.y,
+                    light.direct.z);
+        const auto blocked = std::ranges::count_if(light.samples, [](const LightSample &sample)
                                                    { return sample.shadow.state == ShadowState::Blocked; });
-        ImGui::Text("Blocked samples   %zu / %zu", static_cast<std::size_t>(blocked), report.samples.size());
+        ImGui::Text("Blocked samples   %zu / %zu", static_cast<std::size_t>(blocked), light.samples.size());
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Linear RGB");

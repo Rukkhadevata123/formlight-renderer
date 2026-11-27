@@ -85,9 +85,9 @@ export class ViewerSession
     {
         return draft_.render;
     }
-    [[nodiscard]] LightSettings &light_settings()
+    [[nodiscard]] std::optional<LightingSettings> &light_settings()
     {
-        return draft_.light;
+        return draft_.lighting;
     }
     void apply_settings();
     void set_display_settings(DisplaySettings display);
@@ -237,8 +237,12 @@ ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget)
         return Quality::Full;
     }
     const auto &lighting = applied_.request.lighting;
-    const auto *area = lighting ? std::get_if<AreaLighting>(&lighting->direct) : nullptr;
-    if (area && area->sampling.samples > 1 && light_center_cost_ <= budget)
+    const auto multisampled = [](const ActiveLight &light)
+    {
+        const auto *area = std::get_if<AreaLighting>(&light.source);
+        return area && area->sampling.samples > 1;
+    };
+    if (lighting && light_center_cost_ <= budget && std::ranges::any_of(lighting->direct, multisampled))
     {
         return Quality::LightCenter;
     }

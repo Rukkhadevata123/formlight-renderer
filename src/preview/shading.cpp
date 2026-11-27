@@ -24,27 +24,38 @@ PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLi
 
 void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 {
-    const auto *direct = lighting ? &lighting->direct : nullptr;
-    const auto *directional = std::get_if<DirectionalLighting>(direct);
-    const auto *area = std::get_if<AreaLighting>(direct);
-    const auto *point = std::get_if<PointLighting>(direct);
-    if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows) ||
-                       (point && point->shadows)))
+    std::vector<std::shared_ptr<const DirectionalShadowMap>> maps;
+    if (lighting)
     {
-        blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_);
-    }
-    if (directional && directional->shadows == ShadowMethod::Map)
-    {
-        const auto direction = directional->light.toward_light();
-        if (!shadow_map_ || std::get<DirectionalLighting>(lighting_->direct).light.toward_light() != direction)
+        maps.resize(lighting->direct.size());
+        for (std::size_t i = 0; i < maps.size(); ++i)
         {
-            shadow_map_ = std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light, solid_filter_);
+            const auto &direct = lighting->direct[i].source;
+            const auto *directional = std::get_if<DirectionalLighting>(&direct);
+            const auto *area = std::get_if<AreaLighting>(&direct);
+            const auto *point = std::get_if<PointLighting>(&direct);
+            if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows) ||
+                               (point && point->shadows)))
+            {
+                blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_);
+            }
+            if (directional && directional->shadows == ShadowMethod::Map)
+            {
+                if (i < shadow_maps_.size() && shadow_maps_[i] &&
+                    std::get<DirectionalLighting>(lighting_->direct[i].source).light.toward_light() ==
+                        directional->light.toward_light())
+                {
+                    maps[i] = shadow_maps_[i];
+                }
+                else
+                {
+                    maps[i] =
+                        std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light, solid_filter_);
+                }
+            }
         }
     }
-    else
-    {
-        shadow_map_.reset();
-    }
+    shadow_maps_ = std::move(maps);
     lighting_ = std::move(lighting);
 }
 
@@ -69,7 +80,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     if (record)
     {
         // Layers are visited back to front. Keep lighting details for the nearest nonzero layer.
-        record->samples.clear();
+        record->lights.clear();
         record->surface = DiagnosticSurface{hit, face.material_index, material, ambient};
     }
     if (!lighting_)
@@ -77,12 +88,8 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         // The no-light preview shows the base color at unit weight.
         return outgoing_color(material, {base.r, base.g, base.b});
     }
-    if (std::holds_alternative<std::monostate>(lighting_->direct))
+    if (lighting_->direct.empty())
     {
-        if (record)
-        {
-            record->light = LightKind::Ambient;
-        }
         return outgoing_color(material, ambient);
     }
 
@@ -90,23 +97,47 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     const Vec3 normal = instance.transform.to_world_normal(back_face ? local_normal * -1 : local_normal);
     const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
     const MetallicRoughnessBrdf brdf{material, normal, to_eye};
-    if (const auto *area = std::get_if<AreaLighting>(&lighting_->direct))
+    const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
+    Vec3 direct{};
+    for (std::size_t i = 0; i < lighting_->direct.size(); ++i)
+    {
+        if (stop.stop_requested())
+        {
+            throw std::runtime_error("Rendering cancelled");
+        }
+        auto *light_record = record ? &record->lights.emplace_back() : nullptr;
+        const Vec3 contribution =
+            shade_light(i, brdf, instance, face, weights, pixel_index, view.area_light_pattern, stop, light_record);
+        direct = direct + contribution;
+        if (light_record)
+        {
+            light_record->scene_index = lighting_->direct[i].scene_index;
+            light_record->direct = contribution;
+        }
+    }
+    return outgoing_color(material, ambient + direct);
+}
+
+Vec3 PreviewRenderer::shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
+                                  const Triangle &face, Barycentrics weights, std::uint64_t pixel,
+                                  AreaLightPattern pattern, std::stop_token stop, DiagnosticLight *record) const
+{
+    const auto &light = lighting_->direct[index].source;
+    if (const auto *area = std::get_if<AreaLighting>(&light))
     {
         if (record)
         {
-            record->light = LightKind::Rectangle;
+            record->kind = LightKind::Rectangle;
             record->sampling_seed = area->sampling.seed;
         }
-        const auto index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
-        const auto direct = sample_area_light(area->light, SurfaceRayOrigin{instance, face, weights}, brdf,
-                                              area->sampling, index, area->shadows ? blockers_.get() : nullptr,
-                                              view.area_light_pattern, record ? &record->samples : nullptr, stop);
-        return outgoing_color(material, ambient + direct);
+        return sample_area_light(area->light, SurfaceRayOrigin{instance, face, weights}, brdf, area->sampling, pixel,
+                                 area->shadows ? blockers_.get() : nullptr, pattern,
+                                 record ? &record->samples : nullptr, stop);
     }
 
     LightSample sample;
     LightKind kind;
-    if (const auto *point = std::get_if<PointLighting>(&lighting_->direct))
+    if (const auto *point = std::get_if<PointLighting>(&light))
     {
         kind = LightKind::Point;
         const SurfaceRayOrigin receiver{instance, face, weights};
@@ -117,28 +148,31 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     else
     {
         kind = LightKind::Directional;
-        const auto &directional = std::get<DirectionalLighting>(lighting_->direct);
-        sample = evaluate_light_sample(
-            brdf, directional.light.incident(), std::nullopt,
-            [&] { return directional_shadow(directional, instance, face, weights, record != nullptr); });
+        const auto &directional = std::get<DirectionalLighting>(light);
+        sample = evaluate_light_sample(brdf, directional.light.incident(), std::nullopt,
+                                       [&]
+                                       {
+                                           return directional_shadow(directional, shadow_maps_[index].get(), instance,
+                                                                     face, weights, record != nullptr);
+                                       });
     }
     if (record)
     {
-        record->light = kind;
+        record->kind = kind;
         record->samples.push_back(sample);
     }
-    return outgoing_color(material, ambient + sample.direct);
+    return sample.direct;
 }
 
-ShadowResult PreviewRenderer::directional_shadow(const DirectionalLighting &light, const MeshInstance &instance,
-                                                 const Triangle &face, Barycentrics weights,
-                                                 bool identify_blocker) const
+ShadowResult PreviewRenderer::directional_shadow(const DirectionalLighting &light, const DirectionalShadowMap *map,
+                                                 const MeshInstance &instance, const Triangle &face,
+                                                 Barycentrics weights, bool identify_blocker) const
 {
-    if (shadow_map_)
+    if (map)
     {
         const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
         const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
-        return {shadow_map_->visible(world, geometric_normal) ? ShadowState::Visible : ShadowState::Blocked};
+        return {map->visible(world, geometric_normal) ? ShadowState::Visible : ShadowState::Blocked};
     }
     if (light.shadows == ShadowMethod::Ray)
     {
