@@ -1,5 +1,6 @@
 import std;
 import formlight.preview;
+import formlight.ray_query;
 
 using namespace formlight;
 
@@ -29,15 +30,29 @@ try
         {
             const auto p = camera.project(world).value().image;
             const PixelCoord pixel{static_cast<int>(p.x), static_cast<int>(p.y)};
-            const Vec3 to_eye = camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
+            const auto ray = camera.ray_for_sample(pixel_center(pixel.x, pixel.y));
+            const Vec3 to_eye = ray.direction * -1;
             const auto lit = [&](LinearColor base, Vec3 normal)
             {
                 const MetallicRoughnessBrdf brdf{{base, {}, 0, 1}, normal, to_eye};
                 return brdf.evaluate_times_cosine({0, 0, 1}) * std::numbers::pi;
             };
+            Vec3 stone_color{};
+            if (stone_share > 0)
+            {
+                // Sample the opaque block alone, including its interpolated shading normal.
+                const auto &stone = scene->instance(InstanceId{2});
+                const auto hit = intersect(ray, std::span{&stone, 1}, {0, std::numeric_limits<double>::infinity()});
+                if (!hit)
+                {
+                    throw std::runtime_error("Expected the probe ray to hit the opaque block");
+                }
+                const auto &face = stone.triangles[std::to_underlying(hit->surface.id.primitive)];
+                stone_color =
+                    lit({0.76f, 0.70f, 0.54f}, scene->shading_normal(stone, face, hit->surface.weights, {}, false));
+            }
             const Vec3 expected = lit({1, 0.12f, 0.05f}, coral_normal) * coral_share +
-                                  lit({0.04f, 0.34f, 1}, blue_normal) * blue_share +
-                                  lit({0.76f, 0.70f, 0.54f}, {0, 0, 1}) * stone_share +
+                                  lit({0.04f, 0.34f, 1}, blue_normal) * blue_share + stone_color * stone_share +
                                   background * (1 - coral_share - blue_share - stone_share);
             const auto color = frame[pixel.y, pixel.x];
             const auto report = renderer.diagnose(view, pixel);

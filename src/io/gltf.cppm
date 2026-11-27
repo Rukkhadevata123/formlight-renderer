@@ -44,8 +44,6 @@ export struct GltfMaterial
     bool double_sided{};
 };
 
-void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set);
-
 // Instances borrow the local mesh storage owned by this scene.
 export class GltfScene
 {

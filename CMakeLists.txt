@@ -40,8 +40,10 @@ target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES F
 target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
-add_library(formlight_gltf STATIC src/io/gltf.cpp src/io/gltf_tangents.cpp src/preview/shading.cpp src/preview/compositing.cpp)
+add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
+target_sources(formlight_gltf PRIVATE FILE_SET internal_modules TYPE CXX_MODULES FILES
+    src/io/gltf/mesh.cppm src/io/gltf/resources.cppm src/io/gltf/tangents.cppm)
 target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf mikktspace::mikktspace formlight_io TBB::tbb)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
@@ -92,9 +94,13 @@ if(BUILD_TESTING)
     target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)
     add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
 
-    add_executable(triangle_modes_test tests/triangle_modes_test.cpp)
+    add_executable(triangle_modes_test tests/gltf/triangle_modes_test.cpp)
     target_link_libraries(triangle_modes_test PRIVATE formlight_gltf)
     add_test(NAME gltf_triangle_modes COMMAND triangle_modes_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/triangle-modes.gltf")
+
+    add_executable(generated_normals_test tests/gltf/generated_normals_test.cpp)
+    target_link_libraries(generated_normals_test PRIVATE formlight_gltf)
+    add_test(NAME gltf_generated_normals COMMAND generated_normals_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/folded-normals.gltf")
 
     add_executable(metallic_roughness_texture_test tests/metallic_roughness_texture_test.cpp)
     target_link_libraries(metallic_roughness_texture_test PRIVATE formlight_gltf)
@@ -107,7 +113,7 @@ if(BUILD_TESTING)
 
     add_test(NAME external_gltf COMMAND "${CMAKE_COMMAND}"
         "-DRENDERER=$<TARGET_FILE:formlight-renderer>" "-DASSETS=${CMAKE_CURRENT_SOURCE_DIR}/assets"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/external_gltf.cmake")
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/gltf/external_gltf.cmake")
 
     add_executable(texture_minification_test tests/texture_minification_test.cpp)
     target_link_libraries(texture_minification_test PRIVATE formlight_gltf formlight_io)

@@ -1,10 +1,12 @@
 module;
 #include <mikktspace.h>
 
-module formlight.gltf;
-import std;
+export module formlight.gltf_tangents;
 
-namespace formlight
+import std;
+import formlight.triangle;
+
+namespace formlight::gltf_detail
 {
 namespace
 {
@@ -32,7 +34,7 @@ void write_vector(float *out, Vec3 v)
 }
 } // namespace
 
-void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
+export void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
 {
     if (triangles.empty())
     {
@@ -42,20 +44,6 @@ void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
     if (triangles.size() > static_cast<std::size_t>(std::numeric_limits<int>::max() / 4))
     {
         throw std::runtime_error("Too many triangles for MikkTSpace");
-    }
-
-    for (auto &face : triangles)
-    {
-        if (face.vertices.front().normal == Vec3{})
-        {
-            const Vec3 n = face.geometric_normal();
-            const double length = std::hypot(n.x, n.y, n.z);
-            const auto flat = length > 0 ? n / length : Vec3{0, 0, 1};
-            for (auto &v : face.vertices)
-            {
-                v.normal = flat;
-            }
-        }
     }
 
     SMikkTSpaceInterface callbacks{};
@@ -84,4 +72,4 @@ void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
         throw std::runtime_error("MikkTSpace tangent generation failed");
     }
 }
-} // namespace formlight
+} // namespace formlight::gltf_detail
