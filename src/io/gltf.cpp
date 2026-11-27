@@ -211,6 +211,76 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
     }
 }
 
+// Offsets into the primitive's index stream, in the winding order of the expanded triangle.
+std::array<std::size_t, 3> triangle_corners(fastgltf::PrimitiveType mode, std::size_t face)
+{
+    using enum fastgltf::PrimitiveType;
+    switch (mode)
+    {
+    case Triangles:
+        return {3 * face, 3 * face + 1, 3 * face + 2};
+    case TriangleFan:
+        return {0, face + 1, face + 2};
+    case TriangleStrip:
+        if (face % 2 == 0)
+        {
+            return {face, face + 1, face + 2};
+        }
+        return {face + 1, face, face + 2};
+    default:
+        throw std::runtime_error("Expected TRIANGLES, TRIANGLE_STRIP or TRIANGLE_FAN");
+    }
+}
+
+void append_triangles(std::vector<Triangle> &triangles, ModelResources &resources, const fastgltf::Primitive &primitive,
+                      std::span<const TriangleVertex> vertices)
+{
+    // GenerateMeshIndices supplies consecutive indices for non-indexed primitives.
+    const auto &accessor = resources.geometry_accessor(primitive.indicesAccessor.value());
+    using enum fastgltf::ComponentType;
+    if (accessor.type != fastgltf::AccessorType::Scalar || accessor.normalized ||
+        (accessor.componentType != UnsignedByte && accessor.componentType != UnsignedShort &&
+         accessor.componentType != UnsignedInt))
+    {
+        throw std::runtime_error("Expected unsigned scalar triangle indices");
+    }
+    using enum fastgltf::PrimitiveType;
+    const auto count = accessor.count;
+    if (primitive.type == Triangles && count % 3 != 0)
+    {
+        throw std::runtime_error("TRIANGLES index count must be a multiple of three");
+    }
+    const auto face_count = primitive.type == Triangles ? count / 3 : std::max(count, std::size_t{2}) - 2;
+    if (face_count > std::numeric_limits<std::uint32_t>::max() - triangles.size())
+    {
+        throw std::runtime_error("Too many triangles for mesh-local primitive IDs");
+    }
+
+    std::vector<std::uint32_t> indices(count);
+    const auto read_index = [&](std::uint32_t index, std::size_t i)
+    {
+        if (index >= vertices.size())
+        {
+            throw std::runtime_error("Triangle index exceeds POSITION count");
+        }
+        indices[i] = index;
+    };
+    fastgltf::iterateAccessorWithIndex<std::uint32_t>(resources.asset, accessor, read_index);
+
+    const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
+    const auto start = triangles.size();
+    triangles.resize(start + face_count);
+    for (std::size_t face = 0; face < face_count; ++face)
+    {
+        const auto [a, b, c] = triangle_corners(primitive.type, face);
+        triangles[start + face] = {
+            .id = PrimitiveId{static_cast<std::uint32_t>(start + face)},
+            .vertices = {vertices[indices[a]], vertices[indices[b]], vertices[indices[c]]},
+            .material_index = material_slot,
+        };
+    }
+}
+
 std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t mesh_index, GltfContent content)
 {
     const auto &asset = resources.asset;
@@ -219,9 +289,14 @@ std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t mesh_inde
     for (std::size_t primitive_index = 0; primitive_index < mesh.primitives.size(); ++primitive_index)
     {
         const auto &primitive = mesh.primitives[primitive_index];
-        if (primitive.type != fastgltf::PrimitiveType::Triangles || !primitive.targets.empty())
+        using enum fastgltf::PrimitiveType;
+        if (primitive.type != Triangles && primitive.type != TriangleStrip && primitive.type != TriangleFan)
         {
-            throw std::runtime_error("Expected a static TRIANGLES primitive");
+            throw std::runtime_error("Expected TRIANGLES, TRIANGLE_STRIP or TRIANGLE_FAN");
+        }
+        if (!primitive.targets.empty())
+        {
+            throw std::runtime_error("Morph targets are not supported");
         }
         const auto position = primitive.findAttribute("POSITION");
         if (position == primitive.attributes.end())
@@ -280,38 +355,8 @@ std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t mesh_inde
         {
             read_vertex_colors(asset, resources.geometry_accessor(color->accessorIndex), vertices);
         }
-        const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
-
-        // GenerateMeshIndices also supplies consecutive indices for non-indexed primitives.
-        const auto &indices = resources.geometry_accessor(primitive.indicesAccessor.value());
-        using enum fastgltf::ComponentType;
-        if (indices.type != fastgltf::AccessorType::Scalar || indices.normalized ||
-            (indices.componentType != UnsignedByte && indices.componentType != UnsignedShort &&
-             indices.componentType != UnsignedInt) ||
-            indices.count % 3 != 0)
-        {
-            throw std::runtime_error("Expected unsigned triangle index triples");
-        }
-        if (indices.count / 3 > std::numeric_limits<std::uint32_t>::max() - triangles.size())
-        {
-            throw std::runtime_error("Too many triangles for mesh-local primitive IDs");
-        }
         const auto start = triangles.size();
-        triangles.resize(start + indices.count / 3);
-        fastgltf::iterateAccessorWithIndex<std::uint32_t>(
-            asset, indices,
-            [&](std::uint32_t index, std::size_t i)
-            {
-                if (index >= vertices.size())
-                {
-                    throw std::runtime_error("Triangle index exceeds POSITION count");
-                }
-                const auto face = start + i / 3;
-                auto &triangle = triangles[face];
-                triangle.id = PrimitiveId{static_cast<std::uint32_t>(face)};
-                triangle.material_index = material_slot;
-                triangle.vertices[i % 3] = vertices[index];
-            });
+        append_triangles(triangles, resources, primitive, vertices);
         if (content != GltfContent::Materials || use_tangents || !primitive.materialIndex)
         {
             continue;

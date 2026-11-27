@@ -92,6 +92,10 @@ if(BUILD_TESTING)
     target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)
     add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
 
+    add_executable(triangle_modes_test tests/triangle_modes_test.cpp)
+    target_link_libraries(triangle_modes_test PRIVATE formlight_gltf)
+    add_test(NAME gltf_triangle_modes COMMAND triangle_modes_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/triangle-modes.gltf")
+
     add_executable(metallic_roughness_texture_test tests/metallic_roughness_texture_test.cpp)
     target_link_libraries(metallic_roughness_texture_test PRIVATE formlight_gltf)
     add_test(NAME metallic_roughness_texture COMMAND metallic_roughness_texture_test
