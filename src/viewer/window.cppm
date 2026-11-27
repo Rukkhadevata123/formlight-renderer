@@ -63,9 +63,12 @@ void show_report(const PixelDiagnostic &report)
         ImGui::Text("Instance %u", std::to_underlying(id.instance));
         ImGui::Text("Primitive %u", std::to_underlying(id.primitive));
         ImGui::Text("Material slot %zu", surface->material_index);
-        const auto &[base, emission, metallic, roughness] = surface->material;
+        const auto &[base, emission, metallic, roughness, occlusion] = surface->material;
         ImGui::Text("Metallic   %.3g    Roughness   %.3g", metallic, roughness);
         ImGui::Text("Surface emission (linear RGB)   %.3g  %.3g  %.3g", emission.r, emission.g, emission.b);
+        const auto ambient = surface->ambient;
+        ImGui::Text("Occlusion   %.3g", occlusion);
+        ImGui::Text("Surface ambient (linear RGB)   %.3g  %.3g  %.3g", ambient.x, ambient.y, ambient.z);
         if (base.a < 1)
         {
             ImGui::Text("Front layer opacity   %.3g", base.a);

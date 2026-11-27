@@ -237,7 +237,7 @@ ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget)
         return Quality::Full;
     }
     const auto &lighting = applied_.request.lighting;
-    const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
+    const auto *area = lighting ? std::get_if<AreaLighting>(&lighting->direct) : nullptr;
     if (area && area->sampling.samples > 1 && light_center_cost_ <= budget)
     {
         return Quality::LightCenter;

@@ -11,6 +11,7 @@ struct SurfaceMaterial
     LinearColor base_color;
     LinearColor emission;
     double metallic{1}, roughness{1};
+    double occlusion{1};
 };
 
 // Terms shared by every light sample at the same surface point and camera direction.

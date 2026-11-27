@@ -16,6 +16,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.camera.position = {2, 1, 3};
     config.camera.target = {0, -0.2, 0};
     config.light.width = 0.75;
+    config.light.ambient = {0.2, 0.1, 0.4};
 
     // Change worker counts across the round trip; fixed samples must give identical linear pixels.
     const auto before = oneapi::tbb::task_arena{1}.execute([&] { return render_scene(prepare_render(config)); });

@@ -24,8 +24,9 @@ PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLi
 
 void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 {
-    const auto *directional = lighting ? std::get_if<DirectionalLighting>(&*lighting) : nullptr;
-    const auto *area = lighting ? std::get_if<AreaLighting>(&*lighting) : nullptr;
+    const auto *direct = lighting ? &lighting->direct : nullptr;
+    const auto *directional = std::get_if<DirectionalLighting>(direct);
+    const auto *area = std::get_if<AreaLighting>(direct);
     if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows)))
     {
         blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_);
@@ -33,7 +34,7 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
     if (directional && directional->shadows == ShadowMethod::Map)
     {
         const auto direction = directional->light.toward_light();
-        if (!shadow_map_ || std::get<DirectionalLighting>(*lighting_).light.toward_light() != direction)
+        if (!shadow_map_ || std::get<DirectionalLighting>(lighting_->direct).light.toward_light() != direction)
         {
             shadow_map_ = std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light, solid_filter_);
         }
@@ -57,23 +58,37 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     {
         return base;
     }
+    Vec3 ambient{};
+    if (lighting_)
+    {
+        const auto rgb = lighting_->ambient;
+        ambient = Vec3{base.r * rgb.x, base.g * rgb.y, base.b * rgb.z} * material.occlusion;
+    }
     if (record)
     {
         // Layers are visited back to front. Keep lighting details for the nearest nonzero layer.
         record->samples.clear();
-        record->surface = DiagnosticSurface{hit, face.material_index, material};
+        record->surface = DiagnosticSurface{hit, face.material_index, material, ambient};
     }
     if (!lighting_)
     {
         // The no-light preview shows the base color at unit weight.
         return outgoing_color(material, {base.r, base.g, base.b});
     }
+    if (std::holds_alternative<std::monostate>(lighting_->direct))
+    {
+        if (record)
+        {
+            record->light = LightKind::Ambient;
+        }
+        return outgoing_color(material, ambient);
+    }
 
     const Vec3 local_normal = face.normal_at(weights);
     const Vec3 normal = instance.transform.to_world_normal(back_face ? local_normal * -1 : local_normal);
     const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
     const MetallicRoughnessBrdf brdf{material, normal, to_eye};
-    if (const auto *area = std::get_if<AreaLighting>(&*lighting_))
+    if (const auto *area = std::get_if<AreaLighting>(&lighting_->direct))
     {
         if (record)
         {
@@ -84,10 +99,10 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         const auto direct = sample_area_light(area->light, SurfaceRayOrigin{instance, face, weights}, brdf,
                                               area->sampling, index, area->shadows ? blockers_.get() : nullptr,
                                               view.area_light_pattern, record ? &record->samples : nullptr, stop);
-        return outgoing_color(material, direct);
+        return outgoing_color(material, ambient + direct);
     }
 
-    const auto &directional = std::get<DirectionalLighting>(*lighting_);
+    const auto &directional = std::get<DirectionalLighting>(lighting_->direct);
     const auto sample =
         evaluate_light_sample(brdf, directional.light.incident(), std::nullopt, [&]
                               { return directional_shadow(directional, instance, face, weights, record != nullptr); });
@@ -96,7 +111,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         record->light = LightKind::Directional;
         record->samples.push_back(sample);
     }
-    return outgoing_color(material, sample.direct);
+    return outgoing_color(material, ambient + sample.direct);
 }
 
 ShadowResult PreviewRenderer::directional_shadow(const DirectionalLighting &light, const MeshInstance &instance,

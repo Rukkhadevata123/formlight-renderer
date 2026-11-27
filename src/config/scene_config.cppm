@@ -15,6 +15,7 @@ enum class RenderMode
 enum class LightKind
 {
     None,
+    Ambient,
     Directional,
     Rectangle
 };
@@ -27,7 +28,7 @@ template <class E> struct NamedValue
 
 inline constexpr std::array render_modes{NamedValue{"raster", RenderMode::Raster},
                                          NamedValue{"hybrid", RenderMode::Hybrid}};
-inline constexpr std::array light_kinds{NamedValue{"none", LightKind::None},
+inline constexpr std::array light_kinds{NamedValue{"none", LightKind::None}, NamedValue{"ambient", LightKind::Ambient},
                                         NamedValue{"directional", LightKind::Directional},
                                         NamedValue{"rectangle", LightKind::Rectangle}};
 inline constexpr std::array tone_mappings{NamedValue{"clip", ToneMapping::Clip},
@@ -116,11 +117,16 @@ struct LightSettings
     Vec3 toward_light{1, 4, 3};
     Vec3 center{3, 3, 0.75};
     double width{1.5}, height{1.5}, power{240};
+    Vec3 ambient{};
 
     void fields(this auto &self, auto &&field)
     {
         field("type", self.type);
         if (self.type != LightKind::None)
+        {
+            field("ambient", self.ambient);
+        }
+        if (self.type == LightKind::Directional || self.type == LightKind::Rectangle)
         {
             field("shadows", self.shadows);
         }
@@ -173,7 +179,18 @@ struct AreaLighting
     LightSampling sampling{};
     bool shadows{true};
 };
-using PreviewLighting = std::variant<DirectionalLighting, AreaLighting>;
+using DirectLight = std::variant<std::monostate, DirectionalLighting, AreaLighting>;
+
+struct PreviewLighting
+{
+    DirectLight direct;
+    Vec3 ambient;
+
+    PreviewLighting(std::convertible_to<DirectLight> auto light, Vec3 ambient_rgb = {})
+        : direct{std::move(light)}, ambient{ambient_rgb}
+    {
+    }
+};
 
 // A render owns a snapshot. The editor can continue changing its SceneConfig.
 struct RenderRequest
@@ -221,11 +238,25 @@ struct RenderRequest
             throw std::invalid_argument(std::format("camera: {}", error.what()));
         }
     }
-    if (light.type == LightKind::Directional)
+    if (light.type == LightKind::None)
+    {
+        return request;
+    }
+    const auto valid_channel = [](double value) { return std::isfinite(value) && value >= 0; };
+    if (!valid_channel(light.ambient.x) || !valid_channel(light.ambient.y) || !valid_channel(light.ambient.z))
+    {
+        throw std::invalid_argument("light.ambient requires three finite, nonnegative channels");
+    }
+    if (light.type == LightKind::Ambient)
+    {
+        request.lighting.emplace(std::monostate{}, light.ambient);
+    }
+    else if (light.type == LightKind::Directional)
     {
         const auto method = render.mode == RenderMode::Hybrid ? ShadowMethod::Ray : ShadowMethod::Map;
-        request.lighting =
-            DirectionalLighting{DirectionalLight{light.toward_light}, light.shadows ? method : ShadowMethod::None};
+        request.lighting.emplace(
+            DirectionalLighting{DirectionalLight{light.toward_light}, light.shadows ? method : ShadowMethod::None},
+            light.ambient);
     }
     else if (light.type == LightKind::Rectangle)
     {
@@ -238,7 +269,7 @@ struct RenderRequest
             throw std::invalid_argument("light.width and light.height must be finite and positive");
         }
         const RectangleLight rectangle{light.center, {light.width, 0, 0}, {0, 0, light.height}, light.power};
-        request.lighting = AreaLighting{rectangle, render.sampling, light.shadows};
+        request.lighting.emplace(AreaLighting{rectangle, render.sampling, light.shadows}, light.ambient);
     }
     return request;
 }

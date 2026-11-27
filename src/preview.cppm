@@ -73,6 +73,7 @@ export struct DiagnosticSurface
     RasterHit hit;
     std::size_t material_index;
     SurfaceMaterial material;
+    Vec3 ambient;
 };
 
 export struct PixelDiagnostic

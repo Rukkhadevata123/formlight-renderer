@@ -32,6 +32,8 @@ export struct GltfMaterial
     double metallic_factor{1}, roughness_factor{1};
     std::optional<TextureBinding> base_color_texture{};
     std::optional<TextureBinding> metallic_roughness_texture{};
+    std::optional<TextureBinding> occlusion_texture{};
+    double occlusion_strength{1};
     LinearColor emission_multiplier{};
     std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};

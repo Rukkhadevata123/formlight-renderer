@@ -24,7 +24,7 @@ Six spheres share one untextured geometry and the same copper-colored base. The 
 
 ## MetallicRoughnessPanel.glb
 
-A square panel uses one two-texel PNG for both base color and metallic-roughness. The RGB bytes are (32, 64, 192) and (224, 160, 48). Both material factors are 0.5, and the sampler uses linear filtering. Created for Formlight and distributed under the [project license](../LICENSE).
+A square panel uses one two-texel PNG for base color, metallic-roughness, and ambient occlusion. The RGB bytes are (32, 64, 192) and (224, 160, 48). The metallic and roughness factors are both 0.5. The red channel controls occlusion with strength 0.25. The sampler uses linear filtering. The [ambient lighting scene](../scenes/occlusion-panel.toml) shows the panel under uniform colored light. Created for Formlight and distributed under the [project license](../LICENSE).
 
 ## Viewer font
 

@@ -124,7 +124,7 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
         {
             const auto &material = asset.materials.at(*primitive.materialIndex);
             if (material.pbrData.baseColorTexture || material.pbrData.metallicRoughnessTexture ||
-                material.emissiveTexture)
+                material.occlusionTexture || material.emissiveTexture)
             {
                 throw std::runtime_error("Textured primitive is missing TEXCOORD_0");
             }
@@ -285,6 +285,15 @@ GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &te
     if (const auto &info = pbr.metallicRoughnessTexture)
     {
         result.metallic_roughness_texture = textures.bind(*info, RgbEncoding::Linear);
+    }
+    if (const auto &info = material.occlusionTexture)
+    {
+        if (!(info->strength >= 0 && info->strength <= 1))
+        {
+            throw std::runtime_error("occlusionTexture.strength must be in [0, 1]");
+        }
+        result.occlusion_texture = textures.bind(*info, RgbEncoding::Linear);
+        result.occlusion_strength = info->strength;
     }
     if (const auto &info = material.emissiveTexture)
     {
@@ -458,7 +467,13 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
         metallic *= texel.b;
         roughness *= texel.g;
     }
-    return {color, emission, metallic, roughness};
+    double occlusion = 1;
+    if (const auto &binding = mat.occlusion_texture)
+    {
+        const auto texel = sample(*binding, face.uv_at(weights));
+        occlusion = std::lerp(1.0, static_cast<double>(texel.r), mat.occlusion_strength);
+    }
+    return {color, emission, metallic, roughness, occlusion};
 }
 
 SurfaceFilter GltfScene::solid_filter() const &
