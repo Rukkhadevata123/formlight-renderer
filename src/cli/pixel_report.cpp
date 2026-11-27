@@ -34,7 +34,6 @@ void print_sample(const SampleDiagnostic &report)
     if (const auto &surface = report.surface)
     {
         const auto &id = surface->hit.surface.id;
-        const auto weights = surface->hit.surface.weights;
         std::println("Surface: instance {}, primitive {}, material slot {}, depth {:.9g}",
                      std::to_underlying(id.instance), std::to_underlying(id.primitive), surface->material_index,
                      surface->hit.view_depth);
@@ -44,8 +43,16 @@ void print_sample(const SampleDiagnostic &report)
             std::println("World shading normal: ({}, {}, {})", n->x, n->y, n->z);
         }
         std::println("Metallic: {}  Roughness: {}", metallic, roughness);
-        std::println("Barycentrics: ({:.9g}, {:.9g}, {:.9g})  Base linear RGB: ({}, {}, {})", weights.a, weights.b,
-                     weights.c, base.r, base.g, base.b);
+        if (const auto *triangle = std::get_if<TriangleCoordinates>(&surface->hit.surface.coordinates))
+        {
+            const auto weights = triangle->weights;
+            std::println("Barycentrics: ({:.9g}, {:.9g}, {:.9g})", weights.a, weights.b, weights.c);
+        }
+        else
+        {
+            std::println("Analytic sphere {}", std::get<SphereCoordinates>(surface->hit.surface.coordinates).index);
+        }
+        std::println("Base linear RGB: ({}, {}, {})", base.r, base.g, base.b);
         std::println("Surface emission (linear RGB): ({}, {}, {})", emission.r, emission.g, emission.b);
         const auto ambient = surface->ambient;
         std::println("Occlusion: {}  Surface ambient (linear RGB): ({}, {}, {})", occlusion, ambient.x, ambient.y,

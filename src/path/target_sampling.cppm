@@ -29,6 +29,9 @@ struct TargetSphere
 {
     Vec3 center;
     double radius;
+    explicit TargetSphere(const Sphere &sphere) : center(sphere.center), radius(sphere.radius)
+    {
+    }
 
     explicit TargetSphere(const MeshInstance &instance)
         : center(world_bounds(std::span{&instance, 1}).center()), radius(0)
@@ -69,13 +72,21 @@ struct TargetSphere
 export class DirectionTargets
 {
   public:
-    DirectionTargets(std::span<const MeshInstance> instances, auto emits) : emitters_(instances, emits)
+    DirectionTargets(std::span<const MeshInstance> instances, auto emits, std::span<const SphereInstance> spheres = {})
+        : emitters_(instances, emits)
     {
         for (const auto &instance : instances)
         {
             if (instance.sampling_target)
             {
                 spheres_.emplace_back(instance);
+            }
+        }
+        for (const auto &sphere : spheres)
+        {
+            if (sphere.sampling_target)
+            {
+                spheres_.emplace_back(sphere.shape);
             }
         }
     }
@@ -92,7 +103,7 @@ export class DirectionTargets
             return emitters_.sample(origin, rng);
         }
         const auto count = proposal_count();
-        const auto index = count == 1 ? 0 : static_cast<std::size_t>(rng.uniform() * count);
+        const auto index = count == 1 ? 0 : static_cast<std::size_t>(rng.uniform() * static_cast<double>(count));
         if (index < spheres_.size())
         {
             return spheres_[index].cone(origin).sample(rng);
@@ -111,7 +122,7 @@ export class DirectionTargets
         {
             pdf += sphere.cone(unit_ray.origin).density(unit_ray.direction);
         }
-        return pdf / proposal_count();
+        return pdf / static_cast<double>(proposal_count());
     }
 
   private:

@@ -265,10 +265,12 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
     {
         const auto &hit = first->intersection;
         const auto id = hit.surface.id;
-        const auto &instance = scene_.instance(id.instance);
-        const auto &face = instance.triangles[std::to_underlying(id.primitive)];
+        const auto *sphere = std::get_if<SphereCoordinates>(&hit.surface.coordinates);
+        const auto material_index =
+            sphere ? scene_.spheres()[sphere->index].material_index
+                   : scene_.instance(id.instance).triangles[std::to_underlying(id.primitive)].material_index;
         record->surface = DiagnosticSurface{{hit.surface, hit.t * depth_per_unit, first->back_face},
-                                            face.material_index,
+                                            material_index,
                                             first->material,
                                             {},
                                             first->shading_normal};

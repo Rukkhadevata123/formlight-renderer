@@ -76,7 +76,7 @@ export [[nodiscard]] LightSample evaluate_light_sample(const MetallicRoughnessBr
     return {position, shadow.visibility == 0 ? Vec3{} : direct * shadow.visibility, shadow};
 }
 
-export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, const Ray &ray, RayInterval interval,
+export [[nodiscard]] ShadowResult trace_shadow(const SurfaceBvh &blockers, const Ray &ray, RayInterval interval,
                                                bool identify_blocker)
 {
     if (blockers.empty())
@@ -85,7 +85,7 @@ export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, cons
     }
     if (identify_blocker)
     {
-        if (const auto hit = blockers.intersect(ray, interval))
+        if (const auto hit = blockers.intersect_surface(ray, interval))
         {
             return {ShadowState::Blocked, hit->surface.id};
         }
@@ -96,7 +96,7 @@ export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, cons
 
 export [[nodiscard]] LightSample evaluate_finite_light_sample(const MetallicRoughnessBrdf &brdf, IncidentLight incident,
                                                               const SurfaceRayOrigin &receiver, Vec3 endpoint,
-                                                              const TriangleBvh *blockers, bool identify_blocker)
+                                                              const SurfaceBvh *blockers, bool identify_blocker)
 {
     const auto visibility = [&]
     {
@@ -124,7 +124,7 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 
 export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const SurfaceRayOrigin &receiver,
                                             const MetallicRoughnessBrdf &brdf, LightSampling sampling,
-                                            std::uint64_t pixel, const TriangleBvh *blockers,
+                                            std::uint64_t pixel, const SurfaceBvh *blockers,
                                             AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
                                             std::vector<LightSample> *record = nullptr,
                                             const std::stop_token &stop = {})
@@ -172,7 +172,7 @@ export struct AreaLighting
     bool shadows{true};
 
     [[nodiscard]] Vec3 evaluate(const SurfaceRayOrigin &receiver, const MetallicRoughnessBrdf &brdf,
-                                std::uint64_t pixel, const TriangleBvh *blockers, AreaLightPattern pattern,
+                                std::uint64_t pixel, const SurfaceBvh *blockers, AreaLightPattern pattern,
                                 DiagnosticLight *record, std::stop_token stop) const
     {
         if (record)

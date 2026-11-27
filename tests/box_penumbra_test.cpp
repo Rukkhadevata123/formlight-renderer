@@ -29,7 +29,7 @@ Profile measure(const GltfScene &scene, const PreviewView &view, const SceneConf
         const auto &rays = sample.lights.at(0).samples;
         const auto blocked = std::ranges::count_if(rays, [](const LightSample &ray)
                                                    { return ray.shadow.state == ShadowState::Blocked; });
-        const double fraction = static_cast<double>(blocked) / rays.size();
+        const double fraction = static_cast<double>(blocked) / static_cast<double>(rays.size());
         if ((y == first_row && fraction < 0.9) || (y == last_row && fraction > 0.1))
         {
             throw std::runtime_error("The ground scanline must span the shadow transition");

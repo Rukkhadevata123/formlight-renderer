@@ -49,9 +49,8 @@ SampleDiagnostic probe(const ScenePreview &preview, Vec3 eye, bool up, std::uint
     return renderer.diagnose(view, {0, 0}).samples.at(0);
 }
 
-void check_cornell(SceneConfig config)
+void check_cornell(SceneConfig &config, auto &sphere)
 {
-    auto &sphere = config.scene.path_materials.at(0);
     const auto glass = load_preview(prepare_render(config));
     const Vec3 inside{-0.358, 0.34, 0.141};
     const auto exit = probe(glass, inside, true, 1, BounceSampling::LightMixture);
@@ -70,6 +69,14 @@ void check_cornell(SceneConfig config)
     near(probe(clear, below, true, 2, BounceSampling::LightMixture).color.r, 8, 0, "two transmissions to lamp");
 
     sphere.type = PathSurface::Mirror;
+    if constexpr (std::same_as<std::remove_cvref_t<decltype(sphere)>, SphereSettings>)
+    {
+        if (!std::holds_alternative<SphereCoordinates>(exit.surface->hit.surface.coordinates))
+        {
+            throw std::runtime_error("Expected an analytic sphere in the pixel diagnostic");
+        }
+        sphere.albedo = {0.8, 0.9, 1};
+    }
     const auto mirror = load_preview(prepare_render(config));
     const auto lamp = probe(mirror, {-0.358, 1, 0.141}, false, 1, BounceSampling::LightMixture);
     near(lamp.color.r, 8 * 0.8, 1e-6, "red mirror reflectance");
@@ -88,7 +95,15 @@ try
         return 1;
     }
     check_optics();
-    check_cornell(load_scene_config(argv[1]));
+    auto config = load_scene_config(argv[1]);
+    if (config.scene.spheres.empty())
+    {
+        check_cornell(config, config.scene.path_materials.at(0));
+    }
+    else
+    {
+        check_cornell(config, config.scene.spheres.at(0));
+    }
     return 0;
 }
 catch (const std::exception &error)

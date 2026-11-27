@@ -66,4 +66,9 @@ struct Ray
         return origin + direction * t;
     }
 };
+
+struct RayInterval
+{
+    double min, max;
+};
 } // namespace formlight

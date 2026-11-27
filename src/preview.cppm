@@ -4,7 +4,7 @@ import std;
 export import formlight.gltf;
 export import formlight.scene_config;
 export import formlight.raster;
-import formlight.ray_query;
+export import formlight.ray_query;
 import formlight.shadow_map;
 import formlight.path;
 
@@ -67,13 +67,19 @@ export [[nodiscard]] PreviewView frame_scene(const GltfScene &scene, ImageExtent
                                              double fov = CameraSettings{}.vertical_fov_degrees *
                                                           (std::numbers::pi / 180))
 {
-    const auto bounds = world_bounds(scene.instances());
+    const auto bounds = scene.bounds();
     return frame_bounds(bounds, subject.value_or(bounds), extent, fov);
 }
 
+export struct DiagnosticHit
+{
+    SurfacePoint surface;
+    double view_depth;
+    bool back_face;
+};
 export struct DiagnosticSurface
 {
-    RasterHit hit;
+    DiagnosticHit hit;
     std::size_t material_index;
     SurfaceMaterial material;
     Vec3 ambient;
@@ -162,7 +168,8 @@ export struct ScenePreview
 
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 {
-    auto scene = GltfScene::load(request.asset, GltfContent::Materials);
+    auto scene = request.asset.empty() ? std::expected<GltfScene, std::string>{GltfScene::empty_scene()}
+                                       : GltfScene::load(request.asset, GltfContent::Materials);
     if (!scene)
     {
         throw std::runtime_error(scene.error());
@@ -175,12 +182,13 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     {
         scene->mark_sampling_target(node);
     }
-    const auto subject = world_bounds(scene->instances());
+    scene->add_spheres(request.spheres);
+    const auto subject = scene->bounds();
     auto bounds = subject;
     if (request.ground)
     {
         add_preview_ground(*scene, subject);
-        bounds = world_bounds(scene->instances());
+        bounds = scene->bounds();
     }
     auto view = request.camera ? clip_to_bounds(*request.camera, bounds)
                                : frame_bounds(bounds, subject, request.extent, request.vertical_fov_radians);

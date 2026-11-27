@@ -3,6 +3,7 @@ export module formlight.scene_config;
 import std;
 export import formlight.camera;
 export import formlight.specular;
+export import formlight.sphere;
 export import formlight.lighting;
 export import formlight.direct_lighting;
 
@@ -95,12 +96,38 @@ struct PathMaterialSettings
     }
 };
 
+struct SphereSettings
+{
+    Sphere shape;
+    Vec3 albedo{1, 1, 1};
+    PathSurface type{PathSurface::Diffuse};
+    double ior{1.5};
+    bool sampling_target{};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("center", self.shape.center);
+        field("radius", self.shape.radius);
+        field("type", self.type);
+        if (self.type == PathSurface::Dielectric)
+        {
+            field("ior", self.ior);
+        }
+        else
+        {
+            field("albedo", self.albedo);
+        }
+        field("sampling_target", self.sampling_target);
+    }
+};
+
 struct SceneSettings
 {
     std::filesystem::path asset;
     bool ground{};
     std::vector<PathMaterialSettings> path_materials{};
     std::vector<std::uint32_t> sampling_targets{}; // glTF node indices in the active scene.
+    std::vector<SphereSettings> spheres{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -108,6 +135,7 @@ struct SceneSettings
         field("ground", self.ground);
         field("path_materials", self.path_materials);
         field("sampling_targets", self.sampling_targets);
+        field("spheres", self.spheres);
     }
 };
 
@@ -285,6 +313,7 @@ struct RenderRequest
     PathSampling path_sampling{};
     std::vector<PathMaterialSettings> path_materials{};
     std::vector<std::uint32_t> sampling_targets{};
+    std::vector<SphereSettings> spheres{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -336,9 +365,28 @@ struct RenderRequest
 {
     const auto &[scene, camera, render, lighting, display] = config;
     display.validate();
-    if (scene.asset.empty())
+    if (scene.asset.empty() && scene.spheres.empty())
     {
-        throw std::invalid_argument("scene.asset requires a model path");
+        throw std::invalid_argument("Scene requires a model path or a sphere");
+    }
+    if (!scene.spheres.empty() && render.mode != RenderMode::Path)
+    {
+        throw std::invalid_argument("Analytic spheres require path mode");
+    }
+    for (const auto &sphere : scene.spheres)
+    {
+        (void)sphere.shape.bounds();
+        if (sphere.type == PathSurface::Dielectric && !(std::isfinite(sphere.ior) && sphere.ior >= 1))
+        {
+            throw std::invalid_argument("Dielectric ior must be finite and at least 1");
+        }
+        for (const double channel : {sphere.albedo.x, sphere.albedo.y, sphere.albedo.z})
+        {
+            if (!(channel >= 0 && channel <= 1))
+            {
+                throw std::invalid_argument("Sphere albedo must be in [0, 1]");
+            }
+        }
     }
     (void)sample_grid_extent(render.extent, render.ssaa);
     std::set<int> assigned;
@@ -375,7 +423,8 @@ struct RenderRequest
                           render.mode,
                           {render.path_samples, render.max_bounces, render.sampling.seed, render.bounce_sampling},
                           scene.path_materials,
-                          scene.sampling_targets};
+                          scene.sampling_targets,
+                          scene.spheres};
     if (!camera.auto_frame)
     {
         try

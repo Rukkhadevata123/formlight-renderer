@@ -269,8 +269,17 @@ void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
             { return sample.surface ? sample.surface->hit.view_depth : std::numeric_limits<double>::infinity(); });
         if (closest != report_->samples.end() && closest->surface)
         {
-            const auto &instance = scene_->preview.scene.instance(closest->surface->hit.surface.id.instance);
-            camera.focus(world_bounds(std::span{&instance, 1}));
+            const auto &point = closest->surface->hit.surface;
+            const auto &scene = scene_->preview.scene;
+            if (const auto *sphere = std::get_if<SphereCoordinates>(&point.coordinates))
+            {
+                camera.focus(scene.spheres()[sphere->index].shape.bounds());
+            }
+            else
+            {
+                const auto &instance = scene.instance(point.id.instance);
+                camera.focus(world_bounds(std::span{&instance, 1}));
+            }
             changed = true;
         }
     }
@@ -336,15 +345,23 @@ void ViewerSession::schedule_render(Clock::time_point now)
     {
         view.area_light_pattern = AreaLightPattern::Center;
     }
-    auto renderer = frame_ ? frame_->result.renderer : PreviewRenderer{scene_->preview.scene};
+    auto previous = frame_ ? std::optional{frame_->result.renderer} : std::nullopt;
     rendering_.emplace(FrameRequest{requested_, quality, navigating, applied_.request.extent, view},
-                       [renderer = std::move(renderer), lighting = applied_.request.lighting,
-                        mode = applied_.request.mode, view](std::stop_token stop) mutable
+                       [previous = std::move(previous), &scene = scene_->preview.scene,
+                        lighting = applied_.request.lighting, mode = applied_.request.mode,
+                        view](std::stop_token stop) mutable
                        {
-                           renderer.configure(mode, std::move(lighting));
+                           if (previous)
+                           {
+                               previous->configure(mode, std::move(lighting));
+                           }
+                           else
+                           {
+                               previous.emplace(scene, std::move(lighting), mode);
+                           }
                            const auto start = Clock::now();
-                           auto image = renderer.render(view, stop);
-                           return TimedImage{std::move(image), Clock::now() - start, std::move(renderer)};
+                           auto image = previous->render(view, stop);
+                           return TimedImage{std::move(image), Clock::now() - start, std::move(*previous)};
                        });
 }
 

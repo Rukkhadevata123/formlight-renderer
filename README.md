@@ -55,6 +55,8 @@ build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bo
 
 在玻璃球场景的 `[scene]` 中，`sampling_targets = [1]` 指定 glTF 节点 1 的网格实例为额外方向采样目标。漫反射路径有 1/2 的概率采样余弦半球、1/4 采样顶灯、1/4 均匀采样玻璃球包围球张开的立体角。光线随后仍与真实网格求交，玻璃的自发光为零。将列表改为 `[]` 即可在同一场景比较只采样余弦半球与顶灯的效果。固定 128 条路径、64 个种子，球底三个地面探针的线性红通道综合 RMS 误差由 0.264 降到 0.232，球外对照点由 0.028 升到 0.045。[采样实现](src/path/target_sampling.cppm) · [焦散回归](tests/cornell_caustic_test.cpp)
 
+[Cornell 解析球](scenes/path/cornell-analytic.toml)沿用网格球的机位、球心、半径和折射率。这个版本在 TOML 的 `[[scene.spheres]]` 中直接指定世界坐标 `center` 和 `radius`。在 `path` 模式下，三角形和球共用一个 BVH；每个球占一个图元，像素诊断会显示球的序号和曲面法线。球可使用 `diffuse`、`mirror` 或 `dielectric` 材质，`sampling_target = true` 将它加入方向采样。只含球的场景可以省略 `scene.asset`。用 `--pixel 46 96` 对照两份 Cornell 配置，解析球的视深为 3.32187887，网格球为 3.32302275。[求交回归](tests/sphere_query_test.cpp)
+
 ### 自定义光栅 shader
 
 构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)

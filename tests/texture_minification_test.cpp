@@ -68,7 +68,7 @@ void check_floor(const SceneConfig &config)
         const auto report = renderer.diagnose(preview.view, pixel);
         const auto &sample = report.samples.at(0);
         const auto &surface = sample.surface.value();
-        const auto &point = surface.hit.surface;
+        const auto point = surface.hit.surface.triangle();
         const auto &face = preview.scene.instance(point.id.instance).triangles[std::to_underlying(point.id.primitive)];
         const auto grad = face.uv_gradients(point.gradients, 1);
         const auto center = pixel_center(pixel.x, pixel.y);

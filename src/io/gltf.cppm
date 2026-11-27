@@ -2,9 +2,11 @@ export module formlight.gltf;
 
 import std;
 export import formlight.mesh_instance;
+export import formlight.sphere;
 export import formlight.texture;
 export import formlight.material;
 import formlight.specular;
+import formlight.scene_config;
 
 namespace formlight
 {
@@ -70,6 +72,7 @@ export class GltfScene
   public:
     GltfScene(GltfScene &&) noexcept = default;
     GltfScene &operator=(GltfScene &&) noexcept = default;
+    [[nodiscard]] static GltfScene empty_scene();
 
     [[nodiscard]] static std::expected<GltfScene, std::string> load(const std::filesystem::path &path,
                                                                     GltfContent content);
@@ -80,8 +83,18 @@ export class GltfScene
                                       WeightGradients gradients, bool back_face) const;
     [[nodiscard]] const GltfMaterial &material(const Triangle &face) const
     {
-        return materials_.at(face.material_index).value();
+        return material(face.material_index);
     }
+    [[nodiscard]] const GltfMaterial &material(std::size_t slot) const
+    {
+        return materials_.at(slot).value();
+    }
+    void add_spheres(std::span<const SphereSettings> spheres);
+    [[nodiscard]] std::span<const SphereInstance> spheres() const & noexcept
+    {
+        return spheres_;
+    }
+    [[nodiscard]] Bounds3 bounds() const;
     // Depth and shadow passes accept opaque and covered mask samples. The filter borrows the scene.
     [[nodiscard]] SurfaceFilter solid_filter() const &;
     SurfaceFilter solid_filter() const && = delete;
@@ -114,6 +127,7 @@ export class GltfScene
     [[nodiscard]] LinearColor sample_base_color(const GltfMaterial &material, const Triangle &face,
                                                 Barycentrics weights, WeightGradients gradients) const;
     std::vector<std::vector<Triangle>> meshes_;
+    std::vector<SphereInstance> spheres_;
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
     std::vector<TextureImage> images_;

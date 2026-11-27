@@ -36,6 +36,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/raster/raster.cppm
         src/raster/shader.cppm
         src/ray_query.cppm
+        src/ray/sphere.cppm
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
 
@@ -202,6 +203,11 @@ if(BUILD_TESTING)
     add_executable(path_specular_test tests/path_specular_test.cpp)
     target_link_libraries(path_specular_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME path_specular COMMAND path_specular_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/cornell-glass.toml")
+    add_test(NAME cornell_analytic_sphere COMMAND path_specular_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/cornell-analytic.toml")
+
+    add_executable(sphere_query_test tests/sphere_query_test.cpp)
+    target_link_libraries(sphere_query_test PRIVATE formlight_renderer_core)
+    add_test(NAME sphere_query COMMAND sphere_query_test)
 
     add_executable(cornell_caustic_test tests/cornell_caustic_test.cpp)
     target_link_libraries(cornell_caustic_test PRIVATE formlight_gltf formlight_io)

@@ -2,17 +2,50 @@ export module formlight.ray_query;
 
 import std;
 export import formlight.mesh_instance;
+export import formlight.sphere;
 
 namespace formlight
 {
-export struct RayInterval
-{
-    double min, max;
-};
-
 export struct RayHit
 {
     TrianglePoint surface;
+    double t;
+};
+
+export struct TriangleCoordinates
+{
+    Barycentrics weights;
+    WeightGradients gradients;
+};
+
+export struct SphereCoordinates
+{
+    std::size_t index;
+    Vec3 outward_normal;
+};
+
+export struct SurfacePoint
+{
+    SurfaceId id;
+    std::variant<TriangleCoordinates, SphereCoordinates> coordinates;
+
+    SurfacePoint(TrianglePoint point) : id(point.id), coordinates(TriangleCoordinates{point.weights, point.gradients})
+    {
+    }
+    SurfacePoint(SurfaceId surface_id, SphereCoordinates sphere) : id(surface_id), coordinates(sphere)
+    {
+    }
+
+    [[nodiscard]] TrianglePoint triangle() const
+    {
+        const auto &triangle = std::get<TriangleCoordinates>(coordinates);
+        return {id, triangle.weights, triangle.gradients};
+    }
+};
+
+export struct SurfaceHit
+{
+    SurfacePoint surface;
     double t;
 };
 
@@ -20,28 +53,30 @@ export struct RayHit
 export struct RayQueryStats
 {
     std::uint64_t rays{}, triangle_tests{};
+    std::uint64_t sphere_tests{};
 };
 
 // Borrows the instances and snapshots face culling at build time. Rebuild if either changes.
-export class TriangleBvh
+export class SurfaceBvh
 {
   public:
-    TriangleBvh() = default;
-    explicit TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept = {},
-                         const FaceCulling &culling = {});
+    SurfaceBvh() = default;
+    SurfaceBvh(std::span<const MeshInstance> instances, std::span<const SphereInstance> spheres,
+               SurfaceFilter accept = {}, const FaceCulling &culling = {});
     [[nodiscard]] bool empty() const noexcept
     {
         return nodes_.empty();
     }
-    [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, RayInterval interval,
-                                                  RayQueryStats *stats = nullptr) const;
+    [[nodiscard]] std::optional<SurfaceHit> intersect_surface(const Ray &ray, RayInterval interval,
+                                                              RayQueryStats *stats = nullptr) const;
     [[nodiscard]] bool occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats = nullptr) const;
 
   private:
     struct Primitive
     {
-        std::size_t instance, triangle;
-        CullFace cull;
+        std::size_t instance{}, triangle{};
+        CullFace cull{CullFace::None};
+        bool sphere{};
     };
     struct BuildPrimitive;
 
@@ -52,6 +87,7 @@ export class TriangleBvh
         std::size_t first_primitive_or_right_child, count;
     };
     std::span<const MeshInstance> instances_;
+    std::span<const SphereInstance> spheres_;
     SurfaceFilter accept_;
     std::vector<Node> nodes_;
     std::vector<Primitive> primitives_;
@@ -63,7 +99,31 @@ export class TriangleBvh
         Any
     };
     template <Query Kind>
-    [[nodiscard]] std::optional<RayHit> trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const;
+    bool trace_leaf(const Node &node, const Ray &ray, RayInterval interval, RayQueryStats *stats,
+                    std::optional<SurfaceHit> &nearest) const;
+    template <Query Kind>
+    [[nodiscard]] std::optional<SurfaceHit> trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const;
+};
+
+export class TriangleBvh : public SurfaceBvh
+{
+  public:
+    TriangleBvh() = default;
+    explicit TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept = {},
+                         const FaceCulling &culling = {})
+        : SurfaceBvh(instances, {}, std::move(accept), culling)
+    {
+    }
+    [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, RayInterval interval,
+                                                  RayQueryStats *stats = nullptr) const
+    {
+        const auto hit = intersect_surface(ray, interval, stats);
+        if (!hit)
+        {
+            return std::nullopt;
+        }
+        return RayHit{hit->surface.triangle(), hit->t};
+    }
 };
 
 // Cache both sides of a hit when several light samples share the same receiver.
@@ -71,6 +131,7 @@ export class SurfaceRayOrigin
 {
   public:
     SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights);
+    SurfaceRayOrigin(const Sphere &sphere, Vec3 outward_normal);
     [[nodiscard]] Vec3 position() const noexcept
     {
         return position_;
@@ -94,6 +155,7 @@ export class SurfaceRayOrigin
 
   private:
     Vec3 position_, normal_, positive_{}, negative_{};
+    void offset_origins(Vec3 magnitudes);
 };
 
 SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights)
@@ -104,7 +166,18 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
     const Vec3 local_magnitudes = abs_components(a.position) + abs_components(b.position - a.position) * weights.b +
                                   abs_components(c.position - a.position) * weights.c;
     // Project a roundoff allowance onto the normal so distant tangential coordinates do not widen thin gaps.
-    const double scale = dot(abs_components(normal_), instance.transform.world_point_magnitudes(local_magnitudes));
+    offset_origins(instance.transform.world_point_magnitudes(local_magnitudes));
+}
+
+SurfaceRayOrigin::SurfaceRayOrigin(const Sphere &sphere, Vec3 outward_normal)
+    : position_(sphere.center + outward_normal * sphere.radius), normal_(outward_normal)
+{
+    offset_origins(abs_components(sphere.center) + abs_components(outward_normal) * sphere.radius);
+}
+
+void SurfaceRayOrigin::offset_origins(Vec3 magnitudes)
+{
+    const double scale = dot(abs_components(normal_), magnitudes);
     const Vec3 offset = normal_ * (32 * std::numeric_limits<double>::epsilon() * scale);
     const auto outward = [](double value, double component)
     {

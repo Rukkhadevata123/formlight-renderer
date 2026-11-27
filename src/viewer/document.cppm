@@ -54,7 +54,7 @@ export class ViewerDocument
             throw std::logic_error("A model is already opening");
         }
         auto config = active_->applied_config();
-        config.scene.asset = std::filesystem::absolute(path);
+        config.scene = {.asset = std::filesystem::absolute(path), .ground = config.scene.ground};
         config.camera.auto_frame = true;
         opening_ = std::make_unique<ViewerSession>(std::move(config));
         open_error_.clear();

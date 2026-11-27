@@ -151,11 +151,12 @@ bool edit_lighting(std::optional<LightingSettings> &lighting, auto edit)
     bool changed = edit(lighting->ambient);
     ImGui::PopID();
     auto &lights = lighting->lights;
-    for (std::size_t i = 0; i < lights.size(); ++i)
+    for (auto light = lights.begin(); light != lights.end(); ++light)
     {
+        const auto i = light - lights.begin();
         ImGui::PushID(static_cast<int>(i));
         const auto name = std::format("Light {}", i);
-        if (edit_group(name.c_str(), lights[i], edit))
+        if (edit_group(name.c_str(), *light, edit))
         {
             changed = true;
         }
@@ -163,7 +164,7 @@ bool edit_lighting(std::optional<LightingSettings> &lighting, auto edit)
         ImGui::PopID();
         if (remove)
         {
-            lights.erase(lights.begin() + i);
+            lights.erase(light);
             return true;
         }
     }

@@ -328,6 +328,61 @@ void GltfScene::check_output_path(const std::filesystem::path &path) const
     }
 }
 
+GltfScene GltfScene::empty_scene()
+{
+    GltfScene result;
+    result.materials_.emplace_back(GltfMaterial{});
+    return result;
+}
+
+void GltfScene::add_spheres(std::span<const SphereSettings> additions)
+{
+    if (additions.empty())
+    {
+        return;
+    }
+    if (node_instance_slots_.size() + additions.size() - 1 > std::numeric_limits<std::uint32_t>::max())
+    {
+        throw std::length_error("Sphere exceeds the instance ID range");
+    }
+    for (const auto &sphere : additions)
+    {
+        (void)sphere.shape.bounds();
+    }
+    spheres_.reserve(spheres_.size() + additions.size());
+    node_instance_slots_.reserve(node_instance_slots_.size() + additions.size());
+    materials_.reserve(materials_.size() + additions.size());
+    for (const auto &sphere : additions)
+    {
+        const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
+        const auto a = sphere.albedo;
+        materials_.emplace_back(GltfMaterial{
+            .base_color_factor = {static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), 1},
+            .metallic_factor = 0,
+            .roughness_factor = sphere.type == PathSurface::Diffuse ? 1.0 : 0.0,
+            .path_surface = sphere.type,
+            .ior = sphere.ior});
+        spheres_.push_back({id, sphere.shape, materials_.size() - 1, sphere.sampling_target});
+        node_instance_slots_.push_back(std::nullopt);
+    }
+}
+
+Bounds3 GltfScene::bounds() const
+{
+    auto bounds = instances_.empty() ? Bounds3::empty() : world_bounds(instances_);
+    for (const auto &sphere : spheres_)
+    {
+        const auto box = sphere.shape.bounds();
+        bounds.include(box.low);
+        bounds.include(box.high);
+    }
+    if (!(bounds.radius() > 0 && std::isfinite(bounds.radius())))
+    {
+        throw std::invalid_argument("The scene has no finite spatial extent");
+    }
+    return bounds;
+}
+
 void GltfScene::set_path_material(std::size_t gltf_index, PathSurface type, double ior)
 {
     // Slot zero belongs to primitives that omit the glTF material.

@@ -11,7 +11,7 @@ namespace formlight
 {
 export struct PathHit
 {
-    RayHit intersection;
+    SurfaceHit intersection;
     SurfaceMaterial material;
     bool back_face{};
     std::optional<Vec3> shading_normal{};
@@ -25,8 +25,8 @@ export class PathIntegrator
   public:
     explicit PathIntegrator(const GltfScene &scene)
         : scene_(scene),
-          surfaces_(std::make_shared<TriangleBvh>(
-              scene.instances(), scene.solid_filter(),
+          surfaces_(std::make_shared<SurfaceBvh>(
+              scene.instances(), scene.spheres(), scene.solid_filter(),
               [&scene](SurfaceId id)
               {
                   const auto &face = scene.instance(id.instance).triangles[std::to_underlying(id.primitive)];
@@ -34,14 +34,15 @@ export class PathIntegrator
                   return mat.double_sided || mat.path_surface == PathSurface::Dielectric ? CullFace::None
                                                                                          : CullFace::Back;
               })),
-          targets_(std::make_shared<DirectionTargets>(scene.instances(),
-                                                      [&scene](const Triangle &face)
-                                                      {
-                                                          const auto &material = scene.material(face);
-                                                          const auto &e = material.emission_multiplier;
-                                                          return material.alpha_mode != AlphaMode::Blend &&
-                                                                 (e.r > 0 || e.g > 0 || e.b > 0);
-                                                      }))
+          targets_(std::make_shared<DirectionTargets>(
+              scene.instances(),
+              [&scene](const Triangle &face)
+              {
+                  const auto &material = scene.material(face);
+                  const auto &e = material.emission_multiplier;
+                  return material.alpha_mode != AlphaMode::Blend && (e.r > 0 || e.g > 0 || e.b > 0);
+              },
+              scene.spheres()))
     {
     }
 
@@ -55,8 +56,9 @@ export class PathIntegrator
                 if (area->shadows && !blockers_)
                 {
                     // Shadow rays travel from the receiver to the lamp, opposite the light's view of a caster.
-                    blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), scene_.solid_filter(),
-                                                              scene_.face_culling(CullFace::Front));
+                    blockers_ =
+                        std::make_shared<SurfaceBvh>(scene_.instances(), scene_.spheres(), scene_.solid_filter(),
+                                                     scene_.face_culling(CullFace::Front));
                 }
                 rectangles.emplace_back(entry.scene_index, *area);
             }
@@ -73,7 +75,7 @@ export class PathIntegrator
         {
             throw std::invalid_argument("Path sample count must be positive");
         }
-        const auto hit = surfaces_->intersect(ray, interval);
+        const auto hit = surfaces_->intersect_surface(ray, interval);
         if (!hit)
         {
             if (record)
@@ -118,9 +120,22 @@ export class PathIntegrator
         double ior;
     };
 
-    [[nodiscard]] Interaction interaction(const RayHit &hit, const Ray &ray) const
+    [[nodiscard]] Interaction interaction(const SurfaceHit &hit, const Ray &ray) const
     {
-        const auto &[id, weights, gradients] = hit.surface;
+        if (const auto *point = std::get_if<SphereCoordinates>(&hit.surface.coordinates))
+        {
+            const auto &sphere = scene_.spheres()[point->index];
+            const auto &mat = scene_.material(sphere.material_index);
+            const auto n = point->outward_normal;
+            const bool back = dot(n, ray.direction) > 0;
+            return {{mat.base_color_factor, {}, mat.metallic_factor, mat.roughness_factor},
+                    SurfaceRayOrigin{sphere.shape, n},
+                    back ? n * -1 : n,
+                    back,
+                    mat.path_surface,
+                    mat.ior};
+        }
+        const auto [id, weights, gradients] = hit.surface.triangle();
         const auto &instance = scene_.instance(id.instance);
         const auto &face = instance.triangles[std::to_underlying(id.primitive)];
         const bool back = dot(face.geometric_normal(), instance.transform.to_local_vector(ray.direction)) > 0;
@@ -209,7 +224,7 @@ export class PathIntegrator
         }
         const Vec3 origin = surface.origin.along(geometric).origin;
         const bool mixed = method == BounceSampling::LightMixture && !targets_->empty();
-        Vec3 direction;
+        Vec3 direction{};
         if (mixed && sampler.uniform() < 0.5)
         {
             const auto sampled = targets_->sample(origin, sampler);
@@ -258,7 +273,7 @@ export class PathIntegrator
             const auto &weight = bounce->weight;
             throughput = {throughput.x * weight.x, throughput.y * weight.y, throughput.z * weight.z};
             const Ray ray = bounce->ray;
-            const auto hit = surfaces_->intersect(ray, {0, std::numeric_limits<double>::infinity()});
+            const auto hit = surfaces_->intersect_surface(ray, {0, std::numeric_limits<double>::infinity()});
             if (!hit)
             {
                 break;
@@ -273,7 +288,7 @@ export class PathIntegrator
     }
 
     const GltfScene &scene_;
-    std::shared_ptr<const TriangleBvh> surfaces_, blockers_;
+    std::shared_ptr<const SurfaceBvh> surfaces_, blockers_;
     std::shared_ptr<const DirectionTargets> targets_;
     std::vector<std::pair<std::size_t, AreaLighting>> rectangles_;
 };

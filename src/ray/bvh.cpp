@@ -74,17 +74,18 @@ double entry_distance(const Bounds3 &bounds, const Ray &ray, RayInterval interva
 }
 } // namespace
 
-struct TriangleBvh::BuildPrimitive
+struct SurfaceBvh::BuildPrimitive
 {
     Bounds3 bounds;
     Vec3 center;
     Primitive source;
 };
 
-TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept, const FaceCulling &culling)
-    : instances_(instances), accept_(std::move(accept))
+SurfaceBvh::SurfaceBvh(std::span<const MeshInstance> instances, std::span<const SphereInstance> spheres,
+                       SurfaceFilter accept, const FaceCulling &culling)
+    : instances_(instances), spheres_(spheres), accept_(std::move(accept))
 {
-    std::size_t count = 0;
+    std::size_t count = spheres.size();
     for (const auto &instance : instances)
     {
         count += instance.triangles.size();
@@ -106,11 +107,16 @@ TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter 
             work.push_back({bounds, bounds.center(), {i, j, cull}});
         }
     }
+    for (std::size_t i = 0; i < spheres.size(); ++i)
+    {
+        const auto bounds = spheres[i].shape.bounds();
+        work.push_back({bounds, bounds.center(), {i, 0, CullFace::None, true}});
+    }
     primitives_.reserve(count);
     build(work);
 }
 
-std::size_t TriangleBvh::build(std::span<BuildPrimitive> primitives)
+std::size_t SurfaceBvh::build(std::span<BuildPrimitive> primitives)
 {
     auto bounds = Bounds3::empty(), centers = Bounds3::empty();
     for (const auto &p : primitives)
@@ -143,8 +149,60 @@ std::size_t TriangleBvh::build(std::span<BuildPrimitive> primitives)
     return index;
 }
 
-template <TriangleBvh::Query Kind>
-std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
+template <SurfaceBvh::Query Kind>
+bool SurfaceBvh::trace_leaf(const Node &node, const Ray &ray, RayInterval interval, RayQueryStats *stats,
+                            std::optional<SurfaceHit> &nearest) const
+{
+    const auto record = [&](SurfacePoint point, double t)
+    {
+        if (Kind == Query::Any || !nearest || std::tie(t, point.id) < std::tie(nearest->t, nearest->surface.id))
+        {
+            nearest.emplace(std::move(point), t);
+        }
+        return Kind == Query::Any;
+    };
+    const MeshInstance *previous = nullptr;
+    Ray local{};
+    for (const auto &p : std::span{primitives_}.subspan(node.first_primitive_or_right_child, node.count))
+    {
+        if (p.sphere)
+        {
+            const auto &sphere = spheres_[p.instance];
+            if (stats)
+            {
+                ++stats->sphere_tests;
+            }
+            const auto hit = intersect_sphere(ray, sphere.shape, interval);
+            if (hit && record({{sphere.id, PrimitiveId{}}, SphereCoordinates{p.instance, hit->outward_normal}}, hit->t))
+            {
+                return true;
+            }
+        }
+        else
+        {
+            const auto &instance = instances_[p.instance];
+            if (stats)
+            {
+                ++stats->triangle_tests;
+            }
+            if (previous != &instance)
+            {
+                local = instance.transform.to_local_ray(ray);
+                previous = &instance;
+            }
+            const auto hit =
+                intersect_triangle(local, instance.triangles[p.triangle], instance.id, interval, accept_, p.cull);
+            if (hit && record(hit->surface, hit->t))
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+template <SurfaceBvh::Query Kind>
+std::optional<SurfaceHit> SurfaceBvh::trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
 {
     if (stats)
     {
@@ -155,39 +213,13 @@ std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, R
         return std::nullopt;
     }
 
-    std::optional<RayHit> nearest;
+    std::optional<SurfaceHit> nearest;
     const auto visit = [&](this const auto &self, std::size_t index) -> bool
     {
         const auto &node = nodes_[index];
         if (node.count > 0)
         {
-            const auto leaf = std::span{primitives_}.subspan(node.first_primitive_or_right_child, node.count);
-            auto previous = leaf.front().instance;
-            Ray local = instances_[previous].transform.to_local_ray(ray);
-            for (const auto &p : leaf)
-            {
-                const auto &instance = instances_[p.instance];
-                if (p.instance != previous)
-                {
-                    local = instance.transform.to_local_ray(ray);
-                    previous = p.instance;
-                }
-                if (stats)
-                {
-                    ++stats->triangle_tests;
-                }
-                if (const auto hit = intersect_triangle(local, instance.triangles[p.triangle], instance.id, interval,
-                                                        accept_, p.cull))
-                {
-                    if constexpr (Kind == Query::Any)
-                    {
-                        nearest = hit;
-                        return true;
-                    }
-                    keep_nearest(nearest, *hit);
-                }
-            }
-            return false;
+            return trace_leaf<Kind>(node, ray, interval, stats, nearest);
         }
 
         std::size_t first = index + 1, second = node.first_primitive_or_right_child;
@@ -214,12 +246,13 @@ std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, R
     return nearest;
 }
 
-std::optional<RayHit> TriangleBvh::intersect(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
+std::optional<SurfaceHit> SurfaceBvh::intersect_surface(const Ray &ray, RayInterval interval,
+                                                        RayQueryStats *stats) const
 {
     return trace<Query::Closest>(ray, interval, stats);
 }
 
-bool TriangleBvh::occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
+bool SurfaceBvh::occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
 {
     return trace<Query::Any>(ray, interval, stats).has_value();
 }

@@ -26,6 +26,10 @@ void PreviewRenderer::configure(RenderMode mode, std::optional<PreviewLighting> 
     }
     else
     {
+        if (!scene_.spheres().empty())
+        {
+            throw std::invalid_argument("Analytic spheres require path mode");
+        }
         path_.reset();
     }
     set_lighting(std::move(lighting));
@@ -97,7 +101,8 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     {
         // Layers are visited back to front. Keep lighting details for the nearest nonzero layer.
         record->lights.clear();
-        record->surface = DiagnosticSurface{hit, face.material_index, material, ambient};
+        record->surface =
+            DiagnosticSurface{{hit.surface, hit.view_depth, hit.back_face}, face.material_index, material, ambient};
     }
     if (!lighting_)
     {

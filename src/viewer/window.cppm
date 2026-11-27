@@ -60,7 +60,14 @@ void show_sample(const SampleDiagnostic &report)
     {
         const auto id = surface->hit.surface.id;
         ImGui::Text("Instance %u", std::to_underlying(id.instance));
-        ImGui::Text("Primitive %u", std::to_underlying(id.primitive));
+        if (const auto *sphere = std::get_if<SphereCoordinates>(&surface->hit.surface.coordinates))
+        {
+            ImGui::Text("Analytic sphere %zu", sphere->index);
+        }
+        else
+        {
+            ImGui::Text("Primitive %u", std::to_underlying(id.primitive));
+        }
         ImGui::Text("Material slot %zu", surface->material_index);
         const auto &[base, emission, metallic, roughness, occlusion] = surface->material;
         if (const auto &n = surface->shading_normal)

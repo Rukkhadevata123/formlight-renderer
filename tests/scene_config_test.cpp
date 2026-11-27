@@ -93,6 +93,29 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
         }
     }
 }
+void check_sphere_scene(const std::filesystem::path &destination)
+{
+    using namespace formlight;
+    SceneConfig config;
+    config.render.mode = RenderMode::Path;
+    config.render.extent = {1, 1};
+    config.scene.spheres = {
+        {.shape = {{2, 0, 0}, 0.75}, .type = PathSurface::Dielectric, .ior = 1.33, .sampling_target = true}};
+    save_scene_config(destination, config);
+    const auto loaded = load_scene_config(destination);
+    const auto &sphere = loaded.scene.spheres.at(0);
+    if (!loaded.scene.asset.empty() || sphere.shape.center != Vec3{2, 0, 0} || sphere.shape.radius != 0.75 ||
+        sphere.type != PathSurface::Dielectric || sphere.ior != 1.33 || !sphere.sampling_target)
+    {
+        throw std::runtime_error("Sphere-only scene changed during TOML round trip");
+    }
+    const auto report = diagnose_pixel(prepare_render(loaded), {0, 0});
+    const auto &point = report.samples.at(0).surface.value().hit.surface;
+    if (std::get<SphereCoordinates>(point.coordinates).index != 0)
+    {
+        throw std::runtime_error("Automatic framing missed the sphere-only scene");
+    }
+}
 } // namespace
 
 auto main(int argc, char **argv) -> int
@@ -112,6 +135,7 @@ auto main(int argc, char **argv) -> int
     {
         round_trip(argv[1], saved, formlight::LightKind::Rectangle);
         round_trip(argv[1], saved, formlight::LightKind::Point);
+        check_sphere_scene(saved);
     }
     catch (const std::exception &error)
     {

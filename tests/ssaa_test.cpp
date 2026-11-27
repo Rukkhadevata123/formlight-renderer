@@ -7,7 +7,7 @@ using namespace formlight;
 
 struct ExpectedSample
 {
-    Vec3 color;
+    Vec3 color{};
     std::optional<InstanceId> instance;
     double depth{};
 };
