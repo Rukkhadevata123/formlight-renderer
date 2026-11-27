@@ -6,7 +6,8 @@ import formlight.preview;
 
 namespace
 {
-void round_trip(const std::filesystem::path &source, const std::filesystem::path &destination)
+void round_trip(const std::filesystem::path &source, const std::filesystem::path &destination,
+                formlight::LightKind kind)
 {
     using namespace formlight;
     auto config = load_scene_config(source);
@@ -17,6 +18,14 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.camera.target = {0, -0.2, 0};
     config.light.width = 0.75;
     config.light.ambient = {0.2, 0.1, 0.4};
+    config.light.type = kind;
+    if (kind == LightKind::Point)
+    {
+        config.light.position = {-1, 2, 1};
+        config.light.attenuation = {0.8, 0.25, 0.1};
+        config.light.color = {1, 0.2, 0.4};
+        config.light.intensity = 6;
+    }
 
     // Change worker counts across the round trip; fixed samples must give identical linear pixels.
     const auto before = oneapi::tbb::task_arena{1}.execute([&] { return render_scene(prepare_render(config)); });
@@ -74,7 +83,8 @@ auto main(int argc, char **argv) -> int
     int status = 0;
     try
     {
-        round_trip(argv[1], saved);
+        round_trip(argv[1], saved, formlight::LightKind::Rectangle);
+        round_trip(argv[1], saved, formlight::LightKind::Point);
     }
     catch (const std::exception &error)
     {

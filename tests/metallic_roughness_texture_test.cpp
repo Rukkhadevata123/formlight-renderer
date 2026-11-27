@@ -52,6 +52,20 @@ void check_lighting(const GltfScene &scene, Vec3 base)
     const DirectionalLighting colored{DirectionalLight{{0.3, 0.4, 1}, {0.25, 0, 1}, 2}};
     check_rgb(frame_color({colored, ambient}), Vec3{0.5 * response.x, 0, 2 * response.z} + expected_ambient,
               "Colored direct light with ambient");
+
+    // The test panel lies on z = 0. Move the point light along the reference light's direction.
+    const auto ray = camera.ray_for_sample(pixel_center(pixel.x, pixel.y));
+    const auto receiver = ray.at(-ray.origin.z / ray.direction.z);
+    for (const double distance : {1.0, 2.0, 4.0})
+    {
+        const auto position = receiver + direct.light.toward_light() * distance;
+        const PointLight point{position, {0.25, 0, 1}, 2, {1, 0.5, 0.25}};
+        const double divisor = 1 + 0.5 * distance + 0.25 * distance * distance;
+        check_rgb(frame_color({PointLighting{point, false}, ambient}),
+                  Vec3{0.5 * response.x, 0, 2 * response.z} / divisor + expected_ambient,
+                  "Point light distance attenuation");
+        check_rgb(point.incident(position).weight, {}, "Coincident point light");
+    }
 }
 } // namespace
 

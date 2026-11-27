@@ -27,7 +27,9 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
     const auto *direct = lighting ? &lighting->direct : nullptr;
     const auto *directional = std::get_if<DirectionalLighting>(direct);
     const auto *area = std::get_if<AreaLighting>(direct);
-    if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows)))
+    const auto *point = std::get_if<PointLighting>(direct);
+    if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows) ||
+                       (point && point->shadows)))
     {
         blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_);
     }
@@ -102,13 +104,27 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         return outgoing_color(material, ambient + direct);
     }
 
-    const auto &directional = std::get<DirectionalLighting>(lighting_->direct);
-    const auto sample =
-        evaluate_light_sample(brdf, directional.light.incident(), std::nullopt, [&]
-                              { return directional_shadow(directional, instance, face, weights, record != nullptr); });
+    LightSample sample;
+    LightKind kind;
+    if (const auto *point = std::get_if<PointLighting>(&lighting_->direct))
+    {
+        kind = LightKind::Point;
+        const SurfaceRayOrigin receiver{instance, face, weights};
+        sample = evaluate_finite_light_sample(brdf, point->light.incident(receiver.position()), receiver,
+                                              point->light.position(), point->shadows ? blockers_.get() : nullptr,
+                                              record != nullptr);
+    }
+    else
+    {
+        kind = LightKind::Directional;
+        const auto &directional = std::get<DirectionalLighting>(lighting_->direct);
+        sample = evaluate_light_sample(
+            brdf, directional.light.incident(), std::nullopt,
+            [&] { return directional_shadow(directional, instance, face, weights, record != nullptr); });
+    }
     if (record)
     {
-        record->light = LightKind::Directional;
+        record->light = kind;
         record->samples.push_back(sample);
     }
     return outgoing_color(material, ambient + sample.direct);

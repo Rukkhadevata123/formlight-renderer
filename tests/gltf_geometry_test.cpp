@@ -145,6 +145,26 @@ bool check_ground_shadow(formlight::GltfScene &scene)
             return false;
         }
     }
+    // From this floor pixel the first lamp is in front of the box, the second is beyond it.
+    const PixelCoord floor_pixel{64, 45};
+    for (const auto &[position, blocked] : {std::pair{Vec3{0, -0.3, -1}, false}, std::pair{Vec3{0, 0.5, 1}, true}})
+    {
+        const PreviewRenderer point_renderer{scene, PointLighting{PointLight{position, {1, 1, 1}, 4}}};
+        const auto report = point_renderer.diagnose(view, floor_pixel);
+        const auto pixel = point_renderer.render(view)[floor_pixel.y, floor_pixel.x];
+        if (report.samples.size() != 1 || report.samples[0].position != position || pixel.r != report.color.r ||
+            (pixel.r > 0) == blocked ||
+            report.samples[0].shadow.state != (blocked ? ShadowState::Blocked : ShadowState::Visible))
+        {
+            std::cerr << "Point shadow must end at the lamp and agree with pixel inspection\n";
+            return false;
+        }
+        if (blocked && report.samples[0].shadow.blocker.value().instance != scene.instances().front().id)
+        {
+            std::cerr << "Point light diagnostic identifies the wrong blocker\n";
+            return false;
+        }
+    }
     const AreaLighting area{RectangleLight{{0, 2.5, 1.5}, {1, 0, 0}, {0, 0, 1}, 240}, {64, 7}};
     const auto frame = render_preview(scene, view, area);
     auto unshadowed = area;

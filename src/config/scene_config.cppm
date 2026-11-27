@@ -17,6 +17,7 @@ enum class LightKind
     None,
     Ambient,
     Directional,
+    Point,
     Rectangle
 };
 
@@ -30,6 +31,7 @@ inline constexpr std::array render_modes{NamedValue{"raster", RenderMode::Raster
                                          NamedValue{"hybrid", RenderMode::Hybrid}};
 inline constexpr std::array light_kinds{NamedValue{"none", LightKind::None}, NamedValue{"ambient", LightKind::Ambient},
                                         NamedValue{"directional", LightKind::Directional},
+                                        NamedValue{"point", LightKind::Point},
                                         NamedValue{"rectangle", LightKind::Rectangle}};
 inline constexpr std::array tone_mappings{NamedValue{"clip", ToneMapping::Clip},
                                           NamedValue{"reinhard", ToneMapping::Reinhard}};
@@ -115,6 +117,7 @@ struct LightSettings
     LightKind type{LightKind::None};
     bool shadows{true};
     Vec3 toward_light{1, 4, 3};
+    Vec3 position{3, 3, 0.75}, attenuation{PointLight::default_attenuation};
     Vec3 color{1, 1, 1};
     double intensity{DirectionalLight::default_intensity};
     Vec3 center{3, 3, 0.75};
@@ -128,15 +131,23 @@ struct LightSettings
         {
             field("ambient", self.ambient);
         }
-        if (self.type == LightKind::Directional || self.type == LightKind::Rectangle)
+        if (self.type != LightKind::None && self.type != LightKind::Ambient)
         {
             field("shadows", self.shadows);
+        }
+        if (self.type == LightKind::Directional || self.type == LightKind::Point)
+        {
+            field("color", self.color);
+            field("intensity", self.intensity);
         }
         if (self.type == LightKind::Directional)
         {
             field("toward_light", self.toward_light);
-            field("color", self.color);
-            field("intensity", self.intensity);
+        }
+        else if (self.type == LightKind::Point)
+        {
+            field("position", self.position);
+            field("attenuation", self.attenuation);
         }
         else if (self.type == LightKind::Rectangle)
         {
@@ -183,7 +194,12 @@ struct AreaLighting
     LightSampling sampling{};
     bool shadows{true};
 };
-using DirectLight = std::variant<std::monostate, DirectionalLighting, AreaLighting>;
+struct PointLighting
+{
+    PointLight light;
+    bool shadows{true};
+};
+using DirectLight = std::variant<std::monostate, DirectionalLighting, PointLighting, AreaLighting>;
 
 struct PreviewLighting
 {
@@ -246,7 +262,7 @@ struct RenderRequest
     {
         return request;
     }
-    if (!valid_light_rgb(light.ambient))
+    if (!finite_nonnegative_components(light.ambient))
     {
         throw std::invalid_argument("light.ambient requires three finite, nonnegative channels");
     }
@@ -260,6 +276,15 @@ struct RenderRequest
         const DirectionalLight directional{light.toward_light, light.color, light.intensity};
         request.lighting.emplace(DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None},
                                  light.ambient);
+    }
+    else if (light.type == LightKind::Point)
+    {
+        if (light.shadows && render.mode != RenderMode::Hybrid)
+        {
+            throw std::invalid_argument("light.shadows for a point light requires render.mode = 'hybrid'");
+        }
+        const PointLight point{light.position, light.color, light.intensity, light.attenuation};
+        request.lighting.emplace(PointLighting{point, light.shadows}, light.ambient);
     }
     else if (light.type == LightKind::Rectangle)
     {

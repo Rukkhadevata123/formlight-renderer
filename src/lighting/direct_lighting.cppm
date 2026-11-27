@@ -75,6 +75,18 @@ export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, cons
     return {blockers.occluded(ray, interval) ? ShadowState::Blocked : ShadowState::Visible};
 }
 
+export [[nodiscard]] LightSample evaluate_finite_light_sample(const MetallicRoughnessBrdf &brdf, IncidentLight incident,
+                                                              const SurfaceRayOrigin &receiver, Vec3 endpoint,
+                                                              const TriangleBvh *blockers, bool identify_blocker)
+{
+    const auto visibility = [&]
+    {
+        return blockers ? trace_shadow(*blockers, receiver.to(endpoint), {0, 1}, identify_blocker)
+                        : ShadowResult{ShadowState::Disabled};
+    };
+    return evaluate_light_sample(brdf, incident, endpoint, visibility);
+}
+
 namespace
 {
 // SplitMix64 finalizer for the per-pixel random shift.
@@ -131,12 +143,8 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);
         const auto incident = light.incident(receiver.position(), sample);
-        const auto visibility = [&]
-        {
-            return blockers ? trace_shadow(*blockers, receiver.to(sample), {0, 1}, record != nullptr)
-                            : ShadowResult{ShadowState::Disabled};
-        };
-        const auto evaluated = evaluate_light_sample(brdf, incident, sample, visibility);
+        const auto evaluated =
+            evaluate_finite_light_sample(brdf, incident, receiver, sample, blockers, record != nullptr);
         sum = sum + evaluated.direct;
         if (record)
         {

@@ -62,6 +62,10 @@ void print_pixel_report(const PixelDiagnostic &report)
         {
             std::println("Directional light");
         }
+        else if (report.light == LightKind::Point)
+        {
+            std::println("Point light");
+        }
         for (std::size_t i = 0; i < report.samples.size(); ++i)
         {
             const auto &sample = report.samples[i];

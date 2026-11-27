@@ -11,10 +11,10 @@ struct IncidentLight
     Vec3 weight{}; // Linear RGB radiance including the light-sampling measure.
 };
 
-[[nodiscard]] inline bool valid_light_rgb(Vec3 rgb) noexcept
+[[nodiscard]] inline bool finite_nonnegative_components(Vec3 value) noexcept
 {
-    const auto valid = [](double channel) { return std::isfinite(channel) && channel >= 0; };
-    return valid(rgb.x) && valid(rgb.y) && valid(rgb.z);
+    const auto valid = [](double component) { return std::isfinite(component) && component >= 0; };
+    return valid(value.x) && valid(value.y) && valid(value.z);
 }
 
 class DirectionalLight
@@ -38,10 +38,9 @@ class DirectionalLight
     IncidentLight incident_;
 };
 
-DirectionalLight::DirectionalLight(Vec3 toward_light, Vec3 color, double intensity)
-    : incident_{unit_vector(toward_light, "light.toward_light must be finite and nonzero"), color * intensity}
+[[nodiscard]] inline Vec3 light_radiance(Vec3 color, double intensity)
 {
-    if (!valid_light_rgb(color))
+    if (!finite_nonnegative_components(color))
     {
         throw std::invalid_argument("light.color requires three finite, nonnegative channels");
     }
@@ -49,10 +48,63 @@ DirectionalLight::DirectionalLight(Vec3 toward_light, Vec3 color, double intensi
     {
         throw std::invalid_argument("light.intensity must be finite and nonnegative");
     }
-    if (!valid_light_rgb(incident_.weight))
+    const Vec3 radiance = color * intensity;
+    if (!finite_nonnegative_components(radiance))
     {
         throw std::invalid_argument("light.color times light.intensity must be finite");
     }
+    return radiance;
+}
+
+DirectionalLight::DirectionalLight(Vec3 toward_light, Vec3 color, double intensity)
+    : incident_{unit_vector(toward_light, "light.toward_light must be finite and nonzero"),
+                light_radiance(color, intensity)}
+{
+}
+
+class PointLight
+{
+  public:
+    static constexpr Vec3 default_attenuation{1, 0.09, 0.032};
+    PointLight(Vec3 position, Vec3 color, double intensity, Vec3 attenuation = default_attenuation)
+        : position_(position), radiance_(light_radiance(color, intensity)), attenuation_(attenuation)
+    {
+        if (!std::isfinite(position.x) || !std::isfinite(position.y) || !std::isfinite(position.z))
+        {
+            throw std::invalid_argument("light.position must be finite");
+        }
+        if (!finite_nonnegative_components(attenuation) || attenuation == Vec3{})
+        {
+            throw std::invalid_argument(
+                "light.attenuation requires finite, nonnegative coefficients with at least one positive value");
+        }
+    }
+
+    [[nodiscard]] Vec3 position() const noexcept
+    {
+        return position_;
+    }
+    [[nodiscard]] IncidentLight incident(Vec3 receiver) const noexcept;
+
+  private:
+    Vec3 position_, radiance_, attenuation_;
+};
+
+IncidentLight PointLight::incident(Vec3 receiver) const noexcept
+{
+    const Vec3 delta = position_ - receiver;
+    const double distance = std::hypot(delta.x, delta.y, delta.z);
+    if (distance == 0 || !std::isfinite(distance))
+    {
+        return {};
+    }
+    const auto [constant, linear, quadratic] = attenuation_;
+    const double denominator = constant + distance * (linear + distance * quadratic);
+    if (denominator == 0)
+    {
+        return {};
+    }
+    return {delta / distance, radiance_ / denominator};
 }
 
 // One-sided white Lambertian emitter. The two full edge vectors determine size and emitting side.
