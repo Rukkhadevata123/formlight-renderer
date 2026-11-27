@@ -15,13 +15,49 @@ namespace formlight::gltf_detail
 {
 namespace
 {
+struct PrimitiveLocation
+{
+    std::size_t mesh, primitive;
+
+    std::runtime_error value_error(std::string_view attribute, std::size_t vertex, std::string_view reason) const
+    {
+        return std::runtime_error(
+            std::format("Mesh {} primitive {}: {}[{}] {}", mesh, primitive, attribute, vertex, reason));
+    }
+};
+
+void check_attribute_counts(const fastgltf::Asset &asset, const fastgltf::Primitive &primitive,
+                            std::size_t position_count, PrimitiveLocation location)
+{
+    for (const auto &[name, index] : primitive.attributes)
+    {
+        const auto count = asset.accessors.at(index).count;
+        if (count != position_count)
+        {
+            throw std::runtime_error(std::format("Mesh {} primitive {}: {} has {} values for {} POSITION vertices",
+                                                 location.mesh, location.primitive, std::string_view{name}, count,
+                                                 position_count));
+        }
+    }
+}
+
+Vec3 read_direction(Vec3 v, std::string_view attribute, std::size_t vertex, PrimitiveLocation location)
+{
+    const double length = std::hypot(v.x, v.y, v.z);
+    if (!std::isfinite(length))
+    {
+        throw location.value_error(attribute, vertex, "contains a non-finite direction");
+    }
+    if (length == 0)
+    {
+        throw location.value_error(attribute, vertex, "has a zero-length direction");
+    }
+    return v / length;
+}
+
 void read_vertex_colors(const fastgltf::Asset &asset, const fastgltf::Accessor &colors,
                         std::span<TriangleVertex> vertices)
 {
-    if (colors.count != vertices.size())
-    {
-        throw std::runtime_error("COLOR_0 and POSITION have different vertex counts");
-    }
     if (colors.type == fastgltf::AccessorType::Vec3)
     {
         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(asset, colors, [&](auto rgb, std::size_t i)
@@ -37,11 +73,6 @@ void read_vertex_colors(const fastgltf::Asset &asset, const fastgltf::Accessor &
         throw std::runtime_error("COLOR_0 must supply VEC3 or VEC4 colors");
     }
 }
-
-struct PrimitiveLocation
-{
-    std::size_t mesh, primitive;
-};
 
 void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primitive, std::span<TriangleVertex> vertices,
                     GltfContent content, PrimitiveLocation location)
@@ -59,7 +90,7 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
         }
         present[set] = true;
         const auto &uvs = resources.geometry_accessor(attribute->accessorIndex);
-        if (uvs.count != vertices.size() || uvs.type != fastgltf::AccessorType::Vec2)
+        if (uvs.type != fastgltf::AccessorType::Vec2)
         {
             throw std::runtime_error(std::format("Mesh {} primitive {}: {} must supply one VEC2 per position",
                                                  location.mesh, location.primitive, name));
@@ -70,8 +101,7 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
             {
                 if (!std::isfinite(uv[0]) || !std::isfinite(uv[1]))
                 {
-                    throw std::runtime_error(std::format("Mesh {} primitive {}: {} contains a non-finite coordinate",
-                                                         location.mesh, location.primitive, name));
+                    throw location.value_error(name, i, "contains a non-finite coordinate");
                 }
                 vertices[i].texcoords[set] = {uv[0], uv[1]};
             });
@@ -244,6 +274,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
             throw std::runtime_error("Triangle primitive is missing POSITION");
         }
         const auto &positions = resources.geometry_accessor(position->accessorIndex);
+        check_attribute_counts(asset, primitive, positions.count, location);
         std::vector<TriangleVertex> vertices(positions.count);
         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
             asset, positions,
@@ -251,7 +282,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
             {
                 if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2]))
                 {
-                    throw std::runtime_error("POSITION contains a non-finite coordinate");
+                    throw location.value_error("POSITION", i, "contains a non-finite coordinate");
                 }
                 vertices[i].position = {p[0], p[1], p[2]};
             });
@@ -259,13 +290,13 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
         if (normal != primitive.attributes.end())
         {
             const auto &normals = resources.geometry_accessor(normal->accessorIndex);
-            if (normals.count != positions.count || normals.type != fastgltf::AccessorType::Vec3)
+            if (normals.type != fastgltf::AccessorType::Vec3)
             {
                 throw std::runtime_error("NORMAL must supply one VEC3 per position");
             }
             fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
                 asset, normals, [&](auto n, std::size_t i)
-                { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
+                { vertices[i].normal = read_direction({n[0], n[1], n[2]}, "NORMAL", i, location); });
         }
         read_texcoords(resources, primitive, vertices, content, location);
         const auto tangent = primitive.findAttribute("TANGENT");
@@ -274,7 +305,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
         if (use_tangents)
         {
             const auto &accessor = resources.geometry_accessor(tangent->accessorIndex);
-            if (accessor.type != fastgltf::AccessorType::Vec4 || accessor.count != vertices.size())
+            if (accessor.type != fastgltf::AccessorType::Vec4)
             {
                 throw std::runtime_error("TANGENT must supply one VEC4 per position");
             }
@@ -284,9 +315,9 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
                 {
                     if (t[3] != 1 && t[3] != -1)
                     {
-                        throw std::runtime_error("TANGENT.w must be +1 or -1");
+                        throw location.value_error("TANGENT", i, std::format("has w = {}, expected +1 or -1", t[3]));
                     }
-                    vertices[i].tangent = unit_vector({t[0], t[1], t[2]}, "TANGENT must be finite and nonzero");
+                    vertices[i].tangent = read_direction({t[0], t[1], t[2]}, "TANGENT", i, location);
                     vertices[i].tangent_sign = t[3];
                 });
         }

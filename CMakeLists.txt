@@ -110,6 +110,9 @@ if(BUILD_TESTING)
         "-DRENDERER=$<TARGET_FILE:formlight-renderer>" "-DMODEL=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/invalid-index.gltf"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/gltf/invalid_index.cmake")
 
+    add_test(NAME gltf_invalid_attributes COMMAND "${CMAKE_COMMAND}"
+        "-DRENDERER=$<TARGET_FILE:formlight-renderer>" -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/gltf/invalid_attributes.cmake")
+
     add_executable(metallic_roughness_texture_test tests/metallic_roughness_texture_test.cpp)
     target_link_libraries(metallic_roughness_texture_test PRIVATE formlight_gltf)
     add_test(NAME metallic_roughness_texture COMMAND metallic_roughness_texture_test
