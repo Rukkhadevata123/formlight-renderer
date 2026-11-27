@@ -172,16 +172,29 @@ struct SceneSettings
     }
 };
 
+struct LensSettings
+{
+    double focus_distance{1}, defocus_angle_degrees{};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("focus_distance", self.focus_distance);
+        field("defocus_angle_degrees", self.defocus_angle_degrees);
+    }
+};
+
 struct CameraSettings
 {
     bool auto_frame{true};
     double vertical_fov_degrees{45};
     Vec3 position{1.1, 0.8, 1.5}, target{}, up{0, 1, 0};
+    LensSettings lens{};
 
     void fields(this auto &self, auto &&field)
     {
         field("auto_frame", self.auto_frame);
         field("vertical_fov_degrees", self.vertical_fov_degrees);
+        self.lens.fields(field);
         if (!self.auto_frame)
         {
             field("position", self.position);
@@ -351,6 +364,7 @@ struct RenderRequest
     std::vector<std::uint32_t> sampling_targets{};
     std::vector<SphereSettings> spheres{};
     Vec3 environment{};
+    ThinLens lens{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -481,7 +495,12 @@ struct RenderRequest
                           scene.path_materials,
                           scene.sampling_targets,
                           scene.spheres,
-                          scene.environment};
+                          scene.environment,
+                          ThinLens{camera.lens.focus_distance, camera.lens.defocus_angle_degrees}};
+    if (request.lens.radius() > 0 && render.mode != RenderMode::Path)
+    {
+        throw std::invalid_argument("Camera defocus requires path mode");
+    }
     if (scene.preset == ScenePreset::ManyBalls)
     {
         validate_fuzz(scene.metal_fuzz_max);

@@ -2,3 +2,7 @@
 preset = "many_balls"
 seed = 42
 metal_fuzz_max = 0.5
+
+[camera]
+focus_distance = 10
+defocus_angle_degrees = 0.6

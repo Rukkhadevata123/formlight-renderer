@@ -56,6 +56,10 @@ struct GuiShutdown
 
 void show_sample(const SampleDiagnostic &report)
 {
+    if (const auto &origin = report.lens_origin)
+    {
+        ImGui::Text("Lens origin   %.6g  %.6g  %.6g", origin->x, origin->y, origin->z);
+    }
     if (const auto &surface = report.surface)
     {
         const auto id = surface->hit.surface.id;

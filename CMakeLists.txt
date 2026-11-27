@@ -95,6 +95,10 @@ if(BUILD_TESTING)
     target_link_libraries(camera_test PRIVATE formlight_renderer_core)
     add_test(NAME pinhole_camera COMMAND camera_test)
 
+    add_executable(thin_lens_test tests/thin_lens_test.cpp)
+    target_link_libraries(thin_lens_test PRIVATE formlight_gltf)
+    add_test(NAME thin_lens COMMAND thin_lens_test)
+
     add_executable(triangle_visibility_test tests/triangle_visibility_test.cpp)
     target_link_libraries(triangle_visibility_test PRIVATE formlight_renderer_core)
     add_test(NAME triangle_visibility COMMAND triangle_visibility_test)

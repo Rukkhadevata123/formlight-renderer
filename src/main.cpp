@@ -15,6 +15,7 @@ auto main(int argc, char **argv) -> int
             "       formlight-renderer --preset many_balls (--output IMAGE.png | --pixel X Y) [--scene-seed N]\n"
             "                         [--mode raster|hybrid|path] [--ssaa 1|2] [--light-samples N] [--seed N]\n"
             "                         [--path-samples N] [--max-bounces N] [--bounce-sampling cosine|light_mixture]\n"
+            "                         [--defocus-angle DEGREES] [--focus-distance DISTANCE]\n"
             "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
         return 0;
     }

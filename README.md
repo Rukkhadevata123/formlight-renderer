@@ -57,7 +57,7 @@ build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bo
 
 [Cornell 解析球](scenes/path/cornell-analytic.toml)沿用网格球的机位、球心、半径和折射率。这个版本在 TOML 的 `[[scene.spheres]]` 中直接指定世界坐标 `center` 和 `radius`。在 `path` 模式下，三角形和球共用一个 BVH；每个球占一个图元，像素诊断会显示球的序号和曲面法线。球可使用 `diffuse`、`mirror`、`metal` 或 `dielectric` 材质，`sampling_target = true` 将它加入方向采样。只含球的场景可以省略 `scene.asset`。用 `--pixel 46 96` 对照两份 Cornell 配置，解析球的视深为 3.32187887，网格球为 3.32302275。[求交回归](tests/sphere_query_test.cpp)
 
-[Many Balls](scenes/path/many-balls.toml) 使用针孔相机观察固定布局的静止球，环境辐亮度为 (0.7, 0.8, 1.0)。默认场景种子 42 生成 480 个小球，另有三个半径为 1 的主球和一个地面球。其中 73 个小金属球各有固定的模糊度，前景大金属球使用理想镜面。默认预览为 256×144，每像素 32 条路径，最多反弹 8 次。
+[Many Balls](scenes/path/many-balls.toml) 使用薄透镜相机观察固定布局的静止球，环境辐亮度为 (0.7, 0.8, 1.0)。默认场景种子 42 生成 480 个小球，另有三个半径为 1 的主球和一个地面球。其中 73 个小金属球各有固定的模糊度，前景大金属球使用理想镜面。默认预览为 256×144，每像素 32 条路径，最多反弹 8 次。
 
 ```powershell
 build/release/formlight-renderer.exe --preset many_balls --scene-seed 42 --seed 7 --output build/release/many-balls.png
@@ -65,7 +65,16 @@ build/release/formlight-renderer.exe --preset many_balls --scene-seed 42 --seed 
 
 `--scene-seed` 控制小球的位置和材质，`--seed` 控制路径采样。CLI 和 viewer 均可用 `--scene scenes/path/many-balls.toml` 加载同一预设，再用 TOML 覆盖相机、环境色或采样数。[布局与环境光回归](tests/many_balls_test.cpp)
 
-在 Many Balls 的 `[scene]` 中，`metal_fuzz_max` 控制小金属球模糊度的上限，默认值为 0.5。将它设为 0，可用同一机位和种子复现理想镜面基线。在单个 `[[scene.spheres]]` 或 `[[scene.path_materials]]` 中，设 `type = "metal"` 和 `fuzz = 0.3` 即可指定模糊度（范围 0 到 1）。积分器在镜面反射方向上加一个长度为 `fuzz`、方向在球面上均匀分布的向量，再将结果归一化。落到几何表面下方的样本贡献为零。`--pixel` 可查看命中金属的实际模糊度。[散射实现](src/path/specular.cppm) · [反射探针](tests/path_specular_test.cpp)
+在 Many Balls 的 `[scene]` 中，`metal_fuzz_max` 控制小金属球模糊度的上限，默认值为 0.5。将它设为 0，并关闭光圈，可用同一机位和种子复现理想镜面基线。在单个 `[[scene.spheres]]` 或 `[[scene.path_materials]]` 中，设 `type = "metal"` 和 `fuzz = 0.3` 即可指定模糊度（范围 0 到 1）。积分器在镜面反射方向上加一个长度为 `fuzz`、方向在球面上均匀分布的向量，再将结果归一化。落到几何表面下方的样本贡献为零。`--pixel` 可查看命中金属的实际模糊度。[散射实现](src/path/specular.cppm) · [反射探针](tests/path_specular_test.cpp)
+
+Many Balls 默认使用 `[camera]` 中的 `focus_distance = 10` 和 `defocus_angle_degrees = 0.6`。前者是沿相机前向轴量到焦平面的世界距离，后者是从轴上焦点看光圈直径的张角。每条路径在圆形光圈上均匀取一个起点，朝该像素在焦平面上的点发射射线；改变光圈时，焦平面上的投影位置保持一致。
+
+```powershell
+build/release/formlight-renderer.exe --preset many_balls --defocus-angle 0 --output build/release/many-balls-pinhole.png
+build/release/formlight-renderer.exe --preset many_balls --focus-distance 10 --defocus-angle 0.6 --output build/release/many-balls-thin-lens.png
+```
+
+在 viewer 的 **Lens** 面板修改这两项后点击 **Apply** 即可对照。光圈开启时，每个 SSAA 子样本使用 `path_samples` 条透镜射线；像素诊断可重放每条射线的光圈起点、命中和颜色。[光圈边缘回归](tests/thin_lens_test.cpp)
 
 ### 自定义光栅 shader
 

@@ -66,6 +66,7 @@ export class ViewerDocument
         if (opening_)
         {
             opening_->render_settings() = active_->applied_config().render;
+            opening_->lens_settings() = active_->applied_config().camera.lens;
             opening_->light_settings() = active_->applied_config().lighting;
             opening_->apply_settings();
         }
@@ -93,6 +94,7 @@ export class ViewerDocument
             {
                 // Keep unapplied edits in the inspector. The image was rendered with applied values.
                 opening_->render_settings() = active_->render_settings();
+                opening_->lens_settings() = active_->lens_settings();
                 opening_->light_settings() = active_->light_settings();
                 active_ = std::move(opening_);
                 scene_file_.reset();

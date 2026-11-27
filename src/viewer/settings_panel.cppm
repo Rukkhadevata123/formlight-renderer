@@ -191,9 +191,12 @@ export class SettingsPanel
         const auto edit = [&](auto &value) { return edit_value(value, invalid_); };
         ImGui::PushItemFlag(ImGuiItemFlags_LiveEditOnInput, true);
         const bool render_changed = edit_group("Render", session.render_settings(), edit);
+        const bool show_lens =
+            session.render_settings().mode == RenderMode::Path || session.lens_settings().defocus_angle_degrees != 0;
+        const bool lens_changed = show_lens && edit_group("Lens", session.lens_settings(), edit);
         const bool light_changed = edit_lighting(session.light_settings(), edit);
         ImGui::PopItemFlag();
-        if (render_changed || light_changed)
+        if (render_changed || lens_changed || light_changed)
         {
             dirty_ = true;
             error_.clear();

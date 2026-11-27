@@ -18,6 +18,7 @@ export struct PreviewView
     AreaLightPattern area_light_pattern{AreaLightPattern::ShiftedHalton};
     int ssaa{1};
     PathSampling path_sampling{};
+    ThinLens lens{};
 };
 
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
@@ -95,6 +96,7 @@ export struct SampleDiagnostic
     std::vector<DiagnosticLight> lights{};
     LinearColor color{};
     std::optional<Vec3> bounce_radiance{};
+    std::optional<Vec3> lens_origin{};
 
     // Selected surface's contribution to the final pixel, including opacity and the sample's share of the mean.
     [[nodiscard]] Vec3 sample_contribution(std::size_t light, std::size_t index) const
@@ -127,7 +129,10 @@ export class PreviewRenderer
   private:
     [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop) const;
     [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel, std::stop_token stop,
-                                            SampleDiagnostic *record = nullptr) const;
+                                            std::vector<SampleDiagnostic> *records = nullptr, int ssaa = 1) const;
+    [[nodiscard]] LinearColor trace_camera_ray(const PreviewView &view, const Ray &ray, std::uint64_t path_key,
+                                               const PathSampling &sampling, std::stop_token stop,
+                                               SampleDiagnostic *record) const;
     void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
                          SampleDiagnostic &report, std::stop_token stop) const;
     [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
@@ -196,6 +201,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
                                : frame_bounds(bounds, subject, request.extent, request.vertical_fov_radians);
     view.ssaa = request.ssaa;
     view.path_sampling = request.path_sampling;
+    view.lens = request.lens;
     return {std::move(*scene), view, bounds, subject};
 }
 

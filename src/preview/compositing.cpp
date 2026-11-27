@@ -6,6 +6,7 @@ module;
 module formlight.preview;
 
 import std;
+import formlight.sampling;
 
 namespace formlight
 {
@@ -20,13 +21,18 @@ PreviewView sample_grid_view(const PreviewView &view)
     {
         return view;
     }
-    return {PinholeCamera{view.camera.view(), extent}, view.depth, view.area_light_pattern, 1, view.path_sampling};
+    return {PinholeCamera{view.camera.view(), extent},
+            view.depth,
+            view.area_light_pattern,
+            1,
+            view.path_sampling,
+            view.lens};
 }
 
-LinearColor resolve_samples(int count, auto color_at)
+LinearColor resolve_samples(std::integral auto count, auto color_at)
 {
     Vec3 sum{};
-    for (int i = 0; i < count; ++i)
+    for (decltype(count) i = 0; i < count; ++i)
     {
         const auto c = color_at(i);
         sum = sum + Vec3{c.r, c.g, c.b};
@@ -225,42 +231,87 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
     const int count = axis * axis;
     PixelDiagnostic report{.pixel = pixel, .samples = {}, .color = {}};
     report.samples.reserve(count);
-    for (int i = 0; i < count; ++i)
-    {
-        const PixelCoord sample{pixel.x * axis + i % axis, pixel.y * axis + i / axis};
-        const auto center = pixel_center(sample.x, sample.y);
-        auto &record = report.samples.emplace_back(SampleDiagnostic{
-            .position = {center.x / axis, center.y / axis}, .weight = 1.0 / count, .color = background});
-        if (path_)
+    report.color = resolve_samples(
+        count,
+        [&](int i)
         {
-            if (stop.stop_requested())
+            const PixelCoord sample{pixel.x * axis + i % axis, pixel.y * axis + i / axis};
+            if (path_)
             {
-                throw std::runtime_error("Pixel inspection cancelled");
+                return trace_primary(grid, sample, stop, &report.samples, axis);
             }
-            record.color = trace_primary(grid, sample, stop, &record);
-        }
-        else
-        {
+            const auto center = pixel_center(sample.x, sample.y);
+            auto &record = report.samples.emplace_back(SampleDiagnostic{
+                .position = {center.x / axis, center.y / axis}, .weight = 1.0 / count, .color = background});
             diagnose_sample(grid, sample, pieces, record, stop);
-        }
-    }
-    report.color = resolve_samples(count, [&](int i) { return report.samples[i].color; });
+            return record.color;
+        });
     return report;
 }
 
 LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord pixel, std::stop_token stop,
-                                           SampleDiagnostic *record) const
+                                           std::vector<SampleDiagnostic> *records, int ssaa) const
 {
-    const auto ray = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y));
-    const double depth_per_unit = view.camera.forward_component(ray.direction);
-    // The camera depth range includes both endpoints; ray queries have open intervals.
-    const RayInterval interval{
-        std::nextafter(view.depth.near_depth / depth_per_unit, 0.0),
-        std::nextafter(view.depth.far_depth / depth_per_unit, std::numeric_limits<double>::infinity())};
-    std::optional<PathHit> first;
+    const auto center = pixel_center(pixel.x, pixel.y);
+    const Ray pinhole = view.camera.ray_for_sample(center);
     const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
-    const auto color = path_->radiance(ray, interval, record ? &first : nullptr, pixel_index, view.area_light_pattern,
-                                       stop, view.path_sampling);
+    const bool lens_open = view.lens.radius() > 0;
+    const auto count = lens_open ? view.path_sampling.samples : 1u;
+    if (count == 0)
+    {
+        throw std::invalid_argument("Path sample count must be positive");
+    }
+    const auto trace = [&](std::uint32_t i)
+    {
+        if (stop.stop_requested())
+        {
+            throw std::runtime_error("Rendering cancelled");
+        }
+        Ray ray = pinhole;
+        auto path_key = pixel_index;
+        auto sampling = view.path_sampling;
+        if (lens_open)
+        {
+            PathSampler camera_sampler{sampling.seed, pixel_index, i};
+            const double u = camera_sampler.uniform();
+            ray = view.camera.ray_from_lens(pinhole, view.lens, u, camera_sampler.uniform());
+            // Each lens point gets its own first hit, light samples and one continuation path.
+            path_key = camera_sampler.next_bits();
+            sampling.samples = 1;
+        }
+        SampleDiagnostic *record = nullptr;
+        if (records)
+        {
+            record = &records->emplace_back(SampleDiagnostic{.position = {center.x / ssaa, center.y / ssaa},
+                                                             .weight = 1.0 / (ssaa * ssaa) / count});
+            if (lens_open)
+            {
+                record->lens_origin = ray.origin;
+            }
+        }
+        const auto color = trace_camera_ray(view, ray, path_key, sampling, stop, record);
+        if (record)
+        {
+            record->color = color;
+        }
+        return color;
+    };
+    return count == 1 ? trace(0) : resolve_samples(count, trace);
+}
+
+LinearColor PreviewRenderer::trace_camera_ray(const PreviewView &view, const Ray &ray, std::uint64_t path_key,
+                                              const PathSampling &sampling, std::stop_token stop,
+                                              SampleDiagnostic *record) const
+{
+    const double depth_per_unit = view.camera.forward_component(ray.direction);
+    const double origin_depth = view.lens.radius() > 0 ? view.camera.to_view(ray.origin).depth : 0;
+    // The camera depth range includes both endpoints; ray queries have open intervals.
+    const RayInterval interval{std::nextafter((view.depth.near_depth - origin_depth) / depth_per_unit, 0.0),
+                               std::nextafter((view.depth.far_depth - origin_depth) / depth_per_unit,
+                                              std::numeric_limits<double>::infinity())};
+    std::optional<PathHit> first;
+    const auto color =
+        path_->radiance(ray, interval, record ? &first : nullptr, path_key, view.area_light_pattern, stop, sampling);
     if (record && first)
     {
         const auto &hit = first->intersection;
@@ -269,7 +320,7 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
         const auto material_index =
             sphere ? scene_.spheres()[sphere->index].material_index
                    : scene_.instance(id.instance).triangles[std::to_underlying(id.primitive)].material_index;
-        record->surface = DiagnosticSurface{{hit.surface, hit.t * depth_per_unit, first->back_face},
+        record->surface = DiagnosticSurface{{hit.surface, origin_depth + hit.t * depth_per_unit, first->back_face},
                                             material_index,
                                             first->material,
                                             {},

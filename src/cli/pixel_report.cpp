@@ -31,6 +31,10 @@ std::string describe_shadow(const ShadowResult &shadow)
 }
 void print_sample(const SampleDiagnostic &report)
 {
+    if (const auto &origin = report.lens_origin)
+    {
+        std::println("Lens origin: ({:.9g}, {:.9g}, {:.9g})", origin->x, origin->y, origin->z);
+    }
     if (const auto &surface = report.surface)
     {
         const auto &id = surface->hit.surface.id;

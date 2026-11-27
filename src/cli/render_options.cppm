@@ -6,7 +6,7 @@ import formlight.preview;
 
 namespace formlight
 {
-template <class T> T integer_option(std::string_view option, std::string_view value)
+template <class T> T numeric_option(std::string_view option, std::string_view value)
 {
     T result{};
     const auto end = value.data() + value.size();
@@ -43,7 +43,7 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
             {
                 throw std::invalid_argument("Expected --pixel X Y");
             }
-            action = PixelCoord{integer_option<int>(option, value), integer_option<int>(option, args.front())};
+            action = PixelCoord{numeric_option<int>(option, value), numeric_option<int>(option, args.front())};
             args = args.subspan(1);
         }
         else if (option == "--output")
@@ -58,17 +58,25 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
         {
             config.render.mode = parse_choice<RenderMode>(value);
         }
+        else if (option == "--defocus-angle")
+        {
+            config.camera.lens.defocus_angle_degrees = numeric_option<double>(option, value);
+        }
+        else if (option == "--focus-distance")
+        {
+            config.camera.lens.focus_distance = numeric_option<double>(option, value);
+        }
         else if (option == "--ssaa")
         {
-            config.render.ssaa = integer_option<int>(option, value);
+            config.render.ssaa = numeric_option<int>(option, value);
         }
         else if (option == "--light-samples")
         {
-            config.render.sampling.samples = integer_option<std::uint32_t>(option, value);
+            config.render.sampling.samples = numeric_option<std::uint32_t>(option, value);
         }
         else if (option == "--seed")
         {
-            config.render.sampling.seed = integer_option<std::uint64_t>(option, value);
+            config.render.sampling.seed = numeric_option<std::uint64_t>(option, value);
         }
         else if (option == "--scene-seed")
         {
@@ -76,15 +84,15 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
             {
                 throw std::invalid_argument("--scene-seed requires a generated scene");
             }
-            config.scene.seed = integer_option<std::uint64_t>(option, value);
+            config.scene.seed = numeric_option<std::uint64_t>(option, value);
         }
         else if (option == "--path-samples")
         {
-            config.render.path_samples = integer_option<std::uint32_t>(option, value);
+            config.render.path_samples = numeric_option<std::uint32_t>(option, value);
         }
         else if (option == "--max-bounces")
         {
-            config.render.max_bounces = integer_option<std::uint32_t>(option, value);
+            config.render.max_bounces = numeric_option<std::uint32_t>(option, value);
         }
         else if (option == "--bounce-sampling")
         {

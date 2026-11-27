@@ -128,13 +128,16 @@ void check_preset_round_trip(const std::filesystem::path &destination)
     auto config = preset_config(ScenePreset::ManyBalls);
     config.scene.seed = std::numeric_limits<std::uint64_t>::max();
     config.scene.metal_fuzz_max = 0.25;
+    config.camera.lens.focus_distance = 7.5;
+    config.camera.lens.defocus_angle_degrees = 1.25;
     config.render.sampling.seed = 17;
     config.scene.environment = {0.4, 0.5, 0.6};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     if (loaded.scene.preset != ScenePreset::ManyBalls || loaded.scene.seed != config.scene.seed ||
         loaded.render.sampling.seed != 17 || loaded.scene.environment != config.scene.environment ||
-        loaded.scene.metal_fuzz_max != 0.25 || !loaded.scene.spheres.empty())
+        loaded.scene.metal_fuzz_max != 0.25 || !loaded.scene.spheres.empty() ||
+        loaded.camera.lens.focus_distance != 7.5 || loaded.camera.lens.defocus_angle_degrees != 1.25)
     {
         throw std::runtime_error("Preset, seeds or environment changed during TOML round trip");
     }

@@ -25,6 +25,39 @@ export struct CameraView
     double vertical_fov_radians;
 };
 
+export class ThinLens
+{
+  public:
+    ThinLens() = default;
+    ThinLens(double focus_distance, double defocus_angle_degrees) : focus_distance_(focus_distance)
+    {
+        if (!(focus_distance > 0 && std::isfinite(focus_distance)))
+        {
+            throw std::invalid_argument("camera.focus_distance must be finite and positive");
+        }
+        if (!(defocus_angle_degrees >= 0 && defocus_angle_degrees < 180))
+        {
+            throw std::invalid_argument("camera.defocus_angle_degrees must be in [0, 180)");
+        }
+        radius_ = focus_distance * std::tan(defocus_angle_degrees * (std::numbers::pi / 360));
+        if (!std::isfinite(radius_))
+        {
+            throw std::invalid_argument("Camera aperture radius exceeds working precision");
+        }
+    }
+    [[nodiscard]] double radius() const noexcept
+    {
+        return radius_;
+    }
+    [[nodiscard]] double focus_distance() const noexcept
+    {
+        return focus_distance_;
+    }
+
+  private:
+    double focus_distance_{1}, radius_{};
+};
+
 export struct ProjectedPoint
 {
     ImagePoint image;
@@ -70,6 +103,7 @@ export class PinholeCamera
     [[nodiscard]] std::optional<ProjectedPoint> project_view(ViewPoint point) const noexcept;
     // The primary ray has unit direction, so its parameter measures distance in world units.
     [[nodiscard]] Ray ray_for_sample(ImagePoint sample) const noexcept;
+    [[nodiscard]] Ray ray_from_lens(const Ray &pinhole, const ThinLens &lens, double u, double v) const;
 
   private:
     CameraView view_;
@@ -140,5 +174,18 @@ Ray PinholeCamera::ray_for_sample(ImagePoint sample) const noexcept
     const double y = (extent_.height * 0.5 - sample.y) / focal_length_pixels_;
     const Vec3 direction = forward_ + right_ * x + up_ * y;
     return {.origin = view_.position, .direction = direction * (1.0 / std::sqrt(dot(direction, direction)))};
+}
+Ray PinholeCamera::ray_from_lens(const Ray &pinhole, const ThinLens &lens, double u, double v) const
+{
+    if (lens.radius() == 0)
+    {
+        return pinhole;
+    }
+    const double r = lens.radius() * std::sqrt(u);
+    const double phi = 2 * std::numbers::pi * v;
+    const Vec3 offset = right_ * (r * std::cos(phi)) + up_ * (r * std::sin(phi));
+    // Both rays meet where forward depth equals focus_distance, including off-axis pixels.
+    const Vec3 direction = pinhole.direction / forward_component(pinhole.direction) - offset / lens.focus_distance();
+    return {pinhole.origin + offset, unit_vector(direction, "Invalid lens ray direction")};
 }
 } // namespace formlight

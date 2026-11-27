@@ -69,6 +69,24 @@ void check_primary_rays()
     for (const auto sample : {center, pixel_center(0, 0), pixel_center(8, 4), ImagePoint{2.25, 1.75}})
     {
         const auto ray = camera.ray_for_sample(sample);
+        const auto zero = camera.ray_from_lens(ray, ThinLens{10, 0}, 0.25, 0.75);
+        if (zero.origin != ray.origin || zero.direction != ray.direction)
+        {
+            throw std::runtime_error("Zero aperture changed the pinhole ray");
+        }
+        const ThinLens lens{10, 2 * std::atan(0.1) * 180 / std::numbers::pi};
+        const auto aperture_ray = camera.ray_from_lens(ray, lens, 0.25, 0);
+        expect_near(aperture_ray.origin.z, view.position.z + 0.5, "uniform-area disk radius on camera right axis");
+        expect_near(dot(aperture_ray.direction, aperture_ray.direction), 1, "unit thin-lens ray");
+        for (const double depth : {5.0, 10.0, 15.0})
+        {
+            const auto lens_point = aperture_ray.at(depth / camera.forward_component(aperture_ray.direction));
+            const auto pinhole_point = ray.at(depth / camera.forward_component(ray.direction));
+            const auto displacement = lens_point - pinhole_point;
+            expect_near(displacement.x, 0, "lens depth");
+            expect_near(displacement.y, 0, "lens vertical displacement");
+            expect_near(displacement.z, 0.5 * (1 - depth / 10), "displacement about focal plane");
+        }
         expect_near(ray.origin.x, view.position.x, "origin X");
         expect_near(ray.origin.y, view.position.y, "origin Y");
         expect_near(ray.origin.z, view.position.z, "origin Z");

@@ -259,6 +259,10 @@ void check_frame_replacement(const std::filesystem::path &asset, const std::file
     active.light_settings() = config.lighting;
     for (const auto mode : {RenderMode::Path, RenderMode::Hybrid})
     {
+        config.camera.lens = {.focus_distance = 2, .defocus_angle_degrees = mode == RenderMode::Path ? 1.5 : 0};
+        config.render.path_samples = 4;
+        active.lens_settings() = config.camera.lens;
+        active.render_settings().path_samples = config.render.path_samples;
         active.render_settings().mode = mode;
         document.apply_settings();
         const auto &frame = await_frame(active, now);

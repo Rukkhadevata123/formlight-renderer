@@ -11,7 +11,11 @@ SceneConfig preset_config(ScenePreset preset)
     config.scene.preset = preset;
     if (preset == ScenePreset::ManyBalls)
     {
-        config.camera = {.auto_frame = false, .vertical_fov_degrees = 20, .position = {13, 2, 3}, .target = {}};
+        config.camera = {.auto_frame = false,
+                         .vertical_fov_degrees = 20,
+                         .position = {13, 2, 3},
+                         .target = {},
+                         .lens = {.focus_distance = 10, .defocus_angle_degrees = 0.6}};
         config.render.mode = RenderMode::Path;
         config.render.extent = {256, 144};
         config.render.path_samples = 32;
