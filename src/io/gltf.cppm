@@ -31,6 +31,7 @@ export struct GltfMaterial
     LinearColor base_color_factor{1, 1, 1, 1};
     double metallic_factor{1}, roughness_factor{1};
     std::optional<TextureBinding> base_color_texture{};
+    std::optional<TextureBinding> metallic_roughness_texture{};
     LinearColor emission_multiplier{};
     std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};
@@ -79,7 +80,7 @@ export class GltfScene
     std::vector<std::vector<Triangle>> meshes_;
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
-    std::vector<std::optional<ColorImage>> images_;
+    std::vector<ColorImage> images_;
     std::vector<std::optional<GltfMaterial>> materials_;
 };
 } // namespace formlight

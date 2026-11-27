@@ -123,7 +123,8 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
         if (content == GltfContent::Materials && texcoord == primitive.attributes.end() && primitive.materialIndex)
         {
             const auto &material = asset.materials.at(*primitive.materialIndex);
-            if (material.pbrData.baseColorTexture || material.emissiveTexture)
+            if (material.pbrData.baseColorTexture || material.pbrData.metallicRoughnessTexture ||
+                material.emissiveTexture)
             {
                 throw std::runtime_error("Textured primitive is missing TEXCOORD_0");
             }
@@ -187,7 +188,7 @@ AffineTransform instance_transform(const fastgltf::math::nmat4x4 &world)
     return {Basis3{column(0), column(1), column(2)}, column(3)};
 }
 
-ColorImage read_image(const fastgltf::Asset &asset, std::size_t index)
+ColorImage read_image(const fastgltf::Asset &asset, std::size_t index, RgbEncoding encoding)
 {
     const auto &source = asset.images.at(index).data;
     if (const auto *reference = std::get_if<fastgltf::sources::BufferView>(&source))
@@ -198,9 +199,9 @@ ColorImage read_image(const fastgltf::Asset &asset, std::size_t index)
         {
             throw std::runtime_error("Image buffer view exceeds its embedded buffer");
         }
-        return decode_srgb_image(bytes.subspan(view.byteOffset, view.byteLength));
+        return decode_image(bytes.subspan(view.byteOffset, view.byteLength), encoding);
     }
-    return decode_srgb_image(embedded_bytes(source));
+    return decode_image(embedded_bytes(source), encoding);
 }
 
 WrapMode wrap_mode(fastgltf::Wrap wrap)
@@ -218,8 +219,16 @@ WrapMode wrap_mode(fastgltf::Wrap wrap)
     }
 }
 
-TextureBinding read_texture_binding(const fastgltf::Asset &asset, const fastgltf::TextureInfo &info,
-                                    std::vector<std::optional<ColorImage>> &images)
+struct TextureLoader
+{
+    const fastgltf::Asset &asset;
+    std::vector<ColorImage> &images;
+    std::map<std::pair<std::size_t, RgbEncoding>, std::size_t> image_slots{};
+
+    TextureBinding bind(const fastgltf::TextureInfo &info, RgbEncoding encoding);
+};
+
+TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, RgbEncoding encoding)
 {
     if (info.texCoordIndex != 0)
     {
@@ -227,9 +236,10 @@ TextureBinding read_texture_binding(const fastgltf::Asset &asset, const fastgltf
     }
     const auto &texture = asset.textures.at(info.textureIndex);
     const auto image = texture.imageIndex.value();
-    if (!images.at(image))
+    const auto [slot, inserted] = image_slots.try_emplace(std::pair{image, encoding}, images.size());
+    if (inserted)
     {
-        images[image] = read_image(asset, image);
+        images.push_back(read_image(asset, image, encoding));
     }
     TextureSampler sampler;
     if (texture.samplerIndex)
@@ -238,11 +248,10 @@ TextureBinding read_texture_binding(const fastgltf::Asset &asset, const fastgltf
         sampler = {wrap_mode(source.wrapS), wrap_mode(source.wrapT),
                    source.magFilter == fastgltf::Filter::Nearest ? TexelFilter::Nearest : TexelFilter::Linear};
     }
-    return {image, sampler};
+    return {slot->second, sampler};
 }
 
-GltfMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Material &material,
-                           std::vector<std::optional<ColorImage>> &images)
+GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &textures)
 {
     const auto &pbr = material.pbrData;
     const auto &f = pbr.baseColorFactor;
@@ -271,19 +280,24 @@ GltfMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Materia
     }
     if (const auto &info = pbr.baseColorTexture)
     {
-        result.base_color_texture = read_texture_binding(asset, *info, images);
+        result.base_color_texture = textures.bind(*info, RgbEncoding::Srgb);
+    }
+    if (const auto &info = pbr.metallicRoughnessTexture)
+    {
+        result.metallic_roughness_texture = textures.bind(*info, RgbEncoding::Linear);
     }
     if (const auto &info = material.emissiveTexture)
     {
-        result.emissive_texture = read_texture_binding(asset, *info, images);
+        result.emissive_texture = textures.bind(*info, RgbEncoding::Srgb);
     }
     return result;
 }
 
 std::vector<std::optional<GltfMaterial>> read_materials(const fastgltf::Asset &asset,
                                                         std::span<const std::vector<Triangle>> meshes,
-                                                        std::vector<std::optional<ColorImage>> &images)
+                                                        std::vector<ColorImage> &images)
 {
+    TextureLoader textures{asset, images};
     std::vector<std::optional<GltfMaterial>> materials(1 + asset.materials.size());
     materials[0] = GltfMaterial{};
     for (const auto &mesh : meshes)
@@ -293,7 +307,7 @@ std::vector<std::optional<GltfMaterial>> read_materials(const fastgltf::Asset &a
             auto &slot = materials.at(face.material_index);
             if (!slot)
             {
-                slot = read_material(asset, asset.materials.at(face.material_index - 1), images);
+                slot = read_material(asset.materials.at(face.material_index - 1), textures);
             }
         }
     }
@@ -370,7 +384,6 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
         }
         if (content == GltfContent::Materials)
         {
-            result.images_.resize(asset.images.size());
             result.materials_ = read_materials(asset, result.meshes_, result.images_);
         }
         return result;
@@ -410,7 +423,7 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
 
 LinearColor GltfScene::sample(const TextureBinding &binding, TexCoord uv) const
 {
-    return sample_texture(images_[binding.image].value(), uv, binding.sampler);
+    return sample_texture(images_[binding.image], uv, binding.sampler);
 }
 
 LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Triangle &face, Barycentrics weights) const
@@ -437,7 +450,15 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
         const auto texel = sample(*mat.emissive_texture, face.uv_at(weights));
         emission = {emission.r * texel.r, emission.g * texel.g, emission.b * texel.b};
     }
-    return {color, emission, mat.metallic_factor, mat.roughness_factor};
+    double metallic = mat.metallic_factor;
+    double roughness = mat.roughness_factor;
+    if (const auto &binding = mat.metallic_roughness_texture)
+    {
+        const auto texel = sample(*binding, face.uv_at(weights));
+        metallic *= texel.b;
+        roughness *= texel.g;
+    }
+    return {color, emission, metallic, roughness};
 }
 
 SurfaceFilter GltfScene::solid_filter() const &

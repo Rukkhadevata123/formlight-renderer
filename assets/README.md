@@ -22,6 +22,10 @@ A half-opacity sheet covers the right half of an amber panel. Its two emissive t
 
 Six spheres share one untextured geometry and the same copper-colored base. The top row is metallic and the bottom row is dielectric. Roughness increases from 0.2 to 0.5 to 1 across each row. The rightmost metal uses the glTF defaults for both factors. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## MetallicRoughnessPanel.glb
+
+A square panel uses one two-texel PNG for both base color and metallic-roughness. The RGB bytes are (32, 64, 192) and (224, 160, 48). Both material factors are 0.5, and the sampler uses linear filtering. Created for Formlight and distributed under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

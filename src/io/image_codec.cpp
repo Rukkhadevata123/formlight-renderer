@@ -15,7 +15,7 @@ import formlight.output_file;
 
 namespace formlight
 {
-ColorImage decode_srgb_image(std::span<const std::byte> encoded)
+ColorImage decode_image(std::span<const std::byte> encoded, RgbEncoding encoding)
 {
     if (encoded.empty() || !std::in_range<int>(encoded.size()))
     {
@@ -28,24 +28,31 @@ ColorImage decode_srgb_image(std::span<const std::byte> encoded)
         &stbi_image_free};
     if (!bytes)
     {
-        throw std::runtime_error(std::format("Cannot decode sRGB image: {}", stbi_failure_reason()));
+        throw std::runtime_error(std::format("Cannot decode image: {}", stbi_failure_reason()));
     }
-    static const auto linear = []
+    static const auto normalized = []
     {
         std::array<float, 256> values{};
         for (std::size_t i = 0; i < values.size(); ++i)
         {
-            values[i] = srgb_to_linear(static_cast<float>(i) / 255.0f);
+            values[i] = static_cast<float>(i) / 255.0f;
         }
         return values;
     }();
+    static const auto srgb = []
+    {
+        auto values = normalized;
+        std::ranges::transform(values, values.begin(), srgb_to_linear);
+        return values;
+    }();
+    const auto &rgb = encoding == RgbEncoding::Srgb ? srgb : normalized;
     ColorImage image{{width, height}};
     const auto *pixel = bytes.get();
     for (int y = 0; y < height; ++y)
     {
         for (int x = 0; x < width; ++x, pixel += 4)
         {
-            image[y, x] = {linear[pixel[0]], linear[pixel[1]], linear[pixel[2]], static_cast<float>(pixel[3]) / 255.0f};
+            image[y, x] = {rgb[pixel[0]], rgb[pixel[1]], rgb[pixel[2]], normalized[pixel[3]]};
         }
     }
     return image;
