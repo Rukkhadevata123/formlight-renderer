@@ -67,13 +67,20 @@ void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, c
     }
     // Allow for the caster depth varying by up to half a texel along each axis.
     const double bias = 0.5 * (std::abs(plane.x) + std::abs(plane.y)) / std::abs(plane.z);
+    const double area = coverage.twice_area();
+    if (area == 0)
+    {
+        return;
+    }
+    const auto dx = coverage.edge_dx(), dy = coverage.edge_dy();
+    const WeightGradients gradients{{dx[1] / area, dx[2] / area}, {dy[1] / area, dy[2] / area}};
     const auto write_depth = [&](int x, int y, const auto &edges)
     {
-        const double area = coverage.twice_area();
         const double depth = (edges[0] * a.z + edges[1] * b.z + edges[2] * c.z) / area + bias;
         auto &nearest = depths_[y * resolution + x];
         // In the orthographic light view the screen weights are already the surface weights.
-        if (depth < nearest && (!accept || accept({source, {edges[0] / area, edges[1] / area, edges[2] / area}})))
+        if (depth < nearest &&
+            (!accept || accept({source, {edges[0] / area, edges[1] / area, edges[2] / area}, gradients})))
         {
             nearest = depth;
         }

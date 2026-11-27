@@ -306,15 +306,16 @@ auto main(int argc, char **argv) -> int
             }
         }
     }
-    // The top and bottom of the same rotated face sample the blue sky and green ground in the embedded PNG.
-    const auto matches_rgb = [&](int x, int y, std::array<int, 3> expected)
+    // The 256px PNG spans 12 screen pixels. Its sampler blends nearest samples of levels 4 and 5.
+    // These linear references use 16x16 and 32x32 box averages of the original sRGB texels.
+    const auto matches_rgb = [&](int x, int y, Vec3 expected)
     {
         const auto color = image[y, x];
-        return std::lround(linear_to_srgb(color.r) * 255) == expected[0] &&
-               std::lround(linear_to_srgb(color.g) * 255) == expected[1] &&
-               std::lround(linear_to_srgb(color.b) * 255) == expected[2];
+        const auto delta = abs_components(Vec3{color.r, color.g, color.b} - expected);
+        return std::max({delta.x, delta.y, delta.z}) < 1e-6;
     };
-    if (!matches_rgb(32, 19, {108, 173, 223}) || !matches_rgb(32, 27, {92, 135, 39}))
+    if (!matches_rgb(32, 19, {0.14995979, 0.41788507, 0.73791041}) ||
+        !matches_rgb(32, 27, {0.10702310, 0.24228112, 0.02028856}))
     {
         std::cerr << "Repeated base-color texture has the wrong colors or orientation\n";
         return 1;
@@ -327,7 +328,7 @@ auto main(int argc, char **argv) -> int
     // On a repeat boundary, linear filtering blends the last and first texel.
     ColorImage seam{{2, 1}};
     seam[0, 1] = {1, 1, 1, 1};
-    if (sample_texture(seam, {-1, 0.5}, {}).r != 0.5f)
+    if (TextureImage{std::move(seam)}.sample({-1, 0.5}, {}).r != 0.5f)
     {
         std::cerr << "Bilinear repeat failed across the negative U boundary\n";
         return 1;

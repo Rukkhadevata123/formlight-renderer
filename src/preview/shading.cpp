@@ -62,10 +62,10 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
                                    const std::stop_token &stop, bool back_face, PixelDiagnostic *record) const
 {
-    const auto &[id, weights] = hit.surface;
+    const auto &[id, weights, gradients] = hit.surface;
     const auto &instance = scene_.instance(id.instance);
     const auto &face = instance.triangles[std::to_underlying(id.primitive)];
-    const auto material = scene_.surface_material(face, weights);
+    const auto material = scene_.surface_material(face, weights, gradients);
     const auto &base = material.base_color;
     if (base.a == 0)
     {

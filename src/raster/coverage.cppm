@@ -55,6 +55,15 @@ export class ScreenTriangle
         return twice_area_;
     }
 
+    [[nodiscard]] std::array<double, 3> edge_dx() const noexcept
+    {
+        return {edges_[0].x, edges_[1].x, edges_[2].x};
+    }
+    [[nodiscard]] std::array<double, 3> edge_dy() const noexcept
+    {
+        return {edges_[0].y, edges_[1].y, edges_[2].y};
+    }
+
     // A covered sample's edge values are its screen barycentrics multiplied by twice_area().
     [[nodiscard]] std::optional<std::array<double, 3>> edge_values(ImagePoint point) const noexcept
     {

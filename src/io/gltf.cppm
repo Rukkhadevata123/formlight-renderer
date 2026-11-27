@@ -51,7 +51,8 @@ export class GltfScene
 
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
-    [[nodiscard]] SurfaceMaterial surface_material(const Triangle &face, Barycentrics weights) const;
+    [[nodiscard]] SurfaceMaterial surface_material(const Triangle &face, Barycentrics weights,
+                                                   WeightGradients gradients = {}) const;
     [[nodiscard]] const GltfMaterial &material(const Triangle &face) const
     {
         return materials_.at(face.material_index).value();
@@ -77,13 +78,14 @@ export class GltfScene
 
   private:
     GltfScene() = default;
-    [[nodiscard]] LinearColor sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights) const;
+    [[nodiscard]] LinearColor sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights,
+                                     WeightGradients gradients) const;
     [[nodiscard]] LinearColor sample_base_color(const GltfMaterial &material, const Triangle &face,
-                                                Barycentrics weights) const;
+                                                Barycentrics weights, WeightGradients gradients) const;
     std::vector<std::vector<Triangle>> meshes_;
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
-    std::vector<ColorImage> images_;
+    std::vector<TextureImage> images_;
     std::vector<std::optional<GltfMaterial>> materials_;
 };
 } // namespace formlight

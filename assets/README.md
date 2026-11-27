@@ -30,6 +30,10 @@ A square panel uses one two-texel PNG for base color, metallic-roughness, and am
 
 This variant of MetallicRoughnessPanel uses the same two texels for all four material bindings. UV0 runs left to right. UV1 mirrors U and uses normalized unsigned-short coordinates. Base color (UV1) and emission (UV0) use linear filtering. Metallic-roughness (UV0) and occlusion (UV1) use nearest filtering. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## MipChecker.glb
+
+A floor uses UV1 to repeat a 64×64 checker at 32 texels per world unit. UV0 is constant. The same image supplies sRGB base color and linear metallic-roughness data. The sampler uses nearest magnification and trilinear minification. In the [oblique camera view](../scenes/mip-checker.toml), distant squares converge to the average of the decoded texels. Created for Formlight and distributed under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

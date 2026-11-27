@@ -19,8 +19,9 @@ export struct SurfaceId
 
 export struct TrianglePoint
 {
-    SurfaceId id;
-    Barycentrics weights;
+    SurfaceId id{};
+    Barycentrics weights{};
+    WeightGradients gradients{}; // Rays without a footprint sample mip level zero.
 };
 
 // An empty filter accepts all geometric hits.

@@ -35,7 +35,8 @@ void print_pixel_report(const PixelDiagnostic &report)
     std::println("Pixel ({}, {}) at sample ({}, {})", report.pixel.x, report.pixel.y, center.x, center.y);
     if (const auto &surface = report.surface)
     {
-        const auto &[id, weights] = surface->hit.surface;
+        const auto &id = surface->hit.surface.id;
+        const auto weights = surface->hit.surface.weights;
         std::println("Surface: instance {}, primitive {}, material slot {}, depth {:.9g}",
                      std::to_underlying(id.instance), std::to_underlying(id.primitive), surface->material_index,
                      surface->hit.view_depth);

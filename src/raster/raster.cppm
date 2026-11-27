@@ -58,6 +58,15 @@ export class RasterTriangle
     [[nodiscard]] RasterHit interpolate(const std::array<double, 3> &values) const noexcept;
     std::array<double, 3> inverse_depths_;
     std::array<Barycentrics, 3> source_weights_;
+    struct PerspectiveDerivative
+    {
+        double sum{}, b_numerator{}, c_numerator{};
+        [[nodiscard]] WeightDerivative at(Barycentrics weights, double denominator) const noexcept
+        {
+            return {(b_numerator - weights.b * sum) / denominator, (c_numerator - weights.c * sum) / denominator};
+        }
+    };
+    PerspectiveDerivative dx_, dy_;
 };
 
 RasterTriangle::RasterTriangle(SurfaceId source, const RasterVertex &a, const RasterVertex &b, const RasterVertex &c)
@@ -65,6 +74,21 @@ RasterTriangle::RasterTriangle(SurfaceId source, const RasterVertex &a, const Ra
       inverse_depths_{1.0 / a.point.view_depth, 1.0 / b.point.view_depth, 1.0 / c.point.view_depth},
       source_weights_{a.source_weights, b.source_weights, c.source_weights}
 {
+    // Differentiate the numerator and denominator planes once per clipped triangle.
+    const auto derivative = [&](const std::array<double, 3> &edges)
+    {
+        PerspectiveDerivative result;
+        for (std::size_t i = 0; i < edges.size(); ++i)
+        {
+            const double change = edges[i] * inverse_depths_[i];
+            result.sum += change;
+            result.b_numerator += change * source_weights_[i].b;
+            result.c_numerator += change * source_weights_[i].c;
+        }
+        return result;
+    };
+    dx_ = derivative(coverage_.edge_dx());
+    dy_ = derivative(coverage_.edge_dy());
 }
 
 std::optional<RasterHit> RasterTriangle::sample(ImagePoint point) const noexcept
@@ -93,7 +117,8 @@ RasterHit RasterTriangle::interpolate(const std::array<double, 3> &values) const
         (wa * v0.b + wb * v1.b + wc * v2.b) / sum,
         (wa * v0.c + wb * v1.c + wc * v2.c) / sum,
     };
-    return RasterHit{.surface = {source_, weights}, .view_depth = coverage_.twice_area() / sum};
+    return RasterHit{.surface = {source_, weights, {dx_.at(weights, sum), dy_.at(weights, sum)}},
+                     .view_depth = coverage_.twice_area() / sum};
 }
 
 void RasterTriangle::rasterize(VisibilityBuffer target, const SurfaceFilter &accept) const

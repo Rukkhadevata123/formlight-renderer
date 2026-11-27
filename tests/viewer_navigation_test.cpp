@@ -49,7 +49,8 @@ void check_image(const ColorImage &actual, const SceneConfig &config)
             const auto a = actual[y, x], b = reference[y, x];
             if (std::max({std::abs(a.r - b.r), std::abs(a.g - b.g), std::abs(a.b - b.b)}) > 1e-5f)
             {
-                throw std::runtime_error("Displayed frame differs from the CLI camera or lighting");
+                throw std::runtime_error(std::format("Displayed {}x{} frame differs from CLI at ({}, {}): red {} vs {}",
+                                                     width, height, x, y, a.r, b.r));
             }
         }
     }
@@ -132,7 +133,27 @@ void check_frame_replacement(const std::filesystem::path &asset)
     const double distance = framing_distance(std::sqrt(0.75), request.extent, request.vertical_fov_radians) / 1.15;
     config.camera.target = {};
     config.camera.position = Vec3{std::sin(yaw), 0, std::cos(yaw)} * distance;
-    check_image(latest, config);
+    const auto check_pose_and_image = [&](const ColorImage &image)
+    {
+        const auto pose = session.scene_snapshot().camera;
+        if (pose.auto_frame || pose.vertical_fov_degrees != config.camera.vertical_fov_degrees)
+        {
+            throw std::runtime_error("Navigation changed the explicit camera or its field of view");
+        }
+        for (const auto delta :
+             {pose.position - config.camera.position, pose.target - config.camera.target, pose.up - config.camera.up})
+        {
+            if (std::hypot(delta.x, delta.y, delta.z) > 1e-12)
+            {
+                throw std::runtime_error("Viewer orbit differs from the expected pose");
+            }
+        }
+        // Rounding at a nearest-texel boundary can select either texel. Replay the exact displayed pose.
+        auto reference = config;
+        reference.camera = pose;
+        check_image(image, reference);
+    };
+    check_pose_and_image(latest);
 
     session.render_settings().mode = RenderMode::Raster;
     try
@@ -172,7 +193,7 @@ void check_frame_replacement(const std::filesystem::path &asset)
         throw std::runtime_error("Scene snapshot lost the explicit camera or applied settings");
     }
     const auto &edited = await_frame(session, now);
-    check_image(edited, config);
+    check_pose_and_image(edited);
     check_image(edited, snapshot);
 
     const auto finish_open = [&]

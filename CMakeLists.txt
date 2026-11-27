@@ -100,6 +100,10 @@ if(BUILD_TESTING)
     target_link_libraries(texture_coordinates_test PRIVATE formlight_gltf)
     add_test(NAME texture_coordinates COMMAND texture_coordinates_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/DualUvPanel.glb")
 
+    add_executable(texture_minification_test tests/texture_minification_test.cpp)
+    target_link_libraries(texture_minification_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME texture_minification COMMAND texture_minification_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mip-checker.toml")
+
     add_executable(mask_visibility_test tests/mask_visibility_test.cpp)
     target_link_libraries(mask_visibility_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME mask_visibility COMMAND mask_visibility_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mask-panel.toml")

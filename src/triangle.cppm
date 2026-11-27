@@ -29,6 +29,22 @@ struct Barycentrics
     double a, b, c;
 };
 
+// Only b and c are independent, since a + b + c = 1.
+struct WeightDerivative
+{
+    double b{}, c{};
+};
+
+struct WeightGradients
+{
+    WeightDerivative dx{}, dy{};
+};
+
+struct UvGradients
+{
+    TexCoord dx{}, dy{};
+};
+
 struct Triangle
 {
     PrimitiveId id{};
@@ -56,6 +72,16 @@ struct Triangle
     {
         const auto &[a, b, c] = vertices;
         return cross(b.position - a.position, c.position - a.position);
+    }
+
+    [[nodiscard]] constexpr UvGradients uv_gradients(WeightGradients weights, std::size_t set) const
+    {
+        const auto a = vertices[0].texcoords.at(set);
+        const auto b = vertices[1].texcoords.at(set);
+        const auto c = vertices[2].texcoords.at(set);
+        const auto derivative = [&](WeightDerivative d) -> TexCoord
+        { return {(b.u - a.u) * d.b + (c.u - a.u) * d.c, (b.v - a.v) * d.b + (c.v - a.v) * d.c}; };
+        return {derivative(weights.dx), derivative(weights.dy)};
     }
 
     [[nodiscard]] constexpr LinearColor color_at(Barycentrics weights) const noexcept
