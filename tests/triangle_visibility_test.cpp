@@ -24,6 +24,10 @@ bool report_coverage(std::span<const Coverage> pixels)
         for (int x = 0; x < extent.width; ++x)
         {
             const auto [raster, ray] = pixels[y * extent.width + x];
+            if (raster != ray && interior_errors + outline_errors + background_errors == 0)
+            {
+                std::cerr << std::format("First coverage mismatch at ({}, {}): raster {}, ray {}\n", x, y, raster, ray);
+            }
             // A one-pixel band on both sides of the ray silhouette; shared triangle edges are not silhouettes.
             if (ray_at(x - 1, y) != ray || ray_at(x + 1, y) != ray || ray_at(x, y - 1) != ray ||
                 ray_at(x, y + 1) != ray)
@@ -71,6 +75,25 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
     const auto &triangle = instance.triangles.front();
     const SurfaceId expected{instance.id, triangle.id};
     const auto pieces = RasterTriangle::prepare(camera, scene, range);
+    std::vector<std::optional<RasterHit>> pixels(extent.width * extent.height);
+    const auto record_hit = [&](int x, int y, const RasterHit &hit)
+    {
+        if (x < 0 || x >= extent.width || y < 0 || y >= extent.height)
+        {
+            throw std::runtime_error(std::format("Sample outside viewport at ({}, {})", x, y));
+        }
+        auto &pixel = pixels[y * extent.width + x];
+        if (pixel)
+        {
+            throw std::runtime_error(std::format("Two pieces own pixel ({}, {})", x, y));
+        }
+        pixel = hit;
+    };
+    for (const auto &piece : pieces)
+    {
+        piece.for_each_hit(extent, record_hit);
+    }
+
     int covered = 0;
     std::array<Coverage, extent.width * extent.height> coverage{};
     double max_depth_error = 0, max_uv_error = 0;
@@ -79,7 +102,7 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
         for (int column = 0; column < extent.width; ++column)
         {
             const auto point = pixel_center(column, row);
-            const auto raster = sample_pieces(pieces, point);
+            const auto &raster = pixels[row * extent.width + column];
             const auto ray = camera.ray_for_sample(point);
             const auto hit = intersect(ray, scene, {0, std::numeric_limits<double>::infinity()});
             const double depth = hit ? camera.to_view(ray.at(hit->t)).depth : 0.0;
@@ -114,6 +137,41 @@ bool compare_triangle(const PinholeCamera &camera, const MeshInstance &instance,
                  std::to_underlying(triangle.id), range.near_depth, range.far_depth, pieces.size(), covered,
                  expected_coverage, max_depth_error, max_uv_error);
     return report_coverage(coverage) && covered == expected_coverage;
+}
+
+bool check_viewport_sides(const PinholeCamera &camera)
+{
+    struct Side
+    {
+        std::string_view name;
+        Vec3 outward, tangent;
+        int expected_pixels;
+    };
+    // Relative to image center, the tip is 48 pixels outward and the base spans +/-12 along the tangent.
+    // The +/-1/4 slopes miss pixel centers. Each four-column (or four-row) strip covers its area in pixels:
+    // left/right (24 + 8) * 32 / 2 = 512; top/bottom (24 + 12) * 24 / 2 = 432.
+    constexpr std::array sides{
+        Side{"left", {-1, 0, 0}, {0, 1, 0}, 512},
+        Side{"right", {1, 0, 0}, {0, 1, 0}, 512},
+        Side{"top", {0, 1, 0}, {1, 0, 0}, 432},
+        Side{"bottom", {0, -1, 0}, {1, 0, 0}, 432},
+    };
+    for (const auto &[name, outward, tangent, expected_pixels] : sides)
+    {
+        const Triangle triangle{
+            .id = PrimitiveId{29},
+            .vertices = {TriangleVertex{outward * 4 + Vec3{0, 0, -2}, {0, 0}},
+                         TriangleVertex{tangent * 1.5 + Vec3{0, 0, -3}, {1, 0}},
+                         TriangleVertex{tangent * -2 + Vec3{0, 0, -4}, {0, 1}}},
+        };
+        const MeshInstance instance{InstanceId{2}, std::span{&triangle, 1}};
+        std::println("Crossing the {} viewport edge", name);
+        if (!compare_triangle(camera, instance, {1, 5}, expected_pixels))
+        {
+            return false;
+        }
+    }
+    return true;
 }
 
 bool check_shadow_ray_interval()
@@ -330,7 +388,7 @@ auto main() -> int
     const MeshInstance crossing{InstanceId{2}, std::span{&crosses_eye, 1}};
     const bool passed = compare_triangle(camera, tilted, full, 672) && compare_triangle(camera, crossing, full, 600) &&
                         compare_triangle(camera, tilted, {2.5, 3.5}, 471) &&
-                        compare_triangle(camera, tilted, {5, 6}, 0) && check_ground_and_panel() &&
-                        check_shadow_ray_interval() && check_bvh_against_brute_force();
+                        compare_triangle(camera, tilted, {5, 6}, 0) && check_viewport_sides(camera) &&
+                        check_ground_and_panel() && check_shadow_ray_interval() && check_bvh_against_brute_force();
     return passed ? 0 : 1;
 }
