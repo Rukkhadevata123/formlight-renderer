@@ -10,7 +10,8 @@ export namespace formlight
 enum class RenderMode
 {
     Raster,
-    Hybrid
+    Hybrid,
+    Path
 };
 enum class LightKind
 {
@@ -26,7 +27,8 @@ template <class E> struct NamedValue
 };
 
 inline constexpr std::array render_modes{NamedValue{"raster", RenderMode::Raster},
-                                         NamedValue{"hybrid", RenderMode::Hybrid}};
+                                         NamedValue{"hybrid", RenderMode::Hybrid},
+                                         NamedValue{"path", RenderMode::Path}};
 inline constexpr std::array light_kinds{NamedValue{"directional", LightKind::Directional},
                                         NamedValue{"point", LightKind::Point},
                                         NamedValue{"rectangle", LightKind::Rectangle}};
@@ -238,6 +240,7 @@ struct RenderRequest
     std::optional<PinholeCamera> camera;
     std::optional<PreviewLighting> lighting;
     int ssaa{1};
+    RenderMode mode{RenderMode::Raster};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -259,23 +262,23 @@ struct RenderRequest
 {
     if (light.type == LightKind::Directional)
     {
-        const auto method = render.mode == RenderMode::Hybrid ? ShadowMethod::Ray : ShadowMethod::Map;
+        const auto method = render.mode == RenderMode::Raster ? ShadowMethod::Map : ShadowMethod::Ray;
         const DirectionalLight directional{light.toward_light, light.color, light.intensity};
         return DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None, light.pcf};
     }
     else if (light.type == LightKind::Point)
     {
-        if (light.shadows && render.mode != RenderMode::Hybrid)
+        if (light.shadows && render.mode == RenderMode::Raster)
         {
-            throw std::invalid_argument("light.shadows for a point light requires render.mode = 'hybrid'");
+            throw std::invalid_argument("A point light with shadows requires hybrid or path mode");
         }
         const PointLight point{light.position, light.color, light.intensity, light.attenuation};
         return PointLighting{point, light.shadows};
     }
 
-    if (light.shadows && render.mode != RenderMode::Hybrid)
+    if (light.shadows && render.mode == RenderMode::Raster)
     {
-        throw std::invalid_argument("light.shadows for a rectangle requires render.mode = 'hybrid'");
+        throw std::invalid_argument("A rectangle light with shadows requires hybrid or path mode");
     }
     if (!(light.width > 0 && light.height > 0) || !std::isfinite(light.width) || !std::isfinite(light.height))
     {
@@ -304,7 +307,7 @@ struct RenderRequest
     }
     RenderRequest request{
         scene.asset, scene.ground, render.extent, camera.vertical_fov_degrees * (std::numbers::pi / 180),
-        {},          {},           render.ssaa};
+        {},          {},           render.ssaa,   render.mode};
     if (!camera.auto_frame)
     {
         try

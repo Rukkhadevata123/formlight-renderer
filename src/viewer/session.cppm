@@ -249,7 +249,8 @@ ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget)
         const auto *area = std::get_if<AreaLighting>(&light.source);
         return area && area->sampling.samples > 1;
     };
-    if (lighting && light_center_cost_ <= budget && std::ranges::any_of(lighting->direct, multisampled))
+    if (applied_.request.mode != RenderMode::Path && lighting && light_center_cost_ <= budget &&
+        std::ranges::any_of(lighting->direct, multisampled))
     {
         return Quality::LightCenter;
     }
@@ -336,15 +337,15 @@ void ViewerSession::schedule_render(Clock::time_point now)
         view.area_light_pattern = AreaLightPattern::Center;
     }
     auto renderer = frame_ ? frame_->result.renderer : PreviewRenderer{scene_->preview.scene};
-    rendering_.emplace(
-        FrameRequest{requested_, quality, navigating, applied_.request.extent, view},
-        [renderer = std::move(renderer), lighting = applied_.request.lighting, view](std::stop_token stop) mutable
-        {
-            renderer.set_lighting(std::move(lighting));
-            const auto start = Clock::now();
-            auto image = renderer.render(view, stop);
-            return TimedImage{std::move(image), Clock::now() - start, std::move(renderer)};
-        });
+    rendering_.emplace(FrameRequest{requested_, quality, navigating, applied_.request.extent, view},
+                       [renderer = std::move(renderer), lighting = applied_.request.lighting,
+                        mode = applied_.request.mode, view](std::stop_token stop) mutable
+                       {
+                           renderer.configure(mode, std::move(lighting));
+                           const auto start = Clock::now();
+                           auto image = renderer.render(view, stop);
+                           return TimedImage{std::move(image), Clock::now() - start, std::move(renderer)};
+                       });
 }
 
 const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_point now)

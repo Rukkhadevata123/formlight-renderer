@@ -8,11 +8,12 @@ auto main(int argc, char **argv) -> int
 {
     if (argc == 1 || (argc == 2 && std::string_view{argv[1]} == "--help"))
     {
-        std::println("Usage: formlight-renderer --inspect MODEL\n"
-                     "       formlight-renderer --render MODEL (--output IMAGE.png | --pixel X Y)\n"
-                     "       formlight-renderer --scene SCENE.toml (--output IMAGE.png | --pixel X Y)\n"
-                     "                         [--mode raster|hybrid] [--ssaa 1|2] [--light-samples N] [--seed N]\n"
-                     "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
+        std::println(
+            "Usage: formlight-renderer --inspect MODEL\n"
+            "       formlight-renderer --render MODEL (--output IMAGE.png | --pixel X Y)\n"
+            "       formlight-renderer --scene SCENE.toml (--output IMAGE.png | --pixel X Y)\n"
+            "                         [--mode raster|hybrid|path] [--ssaa 1|2] [--light-samples N] [--seed N]\n"
+            "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
         return 0;
     }
 
@@ -63,7 +64,7 @@ auto main(int argc, char **argv) -> int
             }
             const auto preview = load_preview(request);
             preview.scene.check_output_path(output);
-            const auto image = render_preview(preview.scene, preview.view, request.lighting);
+            const auto image = PreviewRenderer{preview.scene, request.lighting, request.mode}.render(preview.view);
             write_png(output, image, config.display);
             std::println("Wrote {} ({} x {})", output.string(), request.extent.width, request.extent.height);
             return 0;

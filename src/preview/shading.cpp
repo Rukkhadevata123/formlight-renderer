@@ -16,14 +16,35 @@ LinearColor outgoing_color(const SurfaceMaterial &surface, Vec3 reflected) noexc
 }
 } // namespace
 
-PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting)
+PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting, RenderMode mode)
     : scene_(scene), solid_filter_(scene.solid_filter())
 {
+    configure(mode, std::move(lighting));
+}
+
+void PreviewRenderer::configure(RenderMode mode, std::optional<PreviewLighting> lighting)
+{
+    if (mode == RenderMode::Path)
+    {
+        if (!path_)
+        {
+            path_ = std::make_shared<PathIntegrator>(scene_);
+        }
+        lighting_.reset();
+        shadow_maps_.clear();
+        blockers_.reset();
+        return;
+    }
+    path_.reset();
     set_lighting(std::move(lighting));
 }
 
 void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 {
+    if (path_)
+    {
+        return;
+    }
     std::vector<std::shared_ptr<const DirectionalShadowMap>> maps;
     if (lighting)
     {

@@ -29,6 +29,12 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 默认每个像素采样一次。在 TOML 的 `[render]` 中设置 `ssaa = 2`，或在命令行加上 `--ssaa 2`，即可启用 2×2 超采样。四个子样本各自处理深度、镂空、光照和透明层，然后在线性空间取平均。用 `--pixel X Y` 可以查看每个子样本的位置、权重、命中表面和颜色，以及合成后的像素颜色。
 
+### 路径追踪的首命中
+
+在 CLI 加上 `--mode path`，或在 TOML 的 `[render]` 中设置 `mode = "path"`。目前积分器从相机发射主射线，经 BVH 取最近的可见表面，返回材质的线性自发光。未命中时环境为黑色。主射线接受 OPAQUE 和通过阈值的 MASK，跳过 BLEND，按材质的单双面设置求交。直接光与后续反弹留到下一阶段。
+
+运行 `formlight-renderer --scene scenes/materials/emissive-panels.toml --mode path --pixel 200 160`，可在背光的不透明面板上重放首命中，预期线性 RGB 为 (0.25, 0.125, 0.0625)。将像素参数换成 `--output build/release/path-emission.png` 可输出整图。[场景](scenes/materials/emissive-panels.toml) · [积分器](src/path/integrator.cppm)
+
 ### 自定义光栅 shader
 
 构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)

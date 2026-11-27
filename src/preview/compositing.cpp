@@ -164,6 +164,25 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
 ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::stop_token stop) const
 {
     const ImageExtent extent = view.camera.extent();
+    // Only the render's stop token may interrupt the frame; a cancelled outer TBB task could skip rows.
+    oneapi::tbb::task_group_context frame_tasks{oneapi::tbb::task_group_context::isolated};
+    if (path_)
+    {
+        ColorImage image{extent};
+        const auto trace_row = [&](int y)
+        {
+            if (stop.stop_requested())
+            {
+                throw std::runtime_error("Rendering cancelled");
+            }
+            for (int x = 0; x < extent.width; ++x)
+            {
+                image[y, x] = trace_primary(view, {x, y});
+            }
+        };
+        oneapi::tbb::parallel_for(0, extent.height, trace_row, frame_tasks);
+        return image;
+    }
     ColorImage image{extent, background};
     std::vector<std::optional<RasterHit>> pixels(static_cast<std::size_t>(extent.width) * extent.height);
     const VisibilityBuffer visible{pixels.data(), extent.height, extent.width};
@@ -187,8 +206,6 @@ ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::sto
             composite_layers({&image[y, 0], static_cast<std::size_t>(extent.width)}, blends[y], shade_hit);
         }
     };
-    // Only the render's stop token may interrupt the frame; a cancelled outer TBB task could skip rows.
-    oneapi::tbb::task_group_context frame_tasks{oneapi::tbb::task_group_context::isolated};
     oneapi::tbb::parallel_for(0, extent.height, shade_row, frame_tasks);
     return image;
 }
@@ -202,7 +219,8 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
             std::format("Pixel ({}, {}) is outside the {} x {} image", pixel.x, pixel.y, extent.width, extent.height));
     }
     const auto grid = sample_grid_view(view);
-    const auto pieces = RasterTriangle::prepare(grid.camera, scene_.instances(), grid.depth, stop);
+    const auto pieces = path_ ? std::vector<RasterTriangle>{}
+                              : RasterTriangle::prepare(grid.camera, scene_.instances(), grid.depth, stop);
     const int axis = view.ssaa;
     const int count = axis * axis;
     PixelDiagnostic report{.pixel = pixel, .samples = {}, .color = {}};
@@ -213,10 +231,44 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
         const auto center = pixel_center(sample.x, sample.y);
         auto &record = report.samples.emplace_back(SampleDiagnostic{
             .position = {center.x / axis, center.y / axis}, .weight = 1.0 / count, .color = background});
-        diagnose_sample(grid, sample, pieces, record, stop);
+        if (path_)
+        {
+            if (stop.stop_requested())
+            {
+                throw std::runtime_error("Pixel inspection cancelled");
+            }
+            record.color = trace_primary(grid, sample, &record);
+        }
+        else
+        {
+            diagnose_sample(grid, sample, pieces, record, stop);
+        }
     }
     report.color = resolve_samples(count, [&](int i) { return report.samples[i].color; });
     return report;
+}
+
+LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord pixel, SampleDiagnostic *record) const
+{
+    const auto ray = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y));
+    const double depth_per_unit = view.camera.forward_component(ray.direction);
+    // The camera depth range includes both endpoints; ray queries have open intervals.
+    const RayInterval interval{
+        std::nextafter(view.depth.near_depth / depth_per_unit, 0.0),
+        std::nextafter(view.depth.far_depth / depth_per_unit, std::numeric_limits<double>::infinity())};
+    std::optional<PathHit> first;
+    const auto color = path_->radiance(ray, interval, record ? &first : nullptr);
+    if (record && first)
+    {
+        const auto &hit = first->intersection;
+        const auto id = hit.surface.id;
+        const auto &instance = scene_.instance(id.instance);
+        const auto &face = instance.triangles[std::to_underlying(id.primitive)];
+        const bool back_face = dot(face.geometric_normal(), instance.transform.to_local_vector(ray.direction)) > 0;
+        record->surface = DiagnosticSurface{
+            {hit.surface, hit.t * depth_per_unit, back_face}, face.material_index, first->material, {}};
+    }
+    return color;
 }
 
 void PreviewRenderer::diagnose_sample(const PreviewView &view, PixelCoord pixel, std::span<const RasterTriangle> pieces,

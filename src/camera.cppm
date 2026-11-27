@@ -63,6 +63,10 @@ export class PinholeCamera
     // Return a finite projection in front of the eye plane, including points outside the image.
     [[nodiscard]] std::optional<ProjectedPoint> project(Vec3 world_point) const noexcept;
     [[nodiscard]] ViewPoint to_view(Vec3 world_point) const noexcept;
+    [[nodiscard]] double forward_component(Vec3 direction) const noexcept
+    {
+        return dot(direction, forward_);
+    }
     [[nodiscard]] std::optional<ProjectedPoint> project_view(ViewPoint point) const noexcept;
     // The primary ray has unit direction, so its parameter measures distance in world units.
     [[nodiscard]] Ray ray_for_sample(ImagePoint sample) const noexcept;

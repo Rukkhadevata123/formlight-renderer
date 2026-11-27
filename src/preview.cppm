@@ -6,6 +6,7 @@ export import formlight.scene_config;
 export import formlight.raster;
 import formlight.ray_query;
 import formlight.shadow_map;
+import formlight.path;
 
 namespace formlight
 {
@@ -115,14 +116,18 @@ export struct PixelDiagnostic
 export class PreviewRenderer
 {
   public:
-    explicit PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting = {});
+    explicit PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting = {},
+                             RenderMode mode = RenderMode::Raster);
     // Copies share immutable shadow data. Relighting one copy leaves in-flight frames and picks intact.
     void set_lighting(std::optional<PreviewLighting> lighting);
+    void configure(RenderMode mode, std::optional<PreviewLighting> lighting);
     [[nodiscard]] ColorImage render(const PreviewView &view, std::stop_token stop = {}) const;
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
   private:
     [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop) const;
+    [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel,
+                                            SampleDiagnostic *record = nullptr) const;
     void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
                          SampleDiagnostic &report, std::stop_token stop) const;
     [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
@@ -138,6 +143,7 @@ export class PreviewRenderer
     std::optional<PreviewLighting> lighting_;
     std::vector<std::shared_ptr<const DirectionalShadowMap>> shadow_maps_;
     std::shared_ptr<const TriangleBvh> blockers_;
+    std::shared_ptr<const PathIntegrator> path_;
 };
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,
@@ -184,12 +190,12 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 export [[nodiscard]] ColorImage render_scene(const RenderRequest &request)
 {
     const auto preview = load_preview(request);
-    return render_preview(preview.scene, preview.view, request.lighting);
+    return PreviewRenderer{preview.scene, request.lighting, request.mode}.render(preview.view);
 }
 
 export [[nodiscard]] PixelDiagnostic diagnose_pixel(const RenderRequest &request, PixelCoord pixel)
 {
     const auto preview = load_preview(request);
-    return diagnose_pixel(preview.scene, preview.view, pixel, request.lighting);
+    return PreviewRenderer{preview.scene, request.lighting, request.mode}.diagnose(preview.view, pixel);
 }
 } // namespace formlight

@@ -254,6 +254,17 @@ void check_frame_replacement(const std::filesystem::path &asset, const std::file
     config.render.ssaa = 2;
     config.lighting->lights[0].width = 9; // The earlier unapplied width was accepted by Apply during this load.
     check_image(*opened, config);
+
+    auto &active = document.session();
+    active.light_settings() = config.lighting;
+    for (const auto mode : {RenderMode::Path, RenderMode::Hybrid})
+    {
+        active.render_settings().mode = mode;
+        document.apply_settings();
+        const auto &frame = await_frame(active, now);
+        config.render.mode = mode;
+        check_image(frame, config);
+    }
 }
 } // namespace
 

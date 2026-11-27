@@ -42,7 +42,7 @@ target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlpl
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
 add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp)
-target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
+target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/path/integrator.cppm src/preview.cppm)
 target_sources(formlight_gltf PRIVATE FILE_SET internal_modules TYPE CXX_MODULES FILES
     src/io/gltf/mesh.cppm src/io/gltf/resources.cppm src/io/gltf/tangents.cppm src/io/gltf/texture_transform.cppm)
 target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf mikktspace::mikktspace formlight_io TBB::tbb)
@@ -182,6 +182,10 @@ if(BUILD_TESTING)
     add_executable(emissive_panels_test tests/emissive_panels_test.cpp)
     target_link_libraries(emissive_panels_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME emissive_panels COMMAND emissive_panels_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/emissive-panels.toml")
+
+    add_executable(path_first_hit_test tests/path_first_hit_test.cpp)
+    target_link_libraries(path_first_hit_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME path_first_hit COMMAND path_first_hit_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/emissive-panels.toml")
 
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
