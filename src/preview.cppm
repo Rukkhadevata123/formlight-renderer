@@ -171,6 +171,10 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     {
         scene->set_path_material(entry.material, entry.type, entry.ior);
     }
+    for (const auto node : request.sampling_targets)
+    {
+        scene->mark_sampling_target(node);
+    }
     const auto subject = world_bounds(scene->instances());
     auto bounds = subject;
     if (request.ground)

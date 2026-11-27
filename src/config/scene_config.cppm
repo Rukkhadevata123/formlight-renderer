@@ -100,12 +100,14 @@ struct SceneSettings
     std::filesystem::path asset;
     bool ground{};
     std::vector<PathMaterialSettings> path_materials{};
+    std::vector<std::uint32_t> sampling_targets{}; // glTF node indices in the active scene.
 
     void fields(this auto &self, auto &&field)
     {
         field("asset", self.asset);
         field("ground", self.ground);
         field("path_materials", self.path_materials);
+        field("sampling_targets", self.sampling_targets);
     }
 };
 
@@ -282,6 +284,7 @@ struct RenderRequest
     RenderMode mode{RenderMode::Raster};
     PathSampling path_sampling{};
     std::vector<PathMaterialSettings> path_materials{};
+    std::vector<std::uint32_t> sampling_targets{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -371,7 +374,8 @@ struct RenderRequest
                           render.ssaa,
                           render.mode,
                           {render.path_samples, render.max_bounces, render.sampling.seed, render.bounce_sampling},
-                          scene.path_materials};
+                          scene.path_materials,
+                          scene.sampling_targets};
     if (!camera.auto_frame)
     {
         try

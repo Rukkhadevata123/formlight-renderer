@@ -2,6 +2,7 @@ import std;
 import formlight.ray_query;
 import formlight.sampling;
 import formlight.emitter_sampling;
+import formlight.target_sampling;
 
 namespace
 {
@@ -62,12 +63,53 @@ void check_emitter_pdf()
         throw std::runtime_error("An edge-on emitter has zero solid angle");
     }
 }
+void check_extra_target()
+{
+    const std::array mesh{
+        Triangle{.vertices = {TriangleVertex{{-1, -1, 0}}, TriangleVertex{{1, -1, 0}}, TriangleVertex{{0, 1, 0}}}}};
+    const std::array instances{MeshInstance{InstanceId{3}, mesh, {Basis3{}, {0, 0, 2}}, true}};
+    const DirectionTargets sphere{instances, [](const Triangle &) { return false; }};
+    const DirectionTargets overlap{instances, [](const Triangle &) { return true; }};
+    // The triangle has area 2; its enclosing sphere has radius sqrt(2). From the origin the half angle is 45 degrees.
+    const double cap_height = 1 - std::sqrt(0.5);
+    const double sphere_pdf = 1 / (2 * std::numbers::pi * cap_height);
+    const Ray central{{}, {0, 0, 1}};
+    if (std::abs(overlap.density(central) - 0.5 * (2 + sphere_pdf)) > 1e-12 || sphere.density({{}, {1, 0, 0}}) != 0)
+    {
+        throw std::runtime_error("Overlapping emitter and instance target have incorrect mixture density");
+    }
+
+    PathSampler rng{7, 1, 0};
+    double sum_z = 0;
+    constexpr unsigned draws = 8192;
+    for (unsigned i = 0; i < draws; ++i)
+    {
+        const auto d = sphere.sample({}, rng).value();
+        if (std::abs(dot(d, d) - 1) > 1e-12 || std::abs(sphere.density({{}, d}) - sphere_pdf) > 1e-12)
+        {
+            throw std::runtime_error("Sampled target direction lies outside its uniform cone");
+        }
+        sum_z += d.z;
+    }
+    if (std::abs(sum_z / draws - (1 - 0.5 * cap_height)) > 0.004)
+    {
+        throw std::runtime_error("Cosine of the cone angle must be uniformly distributed");
+    }
+
+    const Vec3 center{0, 0, 2};
+    const auto d = sphere.sample(center, rng).value();
+    if (std::abs(dot(d, d) - 1) > 1e-12 || sphere.density({center, d}) != 1 / (4 * std::numbers::pi))
+    {
+        throw std::runtime_error("An interior receiver must sample the full sphere");
+    }
+}
 } // namespace
 
 int main()
 try
 {
     check_emitter_pdf();
+    check_extra_target();
     return 0;
 }
 catch (const std::exception &error)

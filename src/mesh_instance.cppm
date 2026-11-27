@@ -152,6 +152,7 @@ export struct MeshInstance
     InstanceId id{};
     std::span<const Triangle> triangles;
     AffineTransform transform{};
+    bool sampling_target{};
 };
 
 export struct Bounds3

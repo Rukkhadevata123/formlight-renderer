@@ -18,6 +18,8 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.render.max_bounces = 3;
     config.render.bounce_sampling = BounceSampling::LightMixture;
     config.scene.path_materials = {{0, PathSurface::Dielectric, 1.33}};
+    const auto geometry = GltfScene::load(config.scene.asset, GltfContent::Geometry).value();
+    config.scene.sampling_targets = {std::to_underlying(geometry.instances().front().id)};
     config.render.sampling = {4, std::numeric_limits<std::uint64_t>::max()};
     config.camera.auto_frame = false;
     config.camera.position = {2, 1, 3};
@@ -49,6 +51,10 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.display.tone_mapping = ToneMapping::Reinhard;
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
+    if (loaded.scene.sampling_targets != config.scene.sampling_targets)
+    {
+        throw std::runtime_error("Save As lost the selected sampling target node");
+    }
     const auto &override = loaded.scene.path_materials.at(0);
     if (override.material != 0 || override.type != PathSurface::Dielectric || override.ior != 1.33)
     {

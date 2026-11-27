@@ -1,5 +1,6 @@
 [scene]
 asset = "../../assets/CornellGlass.gltf"
+sampling_targets = [1]
 
 [[scene.path_materials]]
 material = 4

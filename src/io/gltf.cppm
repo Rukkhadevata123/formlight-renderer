@@ -90,6 +90,7 @@ export class GltfScene
     // Procedural meshes such as the preview floor are opaque and visible from either side.
     void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
     void set_path_material(std::size_t gltf_index, PathSurface type, double ior);
+    void mark_sampling_target(std::uint32_t node_index);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
     {
         return instances_.at(node_instance_slots_.at(std::to_underlying(id)).value());

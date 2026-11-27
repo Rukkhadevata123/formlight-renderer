@@ -34,14 +34,17 @@ class PathSampler
     std::uint64_t state_;
 };
 
+[[nodiscard]] inline Vec3 polar_direction(Vec3 normal, double sin_theta, double cos_theta, double phi)
+{
+    const Vec3 axis = std::abs(normal.x) < 0.9 ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
+    const Vec3 tangent = unit_vector(cross(axis, normal), "Invalid scattering normal");
+    return tangent * (sin_theta * std::cos(phi)) + cross(normal, tangent) * (sin_theta * std::sin(phi)) +
+           normal * cos_theta;
+}
+
 // Map a uniform disk to the hemisphere. The resulting solid-angle density is cos(theta) / pi.
 [[nodiscard]] inline Vec3 cosine_hemisphere(Vec3 normal, double u, double v)
 {
-    const double radius = std::sqrt(u);
-    const double phi = 2 * std::numbers::pi * v;
-    const Vec3 axis = std::abs(normal.x) < 0.9 ? Vec3{1, 0, 0} : Vec3{0, 1, 0};
-    const Vec3 tangent = unit_vector(cross(axis, normal), "Invalid scattering normal");
-    return tangent * (radius * std::cos(phi)) + cross(normal, tangent) * (radius * std::sin(phi)) +
-           normal * std::sqrt(1 - u);
+    return polar_direction(normal, std::sqrt(u), std::sqrt(1 - u), 2 * std::numbers::pi * v);
 }
 } // namespace formlight

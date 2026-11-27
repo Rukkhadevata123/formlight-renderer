@@ -340,6 +340,15 @@ void GltfScene::set_path_material(std::size_t gltf_index, PathSurface type, doub
     mat.ior = ior;
 }
 
+void GltfScene::mark_sampling_target(std::uint32_t node_index)
+{
+    if (node_index >= node_instance_slots_.size() || !node_instance_slots_[node_index])
+    {
+        throw std::invalid_argument(std::format("Sampling target node {} has no mesh in the active scene", node_index));
+    }
+    instances_[*node_instance_slots_[node_index]].sampling_target = true;
+}
+
 void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
 {
     if (materials_.empty() || mesh.empty())

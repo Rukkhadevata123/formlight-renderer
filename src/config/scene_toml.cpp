@@ -40,6 +40,18 @@ template <class T> void read_value(const toml::node &node, T &value, const Path 
         }
         value = {read_real((*array)[0]), read_real((*array)[1]), read_real((*array)[2])};
     }
+    else if constexpr (std::same_as<T, std::vector<std::uint32_t>>)
+    {
+        const auto *entries = node.as_array();
+        if (!entries)
+        {
+            throw std::invalid_argument("expected an array of glTF node indices");
+        }
+        for (const auto &entry : *entries)
+        {
+            read_value(entry, value.emplace_back(), directory);
+        }
+    }
     else if constexpr (std::same_as<T, double>)
     {
         value = read_real(node);
@@ -196,6 +208,15 @@ toml::table write_group(const ConfigGroup auto &group, const Path &directory)
             else if constexpr (ConfigGroup<T>)
             {
                 table.insert(key, write_group(value, directory));
+            }
+            else if constexpr (std::same_as<T, std::vector<std::uint32_t>>)
+            {
+                if (!value.empty())
+                {
+                    toml::array nodes;
+                    nodes.insert(nodes.end(), value.begin(), value.end());
+                    table.insert(key, std::move(nodes));
+                }
             }
             else if constexpr (std::same_as<T, Path>)
             {

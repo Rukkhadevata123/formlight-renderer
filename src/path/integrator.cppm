@@ -5,7 +5,7 @@ import formlight.gltf;
 import formlight.ray_query;
 import formlight.scene_config;
 import formlight.sampling;
-import formlight.emitter_sampling;
+import formlight.target_sampling;
 
 namespace formlight
 {
@@ -34,14 +34,14 @@ export class PathIntegrator
                   return mat.double_sided || mat.path_surface == PathSurface::Dielectric ? CullFace::None
                                                                                          : CullFace::Back;
               })),
-          emitters_(std::make_shared<EmitterSampler>(scene.instances(),
-                                                     [&scene](const Triangle &face)
-                                                     {
-                                                         const auto &material = scene.material(face);
-                                                         const auto &e = material.emission_multiplier;
-                                                         return material.alpha_mode != AlphaMode::Blend &&
-                                                                (e.r > 0 || e.g > 0 || e.b > 0);
-                                                     }))
+          targets_(std::make_shared<DirectionTargets>(scene.instances(),
+                                                      [&scene](const Triangle &face)
+                                                      {
+                                                          const auto &material = scene.material(face);
+                                                          const auto &e = material.emission_multiplier;
+                                                          return material.alpha_mode != AlphaMode::Blend &&
+                                                                 (e.r > 0 || e.g > 0 || e.b > 0);
+                                                      }))
     {
     }
 
@@ -208,11 +208,11 @@ export class PathIntegrator
             return std::nullopt;
         }
         const Vec3 origin = surface.origin.along(geometric).origin;
-        const bool mixed = method == BounceSampling::LightMixture && !emitters_->empty();
+        const bool mixed = method == BounceSampling::LightMixture && !targets_->empty();
         Vec3 direction;
         if (mixed && sampler.uniform() < 0.5)
         {
-            const auto sampled = emitters_->sample(origin, sampler);
+            const auto sampled = targets_->sample(origin, sampler);
             if (!sampled)
             {
                 return std::nullopt;
@@ -236,7 +236,7 @@ export class PathIntegrator
             return Bounce{ray, diffuse};
         }
         const double cosine_pdf = cosine / std::numbers::pi;
-        const double mixture_pdf = 0.5 * (cosine_pdf + emitters_->density(ray));
+        const double mixture_pdf = 0.5 * (cosine_pdf + targets_->density(ray));
         return Bounce{ray, diffuse * (cosine_pdf / mixture_pdf)};
     }
 
@@ -274,7 +274,7 @@ export class PathIntegrator
 
     const GltfScene &scene_;
     std::shared_ptr<const TriangleBvh> surfaces_, blockers_;
-    std::shared_ptr<const EmitterSampler> emitters_;
+    std::shared_ptr<const DirectionTargets> targets_;
     std::vector<std::pair<std::size_t, AreaLighting>> rectangles_;
 };
 } // namespace formlight

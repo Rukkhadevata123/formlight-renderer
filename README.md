@@ -41,7 +41,7 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 将 `max_bounces` 设为正数会从首命中继续追踪材质指定的反射或透射。每个相机样本平均 `path_samples` 条路径。默认的 `bounce_sampling = "cosine"` 按余弦加权半球分布采样，此时 Lambertian 权重化简为表面底色乘以非金属占比。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Path bounces` 为它们带回的线性 RGB。
 
-Cornell 场景启用 `bounce_sampling = "light_mixture"`。在漫反射表面，各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。场景缺少发光网格时自动使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
+Cornell 漫反射场景启用 `bounce_sampling = "light_mixture"`。在漫反射表面，各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。发光网格和额外采样目标均为空时使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
 
 Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：
 
@@ -52,6 +52,8 @@ build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bo
 ```
 
 [Cornell 玻璃球](scenes/path/cornell-glass.toml)使用同一机位。运行 `build/release/formlight-renderer.exe --scene scenes/path/cornell-glass.toml --output build/release/cornell-glass.png` 即可出图。场景通过 `[[scene.path_materials]]` 的 `material` 选择 glTF 中从 0 开始的材质索引。设为 `type = "dielectric"` 时，`ior = 1.5` 表示空气中封闭的无吸收玻璃，光线在入射面和出射面分别按 Fresnel 反射率抽样，全内反射时沿镜面方向继续。改成 `type = "mirror"` 并移除 `ior`，即可用同一个球观察理想镜面，反射颜色取自 glTF 底色。两种材质都可沿次级射线看见发光网格。显式矩形灯目前仅参与普通表面的直接光估计。[光学回归](tests/path_specular_test.cpp)
+
+在玻璃球场景的 `[scene]` 中，`sampling_targets = [1]` 指定 glTF 节点 1 的网格实例为额外方向采样目标。漫反射路径有 1/2 的概率采样余弦半球、1/4 采样顶灯、1/4 均匀采样玻璃球包围球张开的立体角。光线随后仍与真实网格求交，玻璃的自发光为零。将列表改为 `[]` 即可在同一场景比较只采样余弦半球与顶灯的效果。固定 128 条路径、64 个种子，球底三个地面探针的线性红通道综合 RMS 误差由 0.264 降到 0.232，球外对照点由 0.028 升到 0.045。[采样实现](src/path/target_sampling.cppm) · [焦散回归](tests/cornell_caustic_test.cpp)
 
 ### 自定义光栅 shader
 
