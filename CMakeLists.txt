@@ -98,6 +98,10 @@ if(BUILD_TESTING)
     target_link_libraries(triangle_modes_test PRIVATE formlight_gltf)
     add_test(NAME gltf_triangle_modes COMMAND triangle_modes_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/triangle-modes.gltf")
 
+    add_executable(nested_instances_test tests/gltf/nested_instances_test.cpp)
+    target_link_libraries(nested_instances_test PRIVATE formlight_gltf)
+    add_test(NAME gltf_nested_instances COMMAND nested_instances_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/nested-instances.gltf")
+
     add_executable(generated_normals_test tests/gltf/generated_normals_test.cpp)
     target_link_libraries(generated_normals_test PRIVATE formlight_gltf)
     add_test(NAME gltf_generated_normals COMMAND generated_normals_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/folded-normals.gltf")
