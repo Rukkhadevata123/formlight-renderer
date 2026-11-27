@@ -20,6 +20,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/geometry.cppm
         src/sampling.cppm
         src/path/emitter_sampling.cppm
+        src/path/specular.cppm
         src/image.cppm
         src/texture.cppm
         src/camera.cppm
@@ -196,6 +197,10 @@ if(BUILD_TESTING)
     add_executable(cornell_diffuse_test tests/cornell_diffuse_test.cpp)
     target_link_libraries(cornell_diffuse_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME cornell_diffuse COMMAND cornell_diffuse_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/cornell-diffuse.toml")
+
+    add_executable(path_specular_test tests/path_specular_test.cpp)
+    target_link_libraries(path_specular_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME path_specular COMMAND path_specular_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/cornell-glass.toml")
 
     add_executable(emitter_sampling_test tests/emitter_sampling_test.cpp)
     target_link_libraries(emitter_sampling_test PRIVATE formlight_renderer_core)

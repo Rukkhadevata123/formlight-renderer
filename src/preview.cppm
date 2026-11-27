@@ -167,6 +167,10 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     {
         throw std::runtime_error(scene.error());
     }
+    for (const auto &entry : request.path_materials)
+    {
+        scene->set_path_material(entry.material, entry.type, entry.ior);
+    }
     const auto subject = world_bounds(scene->instances());
     auto bounds = subject;
     if (request.ground)

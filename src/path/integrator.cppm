@@ -19,13 +19,21 @@ export struct PathHit
     std::optional<Vec3> bounce_radiance{};
 };
 
-// The scene must outlive the integrator. Primary rays see the authored front of single-sided materials.
+// The scene must outlive the integrator. Closed dielectrics expose both interfaces to path rays.
 export class PathIntegrator
 {
   public:
     explicit PathIntegrator(const GltfScene &scene)
-        : scene_(scene), surfaces_(std::make_shared<TriangleBvh>(scene.instances(), scene.solid_filter(),
-                                                                 scene.face_culling(CullFace::Back))),
+        : scene_(scene),
+          surfaces_(std::make_shared<TriangleBvh>(
+              scene.instances(), scene.solid_filter(),
+              [&scene](SurfaceId id)
+              {
+                  const auto &face = scene.instance(id.instance).triangles[std::to_underlying(id.primitive)];
+                  const auto &mat = scene.material(face);
+                  return mat.double_sided || mat.path_surface == PathSurface::Dielectric ? CullFace::None
+                                                                                         : CullFace::Back;
+              })),
           emitters_(std::make_shared<EmitterSampler>(scene.instances(),
                                                      [&scene](const Triangle &face)
                                                      {
@@ -89,7 +97,7 @@ export class PathIntegrator
         for (std::uint32_t i = 0; i < sampling.samples; ++i)
         {
             PathSampler sampler{sampling.seed, pixel, i};
-            sum = sum + diffuse_path(surface, ray.direction * -1, sampler, sampling, pattern, stop);
+            sum = sum + trace_bounces(surface, ray.direction, sampler, sampling, pattern, stop);
         }
         const Vec3 bounced = sum / sampling.samples;
         if (first)
@@ -106,6 +114,8 @@ export class PathIntegrator
         SurfaceRayOrigin origin;
         Vec3 normal;
         bool back_face;
+        PathSurface type;
+        double ior;
     };
 
     [[nodiscard]] Interaction interaction(const RayHit &hit, const Ray &ray) const
@@ -114,14 +124,24 @@ export class PathIntegrator
         const auto &instance = scene_.instance(id.instance);
         const auto &face = instance.triangles[std::to_underlying(id.primitive)];
         const bool back = dot(face.geometric_normal(), instance.transform.to_local_vector(ray.direction)) > 0;
-        return {scene_.surface_material(face, weights, gradients), SurfaceRayOrigin{instance, face, weights},
-                scene_.shading_normal(instance, face, weights, gradients, back), back};
+        const auto &mat = scene_.material(face);
+        auto surface = scene_.surface_material(face, weights, gradients);
+        if (back && !mat.double_sided)
+        {
+            surface.emission = {};
+        }
+        return {surface,
+                SurfaceRayOrigin{instance, face, weights},
+                scene_.shading_normal(instance, face, weights, gradients, back),
+                back,
+                mat.path_surface,
+                mat.ior};
     }
 
     [[nodiscard]] Vec3 direct_light(const Interaction &surface, const Ray &ray, std::uint64_t pixel,
                                     AreaLightPattern pattern, std::stop_token stop, PathHit *first = nullptr) const
     {
-        if (rectangles_.empty())
+        if (rectangles_.empty() || surface.type != PathSurface::Diffuse)
         {
             return {};
         }
@@ -145,13 +165,48 @@ export class PathIntegrator
     struct Bounce
     {
         Ray ray;
-        double weight; // (cos(theta) / pi) divided by the sampling density.
+        Vec3 weight;
     };
 
-    [[nodiscard]] std::optional<Bounce> sample_bounce(const Interaction &surface, PathSampler &sampler,
+    [[nodiscard]] static Bounce specular_bounce(const Interaction &surface, Vec3 incident, Vec3 geometric, Vec3 albedo,
+                                                PathSampler &sampler)
+    {
+        const Vec3 normal = dot(surface.normal, incident) < 0 ? surface.normal : geometric;
+        if (surface.type == PathSurface::Mirror)
+        {
+            Vec3 direction = mirror_direction(incident, normal);
+            if (dot(direction, geometric) <= 0)
+            {
+                direction = mirror_direction(incident, geometric);
+            }
+            return Bounce{surface.origin.along(direction), albedo};
+        }
+        const double eta = surface.back_face ? surface.ior : 1 / surface.ior;
+        const double u = sampler.uniform();
+        auto event = sample_dielectric(incident, normal, eta, u);
+        // At silhouettes an interpolated normal can send the ray to the wrong side of the actual triangle.
+        if ((event.transmitted ? -1 : 1) * dot(event.direction, geometric) <= 0)
+        {
+            event = sample_dielectric(incident, geometric, eta, u);
+        }
+        return Bounce{surface.origin.along(event.direction), Vec3{1, 1, 1} * event.radiance_weight};
+    }
+
+    [[nodiscard]] std::optional<Bounce> sample_bounce(const Interaction &surface, Vec3 incident, PathSampler &sampler,
                                                       BounceSampling method) const
     {
         const Vec3 geometric = surface.origin.geometric_normal() * (surface.back_face ? -1 : 1);
+        const auto &base = surface.material.base_color;
+        const Vec3 albedo{base.r, base.g, base.b};
+        if (surface.type != PathSurface::Diffuse)
+        {
+            return specular_bounce(surface, incident, geometric, albedo, sampler);
+        }
+        const Vec3 diffuse = albedo * (1 - surface.material.metallic);
+        if (diffuse == Vec3{} || dot(surface.normal, incident) >= 0)
+        {
+            return std::nullopt;
+        }
         const Vec3 origin = surface.origin.along(geometric).origin;
         const bool mixed = method == BounceSampling::LightMixture && !emitters_->empty();
         Vec3 direction;
@@ -178,15 +233,15 @@ export class PathIntegrator
         const Ray ray{origin, direction};
         if (!mixed)
         {
-            return Bounce{ray, 1};
+            return Bounce{ray, diffuse};
         }
         const double cosine_pdf = cosine / std::numbers::pi;
         const double mixture_pdf = 0.5 * (cosine_pdf + emitters_->density(ray));
-        return Bounce{ray, cosine_pdf / mixture_pdf};
+        return Bounce{ray, diffuse * (cosine_pdf / mixture_pdf)};
     }
 
-    [[nodiscard]] Vec3 diffuse_path(Interaction surface, Vec3 outgoing, PathSampler &sampler,
-                                    const PathSampling &sampling, AreaLightPattern pattern, std::stop_token stop) const
+    [[nodiscard]] Vec3 trace_bounces(Interaction surface, Vec3 incident, PathSampler &sampler,
+                                     const PathSampling &sampling, AreaLightPattern pattern, std::stop_token stop) const
     {
         Vec3 radiance{}, throughput{1, 1, 1};
         for (std::uint32_t depth = 0; depth < sampling.max_bounces; ++depth)
@@ -195,19 +250,13 @@ export class PathIntegrator
             {
                 throw std::runtime_error("Rendering cancelled");
             }
-            const auto &base = surface.material.base_color;
-            throughput = Vec3{throughput.x * base.r, throughput.y * base.g, throughput.z * base.b} *
-                         (1 - surface.material.metallic);
-            if (throughput == Vec3{} || dot(surface.normal, outgoing) <= 0)
-            {
-                break;
-            }
-            const auto bounce = sample_bounce(surface, sampler, sampling.method);
+            const auto bounce = sample_bounce(surface, incident, sampler, sampling.method);
             if (!bounce)
             {
                 break;
             }
-            throughput = throughput * bounce->weight;
+            const auto &weight = bounce->weight;
+            throughput = {throughput.x * weight.x, throughput.y * weight.y, throughput.z * weight.z};
             const Ray ray = bounce->ray;
             const auto hit = surfaces_->intersect(ray, {0, std::numeric_limits<double>::infinity()});
             if (!hit)
@@ -215,7 +264,7 @@ export class PathIntegrator
                 break;
             }
             surface = interaction(*hit, ray);
-            outgoing = ray.direction * -1;
+            incident = ray.direction;
             const auto &e = surface.material.emission;
             const Vec3 incoming = Vec3{e.r, e.g, e.b} + direct_light(surface, ray, sampler.next_bits(), pattern, stop);
             radiance = radiance + Vec3{throughput.x * incoming.x, throughput.y * incoming.y, throughput.z * incoming.z};

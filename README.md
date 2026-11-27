@@ -17,6 +17,7 @@ Formlight Renderer 是一个用 C++23 编写的 CPU 渲染器。下图是光栅�
 | 方盒的灯光与阴影 | 在 [lighting](scenes/lighting/) 中，从[方向光硬阴影](scenes/lighting/box-directional.toml)或[矩形灯软阴影](scenes/lighting/box-area-light.toml)开始。 |
 | 材质、纹理与透明层 | 在 [materials](scenes/materials/) 中，用[材质球](scenes/materials/material-spheres.toml)比较金属度与粗糙度，用[交叠透明层](scenes/materials/blend-layers.toml)观察遮挡和混合。 |
 | 漫反射间接光 | 用 [Cornell 漫反射房间](scenes/path/cornell-diffuse.toml)观察顶灯照亮白墙，以及红绿侧墙向墙角反射的颜色。 |
+| 镜面与折射 | 在 [Cornell 玻璃球](scenes/path/cornell-glass.toml)中观察球面反射的顶灯和透过球体的墙面。 |
 
 [方盒阴影对照](docs/box-shadows.md) 并排展示同机位的阴影图、阴影射线与矩形灯软阴影，并给出本影、半影、亮区的像素重放命令。
 
@@ -38,9 +39,9 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 运行 `formlight-renderer --scene scenes/lighting/box-area-light.toml --mode path --pixel 85 310` 可重放半影。种子 7 下，方盒挡住了 64 个灯面样本中的 35 个，地面的线性 RGB 三个通道均为 0.06451683。把模式切换为 `hybrid` 可逐样本核对灯面位置、遮挡物与直接光贡献。[方盒阴影对照](docs/box-shadows.md)
 
-将 `max_bounces` 设为正数会从首命中继续追踪漫反射。每个相机样本平均 `path_samples` 条路径。默认的 `bounce_sampling = "cosine"` 按余弦加权半球分布采样，此时 Lambertian 权重化简为表面底色乘以非金属占比。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Diffuse bounces` 为它们带回的线性 RGB。
+将 `max_bounces` 设为正数会从首命中继续追踪材质指定的反射或透射。每个相机样本平均 `path_samples` 条路径。默认的 `bounce_sampling = "cosine"` 按余弦加权半球分布采样，此时 Lambertian 权重化简为表面底色乘以非金属占比。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Path bounces` 为它们带回的线性 RGB。
 
-Cornell 场景启用 `bounce_sampling = "light_mixture"`。每次反弹各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。场景缺少发光网格时自动使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
+Cornell 场景启用 `bounce_sampling = "light_mixture"`。在漫反射表面，各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。场景缺少发光网格时自动使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
 
 Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：
 
@@ -49,6 +50,8 @@ $scene = "scenes/path/cornell-diffuse.toml"
 build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bounces 1 --output build/release/cornell-direct.png
 build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bounces 3 --output build/release/cornell-bounces.png
 ```
+
+[Cornell 玻璃球](scenes/path/cornell-glass.toml)使用同一机位。运行 `build/release/formlight-renderer.exe --scene scenes/path/cornell-glass.toml --output build/release/cornell-glass.png` 即可出图。场景通过 `[[scene.path_materials]]` 的 `material` 选择 glTF 中从 0 开始的材质索引。设为 `type = "dielectric"` 时，`ior = 1.5` 表示空气中封闭的无吸收玻璃，光线在入射面和出射面分别按 Fresnel 反射率抽样，全内反射时沿镜面方向继续。改成 `type = "mirror"` 并移除 `ior`，即可用同一个球观察理想镜面，反射颜色取自 glTF 底色。两种材质都可沿次级射线看见发光网格。显式矩形灯目前仅参与普通表面的直接光估计。[光学回归](tests/path_specular_test.cpp)
 
 ### 自定义光栅 shader
 

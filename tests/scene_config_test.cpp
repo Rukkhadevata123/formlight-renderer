@@ -17,6 +17,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.render.path_samples = 11;
     config.render.max_bounces = 3;
     config.render.bounce_sampling = BounceSampling::LightMixture;
+    config.scene.path_materials = {{0, PathSurface::Dielectric, 1.33}};
     config.render.sampling = {4, std::numeric_limits<std::uint64_t>::max()};
     config.camera.auto_frame = false;
     config.camera.position = {2, 1, 3};
@@ -48,6 +49,11 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.display.tone_mapping = ToneMapping::Reinhard;
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
+    const auto &override = loaded.scene.path_materials.at(0);
+    if (override.material != 0 || override.type != PathSurface::Dielectric || override.ior != 1.33)
+    {
+        throw std::runtime_error("Save As lost the dielectric material override");
+    }
     if (!loaded.lighting.value().lights.back().pcf)
     {
         throw std::runtime_error("Save As lost the directional light's PCF setting");

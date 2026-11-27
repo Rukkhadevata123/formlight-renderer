@@ -44,6 +44,10 @@ The [normal-map scene](../scenes/materials/normal-panels.toml) pairs authored ta
 
 An open Cornell-style room with red and green side walls, a rotated white block, and a downward-facing emissive ceiling patch. The geometry and embedded vertex buffer were created for Formlight and are distributed under the [project license](../LICENSE). The [diffuse scene](../scenes/path/cornell-diffuse.toml) uses this mesh light to measure color bleeding.
 
+## CornellGlass.gltf
+
+The same room with a closed, smooth-shaded icosphere in front of the block. The sphere has its own glTF material (index 4). The [glass scene](../scenes/path/cornell-glass.toml) assigns the dielectric and its refractive index. The mesh and embedded buffers were created for Formlight under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

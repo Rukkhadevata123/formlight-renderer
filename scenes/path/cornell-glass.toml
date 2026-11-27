@@ -1,0 +1,25 @@
+[scene]
+asset = "../../assets/CornellGlass.gltf"
+
+[[scene.path_materials]]
+material = 4
+type = "dielectric"
+ior = 1.5
+
+[camera]
+auto_frame = false
+position = [0, 1, 3.8]
+target = [0, 1, 0]
+vertical_fov_degrees = 41
+
+[render]
+mode = "path"
+width = 128
+height = 128
+path_samples = 128
+max_bounces = 6
+bounce_sampling = "light_mixture"
+seed = 7
+
+[display]
+tone_mapping = "reinhard"

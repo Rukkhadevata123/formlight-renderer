@@ -2,6 +2,7 @@ export module formlight.scene_config;
 
 import std;
 export import formlight.camera;
+export import formlight.specular;
 export import formlight.lighting;
 export import formlight.direct_lighting;
 
@@ -39,6 +40,13 @@ constexpr auto &choices(RenderMode) noexcept
 {
     return render_modes;
 }
+inline constexpr std::array path_surfaces{NamedValue{"diffuse", PathSurface::Diffuse},
+                                          NamedValue{"mirror", PathSurface::Mirror},
+                                          NamedValue{"dielectric", PathSurface::Dielectric}};
+constexpr auto &choices(PathSurface) noexcept
+{
+    return path_surfaces;
+}
 inline constexpr std::array bounce_sampling_modes{NamedValue{"cosine", BounceSampling::Cosine},
                                                   NamedValue{"light_mixture", BounceSampling::LightMixture}};
 constexpr auto &choices(BounceSampling) noexcept
@@ -70,15 +78,34 @@ template <class E> E parse_choice(std::string_view name)
 template <class T>
 concept ConfigGroup = requires(T &group) { group.fields([](auto &&...) {}); };
 
+struct PathMaterialSettings
+{
+    int material{-1}; // Zero-based glTF material index.
+    PathSurface type{PathSurface::Diffuse};
+    double ior{1.5};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("material", self.material);
+        field("type", self.type);
+        if (self.type == PathSurface::Dielectric)
+        {
+            field("ior", self.ior);
+        }
+    }
+};
+
 struct SceneSettings
 {
     std::filesystem::path asset;
     bool ground{};
+    std::vector<PathMaterialSettings> path_materials{};
 
     void fields(this auto &self, auto &&field)
     {
         field("asset", self.asset);
         field("ground", self.ground);
+        field("path_materials", self.path_materials);
     }
 };
 
@@ -254,6 +281,7 @@ struct RenderRequest
     int ssaa{1};
     RenderMode mode{RenderMode::Raster};
     PathSampling path_sampling{};
+    std::vector<PathMaterialSettings> path_materials{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -310,6 +338,18 @@ struct RenderRequest
         throw std::invalid_argument("scene.asset requires a model path");
     }
     (void)sample_grid_extent(render.extent, render.ssaa);
+    std::set<int> assigned;
+    for (const auto &entry : scene.path_materials)
+    {
+        if (entry.material < 0 || !assigned.insert(entry.material).second)
+        {
+            throw std::invalid_argument("scene.path_materials requires distinct nonnegative glTF material indices");
+        }
+        if (entry.type == PathSurface::Dielectric && !(std::isfinite(entry.ior) && entry.ior >= 1))
+        {
+            throw std::invalid_argument("Dielectric ior must be finite and at least 1");
+        }
+    }
     if (render.sampling.samples == 0)
     {
         throw std::invalid_argument("render.light_samples must be positive");
@@ -330,7 +370,8 @@ struct RenderRequest
                           {},
                           render.ssaa,
                           render.mode,
-                          {render.path_samples, render.max_bounces, render.sampling.seed, render.bounce_sampling}};
+                          {render.path_samples, render.max_bounces, render.sampling.seed, render.bounce_sampling},
+                          scene.path_materials};
     if (!camera.auto_frame)
     {
         try

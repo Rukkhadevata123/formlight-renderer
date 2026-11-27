@@ -4,6 +4,7 @@ import std;
 export import formlight.mesh_instance;
 export import formlight.texture;
 export import formlight.material;
+import formlight.specular;
 
 namespace formlight
 {
@@ -59,6 +60,8 @@ export struct GltfMaterial
     AlphaMode alpha_mode{AlphaMode::Opaque};
     float alpha_cutoff{0.5f};
     bool double_sided{};
+    PathSurface path_surface{PathSurface::Diffuse};
+    double ior{1.5};
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -86,6 +89,7 @@ export class GltfScene
     FaceCulling face_culling(CullFace) const && = delete;
     // Procedural meshes such as the preview floor are opaque and visible from either side.
     void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
+    void set_path_material(std::size_t gltf_index, PathSurface type, double ior);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
     {
         return instances_.at(node_instance_slots_.at(std::to_underlying(id)).value());

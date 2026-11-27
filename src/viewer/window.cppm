@@ -74,7 +74,7 @@ void show_sample(const SampleDiagnostic &report)
         ImGui::Text("Surface ambient (linear RGB)   %.3g  %.3g  %.3g", ambient.x, ambient.y, ambient.z);
         if (const auto &bounce = report.bounce_radiance)
         {
-            ImGui::Text("Diffuse bounces (linear RGB)   %.3g  %.3g  %.3g", bounce->x, bounce->y, bounce->z);
+            ImGui::Text("Path bounces (linear RGB)   %.3g  %.3g  %.3g", bounce->x, bounce->y, bounce->z);
         }
         if (base.a < 1)
         {

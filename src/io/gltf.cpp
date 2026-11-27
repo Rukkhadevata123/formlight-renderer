@@ -328,6 +328,18 @@ void GltfScene::check_output_path(const std::filesystem::path &path) const
     }
 }
 
+void GltfScene::set_path_material(std::size_t gltf_index, PathSurface type, double ior)
+{
+    // Slot zero belongs to primitives that omit the glTF material.
+    if (materials_.empty() || gltf_index >= materials_.size() - 1 || !materials_[gltf_index + 1])
+    {
+        throw std::invalid_argument(std::format("Path material {} is not used in the loaded scene", gltf_index));
+    }
+    auto &mat = *materials_[gltf_index + 1];
+    mat.path_surface = type;
+    mat.ior = ior;
+}
+
 void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
 {
     if (materials_.empty() || mesh.empty())

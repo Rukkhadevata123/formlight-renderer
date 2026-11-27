@@ -122,19 +122,20 @@ void read_group(const toml::table &table, ConfigGroup auto &group, std::string_v
                 }
                 read_group(*node->as_table(), value.emplace(), name + ".", directory);
             }
-            else if constexpr (std::same_as<T, std::vector<LightSettings>>)
+            else if constexpr (std::same_as<T, std::vector<LightSettings>> ||
+                               std::same_as<T, std::vector<PathMaterialSettings>>)
             {
                 const auto *entries = node->as_array();
                 if (!entries)
                 {
-                    throw std::invalid_argument(name + ": expected an array of light tables");
+                    throw std::invalid_argument(name + ": expected an array of tables");
                 }
                 for (const auto &entry : *entries)
                 {
                     const auto prefix = std::format("{}[{}].", name, value.size());
                     if (!entry.is_table())
                     {
-                        throw std::invalid_argument(prefix + "expected a light table");
+                        throw std::invalid_argument(prefix + "expected a table");
                     }
                     read_group(*entry.as_table(), value.emplace_back(), prefix, directory);
                 }
@@ -179,14 +180,18 @@ toml::table write_group(const ConfigGroup auto &group, const Path &directory)
                     table.insert(key, write_group(*value, directory));
                 }
             }
-            else if constexpr (std::same_as<T, std::vector<LightSettings>>)
+            else if constexpr (std::same_as<T, std::vector<LightSettings>> ||
+                               std::same_as<T, std::vector<PathMaterialSettings>>)
             {
-                toml::array lights;
-                for (const auto &light : value)
+                toml::array entries;
+                for (const auto &entry : value)
                 {
-                    lights.push_back(write_group(light, directory));
+                    entries.push_back(write_group(entry, directory));
                 }
-                table.insert(key, std::move(lights));
+                if (!entries.empty() || std::same_as<T, std::vector<LightSettings>>)
+                {
+                    table.insert(key, std::move(entries));
+                }
             }
             else if constexpr (ConfigGroup<T>)
             {

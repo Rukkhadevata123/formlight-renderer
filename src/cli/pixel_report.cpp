@@ -52,7 +52,7 @@ void print_sample(const SampleDiagnostic &report)
                      ambient.z);
         if (const auto &bounce = report.bounce_radiance)
         {
-            std::println("Diffuse bounces (linear RGB): ({}, {}, {})", bounce->x, bounce->y, bounce->z);
+            std::println("Path bounces (linear RGB): ({}, {}, {})", bounce->x, bounce->y, bounce->z);
         }
         if (base.a < 1)
         {
