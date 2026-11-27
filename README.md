@@ -20,4 +20,10 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 默认每个像素采样一次。在 TOML 的 `[render]` 中设置 `ssaa = 2`，或在命令行加上 `--ssaa 2`，即可启用 2×2 超采样。四个子样本各自处理深度、镂空、光照和透明层，然后在线性空间取平均。用 `--pixel X Y` 可以查看每个子样本的位置、权重、命中表面和颜色，以及合成后的像素颜色。
 
+### 自定义光栅 shader
+
+构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)
+
+导入 `formlight.shader`，把 shader 对象传给 `render_shader`。顶点函数返回网格局部位置和自定义 `Varying`，之后管线应用实例变换和相机投影。属性类型支持加法和乘以标量，光栅器用原三角形的透视校正权重插值。片元函数返回线性颜色时写入颜色和深度，返回 `std::nullopt` 时两者都保留原值。这个入口每像素取一个中心样本。[接口定义](src/raster/shader.cppm)
+
 源码采用 [MIT 许可证](LICENSE)。方盒模型和标志的来源与许可见[素材说明](assets/README.md)。

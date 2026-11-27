@@ -13,9 +13,14 @@ export struct RasterHit
     double view_depth;
     bool back_face{};
 
+    [[nodiscard]] auto depth_key() const noexcept
+    {
+        return std::pair{view_depth, surface.id};
+    }
+
     void keep_nearest(std::optional<RasterHit> &pixel, const SurfaceFilter &accept = {}) const
     {
-        const bool nearer = !pixel || std::tie(view_depth, surface.id) < std::tie(pixel->view_depth, pixel->surface.id);
+        const bool nearer = !pixel || depth_key() < pixel->depth_key();
         // TODO: Profile SurfaceFilter dispatch and alpha sampling separately on a dense foliage scene.
         if (nearer && (!accept || accept(surface)))
         {
@@ -33,6 +38,9 @@ struct RasterVertex
     Barycentrics source_weights;
 };
 
+// Each depth plane can add at most one vertex to the original triangle.
+constexpr std::size_t max_clipped_vertices = 3 + 2;
+
 export class RasterTriangle
 {
   public:
@@ -40,6 +48,9 @@ export class RasterTriangle
     [[nodiscard]] static std::vector<RasterTriangle> prepare(const PinholeCamera &camera,
                                                              std::span<const MeshInstance> instances,
                                                              ViewDepthRange range, std::stop_token stop = {});
+    // vertex_outputs returns three mesh-local positions plus any attributes needed by the visitor.
+    static void for_each_clipped(const PinholeCamera &camera, std::span<const MeshInstance> instances,
+                                 ViewDepthRange range, auto &&vertex_outputs, auto &&visit, std::stop_token stop = {});
     [[nodiscard]] std::optional<RasterHit> sample(ImagePoint point) const noexcept;
     [[nodiscard]] SurfaceId source() const noexcept
     {
@@ -57,6 +68,13 @@ export class RasterTriangle
     void rasterize(VisibilityBuffer target, const SurfaceFilter &accept = {}) const;
 
   private:
+    struct ProjectedPolygon
+    {
+        std::array<RasterVertex, max_clipped_vertices> vertices{};
+        std::size_t size{};
+    };
+    static ProjectedPolygon clip_and_project(const PinholeCamera &camera, ViewDepthRange range,
+                                             const std::array<ViewPoint, 3> &points);
     RasterTriangle(SurfaceId source, bool back_face, const RasterVertex &a, const RasterVertex &b,
                    const RasterVertex &c);
     SurfaceId source_;
@@ -75,6 +93,39 @@ export class RasterTriangle
     };
     PerspectiveDerivative dx_, dy_;
 };
+
+void RasterTriangle::for_each_clipped(const PinholeCamera &camera, std::span<const MeshInstance> instances,
+                                      ViewDepthRange range, auto &&vertex_outputs, auto &&visit, std::stop_token stop)
+{
+    if (!(range.near_depth > 0.0 && range.near_depth < range.far_depth))
+    {
+        throw std::invalid_argument("Raster clipping requires 0 < near depth < far depth");
+    }
+    for (const auto &instance : instances)
+    {
+        const auto to_view = [&](Vec3 p) { return camera.to_view(instance.transform.to_world_point(p)); };
+        const Vec3 local_eye = instance.transform.to_local_point(camera.view().position);
+        for (const auto &triangle : instance.triangles)
+        {
+            if (stop.stop_requested())
+            {
+                throw std::runtime_error("Rendering cancelled");
+            }
+            const auto &vertices = vertex_outputs(triangle);
+            const auto &[a, b, c] = vertices;
+            const auto polygon =
+                clip_and_project(camera, range, {to_view(a.position), to_view(b.position), to_view(c.position)});
+            // Local winding preserves the authored front for mirrored instances and all clipped pieces.
+            const bool back_face =
+                dot(cross(b.position - a.position, c.position - a.position), local_eye - a.position) < 0;
+            for (std::size_t i = 2; i < polygon.size; ++i)
+            {
+                const auto &v = polygon.vertices;
+                visit(RasterTriangle{{instance.id, triangle.id}, back_face, v[0], v[i - 1], v[i]}, vertices);
+            }
+        }
+    }
+}
 
 RasterTriangle::RasterTriangle(SurfaceId source, bool back_face, const RasterVertex &a, const RasterVertex &b,
                                const RasterVertex &c)

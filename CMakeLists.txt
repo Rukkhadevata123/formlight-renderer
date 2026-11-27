@@ -30,6 +30,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/raster/coverage.cppm
         src/raster/shadow_map.cppm
         src/raster/raster.cppm
+        src/raster/shader.cppm
         src/ray_query.cppm
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
@@ -58,6 +59,9 @@ endif()
 add_executable(formlight-renderer src/main.cpp src/cli/pixel_report.cpp ${formlight_app_manifest})
 target_sources(formlight-renderer PRIVATE FILE_SET CXX_MODULES FILES src/cli/render_options.cppm)
 target_link_libraries(formlight-renderer PRIVATE formlight_gltf formlight_io)
+
+add_executable(custom_shader examples/custom_shader.cpp ${formlight_app_manifest})
+target_link_libraries(custom_shader PRIVATE formlight_renderer_core formlight_io)
 
 if(FORMLIGHT_BUILD_VIEWER)
     find_package(SDL3 CONFIG REQUIRED)
@@ -89,6 +93,10 @@ if(BUILD_TESTING)
     add_executable(triangle_visibility_test tests/triangle_visibility_test.cpp)
     target_link_libraries(triangle_visibility_test PRIVATE formlight_renderer_core)
     add_test(NAME triangle_visibility COMMAND triangle_visibility_test)
+
+    add_executable(custom_shader_test tests/custom_shader_test.cpp)
+    target_link_libraries(custom_shader_test PRIVATE formlight_renderer_core)
+    add_test(NAME custom_shader_clipping COMMAND custom_shader_test)
 
     add_executable(gltf_geometry_test tests/gltf_geometry_test.cpp)
     target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)

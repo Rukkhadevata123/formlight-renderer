@@ -12,9 +12,7 @@ struct ClipVertex
     Barycentrics source_weights;
 };
 
-// Each depth plane can add at most one vertex to a convex polygon.
-constexpr std::size_t max_vertices = 3 + 2;
-using ClipPolygon = std::array<ClipVertex, max_vertices>;
+using ClipPolygon = std::array<ClipVertex, max_clipped_vertices>;
 
 enum class DepthPlane
 {
@@ -63,31 +61,34 @@ std::span<const ClipVertex> clip_plane(std::span<const ClipVertex> input, double
     return std::span{output}.first(count);
 }
 
-std::span<const RasterVertex> project_polygon(const PinholeCamera &camera, std::span<const ClipVertex> polygon,
-                                              std::array<RasterVertex, max_vertices> &output)
+} // namespace
+
+RasterTriangle::ProjectedPolygon RasterTriangle::clip_and_project(const PinholeCamera &camera, ViewDepthRange range,
+                                                                  const std::array<ViewPoint, 3> &points)
 {
-    for (std::size_t i = 0; i < polygon.size(); ++i)
+    const std::array input{ClipVertex{points[0], {1, 0, 0}}, ClipVertex{points[1], {0, 1, 0}},
+                           ClipVertex{points[2], {0, 0, 1}}};
+    ClipPolygon near_polygon{}, far_polygon{};
+    auto polygon = clip_plane(input, range.near_depth, DepthPlane::Near, near_polygon);
+    polygon = clip_plane(polygon, range.far_depth, DepthPlane::Far, far_polygon);
+
+    ProjectedPolygon projected;
+    for (const auto &vertex : polygon)
     {
-        const auto point = camera.project_view(polygon[i].view);
+        const auto point = camera.project_view(vertex.view);
         if (!point)
         {
             return {};
         }
-        output[i] = {*point, polygon[i].source_weights};
+        projected.vertices[projected.size++] = {*point, vertex.source_weights};
     }
-    return std::span{output}.first(polygon.size());
+    return projected;
 }
-} // namespace
 
 std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
                                                     std::span<const MeshInstance> instances, ViewDepthRange range,
                                                     std::stop_token stop)
 {
-    if (!(range.near_depth > 0.0 && range.near_depth < range.far_depth))
-    {
-        throw std::invalid_argument("Raster clipping requires 0 < near depth < far depth");
-    }
-
     std::vector<RasterTriangle> result;
     std::size_t triangle_count = 0;
     for (const auto &instance : instances)
@@ -95,37 +96,9 @@ std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
         triangle_count += instance.triangles.size();
     }
     result.reserve(triangle_count);
-    for (const auto &instance : instances)
-    {
-        const auto to_view = [&](Vec3 p) { return camera.to_view(instance.transform.to_world_point(p)); };
-        const auto local_eye = instance.transform.to_local_point(camera.view().position);
-        for (const auto &triangle : instance.triangles)
-        {
-            if (stop.stop_requested())
-            {
-                throw std::runtime_error("Rendering cancelled");
-            }
-            const auto &[a, b, c] = triangle.vertices;
-            const std::array input{
-                ClipVertex{to_view(a.position), {1, 0, 0}},
-                ClipVertex{to_view(b.position), {0, 1, 0}},
-                ClipVertex{to_view(c.position), {0, 0, 1}},
-            };
-            ClipPolygon near_polygon{}, far_polygon{};
-            auto polygon = clip_plane(input, range.near_depth, DepthPlane::Near, near_polygon);
-            polygon = clip_plane(polygon, range.far_depth, DepthPlane::Far, far_polygon);
-
-            std::array<RasterVertex, max_vertices> screen_polygon{};
-            const auto projected = project_polygon(camera, polygon, screen_polygon);
-            // Local winding preserves the authored front for mirrored instances and all clipped pieces.
-            const bool back_face = dot(triangle.geometric_normal(), local_eye - a.position) < 0;
-            for (std::size_t i = 2; i < projected.size(); ++i)
-            {
-                result.push_back(RasterTriangle{
-                    {instance.id, triangle.id}, back_face, projected[0], projected[i - 1], projected[i]});
-            }
-        }
-    }
+    for_each_clipped(
+        camera, instances, range, [](const Triangle &triangle) -> const auto & { return triangle.vertices; },
+        [&](RasterTriangle piece, const auto &) { result.push_back(std::move(piece)); }, stop);
     return result;
 }
 } // namespace formlight
