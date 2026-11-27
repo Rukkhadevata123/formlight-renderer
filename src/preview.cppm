@@ -114,8 +114,7 @@ export class PreviewRenderer
 
   private:
     [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
-                                    const std::stop_token &stop, bool back_face,
-                                    PixelDiagnostic *record = nullptr) const;
+                                    const std::stop_token &stop, PixelDiagnostic *record = nullptr) const;
     [[nodiscard]] Vec3 shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
                                    const Triangle &face, Barycentrics weights, std::uint64_t pixel,
                                    AreaLightPattern pattern, std::stop_token stop, DiagnosticLight *record) const;

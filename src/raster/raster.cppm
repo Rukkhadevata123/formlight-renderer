@@ -11,6 +11,7 @@ export struct RasterHit
 {
     TrianglePoint surface;
     double view_depth;
+    bool back_face{};
 
     void keep_nearest(std::optional<RasterHit> &pixel, const SurfaceFilter &accept = {}) const
     {
@@ -44,6 +45,10 @@ export class RasterTriangle
     {
         return source_;
     }
+    [[nodiscard]] bool back_face() const noexcept
+    {
+        return back_face_;
+    }
     void for_each_hit(ImageExtent extent, auto &&visit) const
     {
         coverage_.for_each_sample(extent, [&](int x, int y, const auto &edges) { visit(x, y, interpolate(edges)); });
@@ -52,8 +57,10 @@ export class RasterTriangle
     void rasterize(VisibilityBuffer target, const SurfaceFilter &accept = {}) const;
 
   private:
-    RasterTriangle(SurfaceId source, const RasterVertex &a, const RasterVertex &b, const RasterVertex &c);
+    RasterTriangle(SurfaceId source, bool back_face, const RasterVertex &a, const RasterVertex &b,
+                   const RasterVertex &c);
     SurfaceId source_;
+    bool back_face_;
     ScreenTriangle coverage_;
     [[nodiscard]] RasterHit interpolate(const std::array<double, 3> &values) const noexcept;
     std::array<double, 3> inverse_depths_;
@@ -69,8 +76,9 @@ export class RasterTriangle
     PerspectiveDerivative dx_, dy_;
 };
 
-RasterTriangle::RasterTriangle(SurfaceId source, const RasterVertex &a, const RasterVertex &b, const RasterVertex &c)
-    : source_(source), coverage_(a.point.image, b.point.image, c.point.image),
+RasterTriangle::RasterTriangle(SurfaceId source, bool back_face, const RasterVertex &a, const RasterVertex &b,
+                               const RasterVertex &c)
+    : source_(source), back_face_(back_face), coverage_(a.point.image, b.point.image, c.point.image),
       inverse_depths_{1.0 / a.point.view_depth, 1.0 / b.point.view_depth, 1.0 / c.point.view_depth},
       source_weights_{a.source_weights, b.source_weights, c.source_weights}
 {
@@ -118,7 +126,8 @@ RasterHit RasterTriangle::interpolate(const std::array<double, 3> &values) const
         (wa * v0.c + wb * v1.c + wc * v2.c) / sum,
     };
     return RasterHit{.surface = {source_, weights, {dx_.at(weights, sum), dy_.at(weights, sum)}},
-                     .view_depth = coverage_.twice_area() / sum};
+                     .view_depth = coverage_.twice_area() / sum,
+                     .back_face = back_face_};
 }
 
 void RasterTriangle::rasterize(VisibilityBuffer target, const SurfaceFilter &accept) const

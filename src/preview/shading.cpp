@@ -60,7 +60,7 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 }
 
 LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
-                                   const std::stop_token &stop, bool back_face, PixelDiagnostic *record) const
+                                   const std::stop_token &stop, PixelDiagnostic *record) const
 {
     const auto &[id, weights, gradients] = hit.surface;
     const auto &instance = scene_.instance(id.instance);
@@ -93,7 +93,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         return outgoing_color(material, ambient);
     }
 
-    const Vec3 normal = scene_.shading_normal(instance, face, weights, gradients, back_face);
+    const Vec3 normal = scene_.shading_normal(instance, face, weights, gradients, hit.back_face);
     if (record)
     {
         record->surface->shading_normal = normal;

@@ -347,7 +347,7 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
     meshes_.reserve(meshes_.size() + 1);
     node_instance_slots_.reserve(node_instance_slots_.size() + 1);
     instances_.reserve(instances_.size() + 1);
-    materials_.emplace_back(GltfMaterial{.base_color_factor = color, .metallic_factor = 0});
+    materials_.emplace_back(GltfMaterial{.base_color_factor = color, .metallic_factor = 0, .double_sided = true});
     meshes_.push_back(std::move(mesh));
     node_instance_slots_.push_back(instances_.size());
     instances_.push_back({id, meshes_.back(), {}});

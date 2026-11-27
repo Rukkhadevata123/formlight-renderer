@@ -17,34 +17,27 @@ struct BlendFragment
 {
     int column;
     RasterHit hit;
-    bool back_face;
 };
 using BlendRows = std::vector<std::vector<BlendFragment>>;
 
 enum class SurfacePass
 {
     Solid,
-    BlendFront,
-    BlendBack,
+    Blend,
     Cull
 };
 
-SurfacePass surface_pass(const GltfScene &scene, SurfaceId id, Vec3 eye)
+SurfacePass surface_pass(const GltfScene &scene, const RasterTriangle &piece)
 {
+    const auto id = piece.source();
     const auto &instance = scene.instance(id.instance);
     const auto &face = instance.triangles[std::to_underlying(id.primitive)];
     const auto &material = scene.material(face);
-    if (material.alpha_mode != AlphaMode::Blend)
+    if (piece.back_face() && !material.double_sided)
     {
-        return SurfacePass::Solid;
+        return SurfacePass::Cull;
     }
-    // Local winding still identifies the authored front after a mirrored instance transform.
-    const auto to_eye = instance.transform.to_local_point(eye) - face.vertices[0].position;
-    if (dot(face.geometric_normal(), to_eye) >= 0)
-    {
-        return SurfacePass::BlendFront;
-    }
-    return material.double_sided ? SurfacePass::BlendBack : SurfacePass::Cull;
+    return material.alpha_mode == AlphaMode::Blend ? SurfacePass::Blend : SurfacePass::Solid;
 }
 
 bool in_front_of_solid(const RasterHit &hit, const std::optional<RasterHit> &solid)
@@ -56,21 +49,21 @@ BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, 
                                VisibilityBuffer visible, std::stop_token stop)
 {
     const auto pieces = RasterTriangle::prepare(view.camera, scene.instances(), view.depth, stop);
-    std::vector<std::pair<const RasterTriangle *, bool>> blended;
+    std::vector<const RasterTriangle *> blended;
     for (const auto &piece : pieces)
     {
         if (stop.stop_requested())
         {
             throw std::runtime_error("Rendering cancelled");
         }
-        const auto pass = surface_pass(scene, piece.source(), view.camera.view().position);
+        const auto pass = surface_pass(scene, piece);
         if (pass == SurfacePass::Solid)
         {
             piece.rasterize(visible, solid_filter);
         }
-        else if (pass != SurfacePass::Cull)
+        else if (pass == SurfacePass::Blend)
         {
-            blended.emplace_back(&piece, pass == SurfacePass::BlendBack);
+            blended.push_back(&piece);
         }
     }
 
@@ -80,7 +73,7 @@ BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, 
     }
     const auto extent = view.camera.extent();
     BlendRows rows(extent.height);
-    for (const auto &[piece, back_face] : blended)
+    for (const auto *piece : blended)
     {
         if (stop.stop_requested())
         {
@@ -90,7 +83,7 @@ BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, 
         {
             if (in_front_of_solid(hit, visible[y, x]))
             {
-                rows[y].push_back({x, hit, back_face});
+                rows[y].push_back({x, hit});
             }
         };
         piece->for_each_hit(extent, collect);
@@ -110,9 +103,9 @@ void composite_layers(std::span<LinearColor> row, std::span<BlendFragment> fragm
         return std::tie(a.hit.view_depth, a.hit.surface.id) > std::tie(b.hit.view_depth, b.hit.surface.id);
     };
     std::ranges::sort(fragments, back_to_front);
-    for (const auto &[x, hit, back_face] : fragments)
+    for (const auto &[x, hit] : fragments)
     {
-        const auto src = shade(x, hit, back_face);
+        const auto src = shade(x, hit);
         if (src.a > 0)
         {
             auto &dst = row[x];
@@ -136,8 +129,7 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
     auto blends = rasterize_visibility(scene_, view, solid_filter_, visible, stop);
     const auto shade_row = [&](int y)
     {
-        const auto shade_hit = [&](int x, const RasterHit &hit, bool back_face)
-        { return shade(hit, {x, y}, view, stop, back_face); };
+        const auto shade_hit = [&](int x, const RasterHit &hit) { return shade(hit, {x, y}, view, stop); };
         if (stop.stop_requested())
         {
             throw std::runtime_error("Rendering cancelled");
@@ -146,7 +138,7 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
         {
             if (const auto &hit = visible[y, x])
             {
-                image[y, x] = shade_hit(x, *hit, false);
+                image[y, x] = shade_hit(x, *hit);
             }
         }
         if (!blends.empty())
@@ -179,24 +171,23 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
         }
         if (const auto hit = piece.sample(center))
         {
-            const auto pass = surface_pass(scene_, hit->surface.id, view.camera.view().position);
+            const auto pass = surface_pass(scene_, piece);
             if (pass == SurfacePass::Solid)
             {
                 hit->keep_nearest(solid, solid_filter_);
             }
-            else if (pass != SurfacePass::Cull)
+            else if (pass == SurfacePass::Blend)
             {
-                blends.push_back({0, *hit, pass == SurfacePass::BlendBack});
+                blends.push_back({0, *hit});
             }
         }
     }
 
     PixelDiagnostic report{.pixel = pixel, .color = background};
-    const auto shade_hit = [&](int, const RasterHit &hit, bool back_face)
-    { return shade(hit, pixel, view, stop, back_face, &report); };
+    const auto shade_hit = [&](int, const RasterHit &hit) { return shade(hit, pixel, view, stop, &report); };
     if (solid)
     {
-        report.color = shade_hit(0, *solid, false);
+        report.color = shade_hit(0, *solid);
     }
     std::erase_if(blends, [&](const auto &fragment) { return !in_front_of_solid(fragment.hit, solid); });
     composite_layers({&report.color, 1}, blends, shade_hit);

@@ -98,6 +98,7 @@ std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
     for (const auto &instance : instances)
     {
         const auto to_view = [&](Vec3 p) { return camera.to_view(instance.transform.to_world_point(p)); };
+        const auto local_eye = instance.transform.to_local_point(camera.view().position);
         for (const auto &triangle : instance.triangles)
         {
             if (stop.stop_requested())
@@ -116,10 +117,12 @@ std::vector<RasterTriangle> RasterTriangle::prepare(const PinholeCamera &camera,
 
             std::array<RasterVertex, max_vertices> screen_polygon{};
             const auto projected = project_polygon(camera, polygon, screen_polygon);
+            // Local winding preserves the authored front for mirrored instances and all clipped pieces.
+            const bool back_face = dot(triangle.geometric_normal(), local_eye - a.position) < 0;
             for (std::size_t i = 2; i < projected.size(); ++i)
             {
-                result.push_back(
-                    RasterTriangle{{instance.id, triangle.id}, projected[0], projected[i - 1], projected[i]});
+                result.push_back(RasterTriangle{
+                    {instance.id, triangle.id}, back_face, projected[0], projected[i - 1], projected[i]});
             }
         }
     }
