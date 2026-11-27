@@ -43,7 +43,7 @@ target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
 target_sources(formlight_gltf PRIVATE FILE_SET internal_modules TYPE CXX_MODULES FILES
-    src/io/gltf/mesh.cppm src/io/gltf/resources.cppm src/io/gltf/tangents.cppm)
+    src/io/gltf/mesh.cppm src/io/gltf/resources.cppm src/io/gltf/tangents.cppm src/io/gltf/texture_transform.cppm)
 target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf mikktspace::mikktspace formlight_io TBB::tbb)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
@@ -114,6 +114,10 @@ if(BUILD_TESTING)
     add_executable(texture_coordinates_test tests/texture_coordinates_test.cpp)
     target_link_libraries(texture_coordinates_test PRIVATE formlight_gltf)
     add_test(NAME texture_coordinates COMMAND texture_coordinates_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/DualUvPanel.glb")
+
+    add_executable(texture_transform_test tests/gltf/texture_transform_test.cpp)
+    target_link_libraries(texture_transform_test PRIVATE formlight_gltf)
+    add_test(NAME gltf_texture_transform COMMAND texture_transform_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/texture-transform.gltf")
 
     add_test(NAME external_gltf COMMAND "${CMAKE_COMMAND}"
         "-DRENDERER=$<TARGET_FILE:formlight-renderer>" "-DASSETS=${CMAKE_CURRENT_SOURCE_DIR}/assets"

@@ -9,6 +9,7 @@ import std;
 import formlight.image_codec;
 import formlight.gltf_resources;
 import formlight.gltf_mesh;
+import formlight.gltf_texture_transform;
 
 namespace formlight
 {
@@ -127,7 +128,7 @@ TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, TextureUsa
     {
         images[slot->second].generate_mipmaps();
     }
-    return {slot->second, sampler, info.texCoordIndex};
+    return {slot->second, sampler, texcoord_set(info), read_uv_transform(info)};
 }
 
 GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &textures)
@@ -222,7 +223,8 @@ std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::pat
         {
             throw std::runtime_error("Could not open or read glTF model");
         }
-        fastgltf::Parser parser{fastgltf::Extensions::KHR_materials_emissive_strength};
+        fastgltf::Parser parser{fastgltf::Extensions::KHR_materials_emissive_strength |
+                                fastgltf::Extensions::KHR_texture_transform};
         const auto model = std::filesystem::absolute(path);
         auto parsed = parser.loadGltf(file.get(), model.parent_path(), fastgltf::Options::GenerateMeshIndices);
         check(parsed.error());
@@ -357,7 +359,14 @@ LinearColor GltfScene::sample(const TextureBinding &binding, const Triangle &fac
                               WeightGradients gradients) const
 {
     const auto set = binding.texcoord_set;
-    return images_[binding.image].sample(face.uv_at(weights, set), binding.sampler, face.uv_gradients(gradients, set));
+    auto uv = face.uv_at(weights, set);
+    auto footprint = face.uv_gradients(gradients, set);
+    if (const auto &transform = binding.transform)
+    {
+        uv = transform->point(uv);
+        footprint = {transform->vector(footprint.dx), transform->vector(footprint.dy)};
+    }
+    return images_[binding.image].sample(uv, binding.sampler, footprint);
 }
 
 LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Triangle &face, Barycentrics weights,

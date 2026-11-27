@@ -4,7 +4,7 @@ module;
 export module formlight.gltf_tangents;
 
 import std;
-import formlight.triangle;
+import formlight.gltf;
 
 namespace formlight::gltf_detail
 {
@@ -14,6 +14,7 @@ struct MikkMesh
 {
     std::span<Triangle> triangles;
     std::size_t uv_set{};
+    std::optional<UvTransform> transform{};
 };
 
 MikkMesh &mesh(const SMikkTSpaceContext *context)
@@ -34,7 +35,7 @@ void write_vector(float *out, Vec3 v)
 }
 } // namespace
 
-export void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
+export void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set, std::optional<UvTransform> transform)
 {
     if (triangles.empty())
     {
@@ -55,7 +56,12 @@ export void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
     { write_vector(out, corner(c, f, v).normal); };
     callbacks.m_getTexCoord = [](const SMikkTSpaceContext *c, float out[], int f, int v)
     {
-        const auto uv = corner(c, f, v).texcoords[mesh(c).uv_set];
+        const auto &input = mesh(c);
+        auto uv = corner(c, f, v).texcoords[input.uv_set];
+        if (input.transform)
+        {
+            uv = input.transform->point(uv);
+        }
         out[0] = static_cast<float>(uv.u);
         out[1] = static_cast<float>(uv.v);
     };
@@ -65,7 +71,7 @@ export void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set)
         vertex.tangent = {t[0], t[1], t[2]};
         vertex.tangent_sign = sign;
     };
-    MikkMesh input{triangles, uv_set};
+    MikkMesh input{triangles, uv_set, transform};
     const SMikkTSpaceContext context{&callbacks, &input};
     if (!genTangSpaceDefault(&context))
     {

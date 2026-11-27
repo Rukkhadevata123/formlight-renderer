@@ -9,6 +9,7 @@ import std;
 import formlight.gltf;
 import formlight.gltf_resources;
 import formlight.gltf_tangents;
+import formlight.gltf_texture_transform;
 
 namespace formlight::gltf_detail
 {
@@ -84,7 +85,7 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
             {
                 return;
             }
-            const auto set = binding->texCoordIndex;
+            const auto set = texcoord_set(*binding);
             if (set >= present.size() || !present[set])
             {
                 throw std::runtime_error(std::format("Mesh {} primitive {} material {}: {} requires {} TEXCOORD_{}",
@@ -308,7 +309,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
         }
         if (const auto &map = asset.materials.at(*primitive.materialIndex).normalTexture)
         {
-            generate_tangents(std::span{triangles}.subspan(start), map->texCoordIndex);
+            generate_tangents(std::span{triangles}.subspan(start), texcoord_set(*map), read_uv_transform(*map));
         }
     }
     return triangles;

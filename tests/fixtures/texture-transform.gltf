@@ -1,0 +1,63 @@
+{
+  "asset": {"version":"2.0"},
+  "extensionsUsed": ["KHR_texture_transform"],
+  "extensionsRequired": ["KHR_texture_transform"],
+  "scene": 0,
+  "scenes": [
+    {"nodes":[0,1]}
+  ],
+  "nodes": [
+    {"mesh":0},
+    {"mesh":1}
+  ],
+  "meshes": [
+    {"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1,"TEXCOORD_1":2},"material":0}]},
+    {"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":3,"TEXCOORD_1":4},"material":1}]}
+  ],
+  "materials": [
+    {
+      "name": "Per-binding transforms",
+      "alphaMode": "MASK",
+      "pbrMetallicRoughness": {"baseColorTexture":{"index":0,"texCoord":0,"extensions":{"KHR_texture_transform":{"offset":[0.375,0.0625],"rotation":0.65,"scale":[1.75,-0.625],"texCoord":1}}},"metallicRoughnessTexture":{"index":0,"texCoord":1,"extensions":{"KHR_texture_transform":{"offset":[-0.125,0.3125],"rotation":-0.44,"scale":[0.5,2.5],"texCoord":0}}}},
+      "normalTexture": {"index":0,"texCoord":1,"extensions":{"KHR_texture_transform":{"offset":[0.375,0.0625],"rotation":0.65,"scale":[1.75,-0.625]}}},
+      "occlusionTexture": {"index":0,"texCoord":1,"extensions":{"KHR_texture_transform":{"offset":[0.375,0.0625],"rotation":0.65,"scale":[1.75,-0.625]}}},
+      "emissiveTexture": {"index":0,"texCoord":0,"extensions":{"KHR_texture_transform":{"offset":[-0.125,0.3125],"rotation":-0.44,"scale":[0.5,2.5]}}},
+      "emissiveFactor": [1,1,1]
+    },
+    {
+      "name": "Baked UVs",
+      "alphaMode": "MASK",
+      "pbrMetallicRoughness": {"baseColorTexture":{"index":0,"texCoord":0},"metallicRoughnessTexture":{"index":0,"texCoord":1}},
+      "normalTexture": {"index":0,"texCoord":0},
+      "occlusionTexture": {"index":0,"texCoord":0},
+      "emissiveTexture": {"index":0,"texCoord":1},
+      "emissiveFactor": [1,1,1]
+    }
+  ],
+  "textures": [
+    {"source":0,"sampler":0}
+  ],
+  "samplers": [
+    {"magFilter":9729,"minFilter":9987}
+  ],
+  "images": [
+    {"uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAYAAACzzX7wAAAAj0lEQVR4nAGEAHv/ABFXh/9GYJr/e2mtALBywADle9P/GoTm/0+NiwCElp4AACZ8pgBbhbkAkI7M/8WX3//6oPIAL6mXAGSyqv+Zu73/ADuhxf9wqtj/pbPrANq8kAAPxaP/RM62/3nXyQCu4NwAAFDG5ACFz4kAutic/+/hr/8k6sIAWfPVAI786P/DBY3/fpRLNZM4SRQAAAAASUVORK5CYII="}
+  ],
+  "buffers": [
+    {"byteLength":132,"uri":"data:application/octet-stream;base64,AACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAACAvwAAgD8AAAAAAAAAPgAAAD4AAJA/AACAPgAAwD4AAGA/AABAPwAAAD4AAAA+AACAPgAAYD8AAGA/QMu7P8RrSz/EySQ/b2CQPT5l9j8GyA0/02iEPaqQET8/byY/zGwjP0X0eT/QjQ1A"}
+  ],
+  "bufferViews": [
+    {"buffer":0,"byteOffset":0,"byteLength":36,"target":34962},
+    {"buffer":0,"byteOffset":36,"byteLength":24,"target":34962},
+    {"buffer":0,"byteOffset":60,"byteLength":24,"target":34962},
+    {"buffer":0,"byteOffset":84,"byteLength":24,"target":34962},
+    {"buffer":0,"byteOffset":108,"byteLength":24,"target":34962}
+  ],
+  "accessors": [
+    {"bufferView":0,"componentType":5126,"count":3,"type":"VEC3","min":[-1,-1,0],"max":[1,1,0]},
+    {"bufferView":1,"componentType":5126,"count":3,"type":"VEC2"},
+    {"bufferView":2,"componentType":5126,"count":3,"type":"VEC2"},
+    {"bufferView":3,"componentType":5126,"count":3,"type":"VEC2"},
+    {"bufferView":4,"componentType":5126,"count":3,"type":"VEC2"}
+  ]
+}

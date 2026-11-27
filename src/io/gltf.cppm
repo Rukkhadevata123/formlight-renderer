@@ -13,11 +13,28 @@ export enum class GltfContent
     Materials
 };
 
+export struct UvTransform
+{
+    TexCoord u_axis{1, 0}, v_axis{0, 1}, offset{};
+
+    [[nodiscard]] TexCoord vector(TexCoord uv) const noexcept
+    {
+        return {u_axis.u * uv.u + v_axis.u * uv.v, u_axis.v * uv.u + v_axis.v * uv.v};
+    }
+
+    [[nodiscard]] TexCoord point(TexCoord uv) const noexcept
+    {
+        const auto rotated_scaled = vector(uv);
+        return {rotated_scaled.u + offset.u, rotated_scaled.v + offset.v};
+    }
+};
+
 struct TextureBinding
 {
     std::size_t image;
     TextureSampler sampler;
     std::size_t texcoord_set{};
+    std::optional<UvTransform> transform{};
 };
 
 export enum class AlphaMode
