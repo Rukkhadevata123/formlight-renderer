@@ -109,7 +109,7 @@ bool check_ground_shadow(formlight::GltfScene &scene)
     {
         for (int x = 0; x < below.extent().width; ++x)
         {
-            const auto hit = renderer.diagnose(underside, {x, y}).surface;
+            const auto hit = renderer.diagnose(underside, {x, y}).samples.at(0).surface;
             if (!hit || hit->hit.surface.id.instance != scene.instances().back().id)
             {
                 std::cerr << "Box bottom shows through the opaque preview ground\n";
@@ -151,15 +151,16 @@ bool check_ground_shadow(formlight::GltfScene &scene)
     {
         const PreviewRenderer point_renderer{scene, PointLighting{PointLight{position, {1, 1, 1}, 4}}};
         const auto report = point_renderer.diagnose(view, floor_pixel);
+        const auto &sample = report.samples.at(0);
         const auto pixel = point_renderer.render(view)[floor_pixel.y, floor_pixel.x];
-        if (report.lights.at(0).samples.size() != 1 || report.lights.at(0).samples[0].position != position ||
+        if (sample.lights.at(0).samples.size() != 1 || sample.lights.at(0).samples[0].position != position ||
             pixel.r != report.color.r || (pixel.r > 0) == blocked ||
-            report.lights.at(0).samples[0].shadow.state != (blocked ? ShadowState::Blocked : ShadowState::Visible))
+            sample.lights.at(0).samples[0].shadow.state != (blocked ? ShadowState::Blocked : ShadowState::Visible))
         {
             std::cerr << "Point shadow must end at the lamp and agree with pixel inspection\n";
             return false;
         }
-        if (blocked && report.lights.at(0).samples[0].shadow.blocker.value().instance != scene.instances().front().id)
+        if (blocked && sample.lights.at(0).samples[0].shadow.blocker.value().instance != scene.instances().front().id)
         {
             std::cerr << "Point light diagnostic identifies the wrong blocker\n";
             return false;
@@ -180,19 +181,20 @@ bool check_ground_shadow(formlight::GltfScene &scene)
         const auto p = overhead.project({0, -0.5, z}).value().image;
         const PixelCoord pixel{static_cast<int>(p.x), static_cast<int>(p.y)};
         const auto report = diagnose_pixel(scene, view, pixel, area);
+        const auto &sample = report.samples.at(0);
         const auto &floor = scene.instances().back();
-        if (!report.surface || report.surface->hit.surface.id.instance != floor.id ||
-            report.surface->material_index != floor.triangles.front().material_index ||
-            report.lights.at(0).samples.size() != 64)
+        if (!sample.surface || sample.surface->hit.surface.id.instance != floor.id ||
+            sample.surface->material_index != floor.triangles.front().material_index ||
+            sample.lights.at(0).samples.size() != 64)
         {
             std::cerr << "Expected 64 rectangle samples on the ground material\n";
             return false;
         }
         int blocked = 0;
         Vec3 sum{};
-        for (std::size_t i = 0; i < report.lights.at(0).samples.size(); ++i)
+        for (std::size_t i = 0; i < sample.lights.at(0).samples.size(); ++i)
         {
-            const auto &shadow = report.lights.at(0).samples[i].shadow;
+            const auto &shadow = sample.lights.at(0).samples[i].shadow;
             if (shadow.state == ShadowState::Blocked)
             {
                 if (!shadow.blocker || shadow.blocker->instance != scene.instances().front().id)
@@ -202,7 +204,7 @@ bool check_ground_shadow(formlight::GltfScene &scene)
                 }
                 ++blocked;
             }
-            sum = sum + report.sample_contribution(0, i);
+            sum = sum + sample.sample_contribution(0, i);
         }
         const auto color = frame[pixel.y, pixel.x];
         if (min_blocked != max_blocked)

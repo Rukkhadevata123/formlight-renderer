@@ -27,12 +27,8 @@ std::string describe_shadow(const ShadowResult &shadow)
     }
     std::unreachable();
 }
-} // namespace
-
-void print_pixel_report(const PixelDiagnostic &report)
+void print_sample(const SampleDiagnostic &report)
 {
-    const auto center = pixel_center(report.pixel.x, report.pixel.y);
-    std::println("Pixel ({}, {}) at sample ({}, {})", report.pixel.x, report.pixel.y, center.x, center.y);
     if (const auto &surface = report.surface)
     {
         const auto &id = surface->hit.surface.id;
@@ -91,6 +87,32 @@ void print_pixel_report(const PixelDiagnostic &report)
     else
     {
         std::println("Background");
+    }
+}
+} // namespace
+
+void print_pixel_report(const PixelDiagnostic &report)
+{
+    if (report.samples.size() == 1)
+    {
+        const auto center = report.samples.front().position;
+        std::println("Pixel ({}, {}) at sample ({}, {})", report.pixel.x, report.pixel.y, center.x, center.y);
+    }
+    else
+    {
+        std::println("Pixel ({}, {})", report.pixel.x, report.pixel.y);
+    }
+    for (const auto &sample : report.samples)
+    {
+        if (report.samples.size() > 1)
+        {
+            std::println("Sample ({}, {}), weight {}", sample.position.x, sample.position.y, sample.weight);
+        }
+        print_sample(sample);
+        if (report.samples.size() > 1)
+        {
+            std::println("Sample linear RGB: ({}, {}, {})", sample.color.r, sample.color.g, sample.color.b);
+        }
     }
     std::println("Pixel linear RGB: ({}, {}, {})", report.color.r, report.color.g, report.color.b);
 }

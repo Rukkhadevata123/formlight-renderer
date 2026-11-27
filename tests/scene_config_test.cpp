@@ -13,6 +13,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     auto config = load_scene_config(source);
     config.render.mode = RenderMode::Hybrid;
     config.render.extent = {48, 32};
+    config.render.ssaa = 2;
     config.render.sampling = {4, std::numeric_limits<std::uint64_t>::max()};
     config.camera.auto_frame = false;
     config.camera.position = {2, 1, 3};
@@ -50,7 +51,8 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
         throw std::runtime_error("Saved exposure and Reinhard mapping did not reproduce the expected sRGB bytes");
     }
     if (!std::filesystem::equivalent(config.scene.asset, loaded.scene.asset) ||
-        loaded.render.sampling.seed != config.render.sampling.seed || loaded.camera.auto_frame)
+        loaded.render.sampling.seed != config.render.sampling.seed || loaded.render.ssaa != 2 ||
+        loaded.camera.auto_frame)
     {
         throw std::runtime_error("Save As lost the asset reference, camera, or full-width seed");
     }

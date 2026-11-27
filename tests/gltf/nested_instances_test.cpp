@@ -59,10 +59,11 @@ void check_picks(const GltfScene &scene)
         const auto projected = camera.project(center).value().image;
         const PixelCoord pixel{static_cast<int>(projected.x), static_cast<int>(projected.y)};
         const auto pick = renderer.diagnose(view, pixel);
+        const auto &sample = pick.samples.at(0);
         const auto ray = camera.ray_for_sample(pixel_center(pixel.x, pixel.y));
         const auto hit = bvh.intersect(ray, {0, std::numeric_limits<double>::infinity()});
         const SurfaceId target{id, PrimitiveId{0}};
-        if (!pick.surface || pick.surface->hit.surface.id != target || !hit || hit->surface.id != target)
+        if (!sample.surface || sample.surface->hit.surface.id != target || !hit || hit->surface.id != target)
         {
             throw std::runtime_error(
                 std::format("Expected node {} primitive 0 at ({}, {})", std::to_underlying(id), pixel.x, pixel.y));

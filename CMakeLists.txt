@@ -154,6 +154,11 @@ if(BUILD_TESTING)
     target_link_libraries(blend_layers_test PRIVATE formlight_gltf)
     add_test(NAME blend_layers COMMAND blend_layers_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BlendLayers.glb")
 
+    add_executable(ssaa_test tests/ssaa_test.cpp)
+    target_link_libraries(ssaa_test PRIVATE formlight_gltf)
+    add_test(NAME ssaa_edges COMMAND ssaa_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sided-panels.gltf"
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/EmissivePanels.glb")
+
     add_executable(grayscale_alpha_test tests/gltf/grayscale_alpha_test.cpp)
     target_link_libraries(grayscale_alpha_test PRIVATE formlight_gltf)
     add_test(NAME gltf_grayscale_alpha COMMAND grayscale_alpha_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/grayscale-alpha.gltf")

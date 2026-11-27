@@ -52,14 +52,15 @@ void check_panels(const SceneConfig &config)
                 preview.view.camera.project(instance.transform.to_world_point(face.position_at(weights))).value().image;
             const PixelCoord pixel{static_cast<int>(p.x), static_cast<int>(p.y)};
             const auto report = renderer.diagnose(preview.view, pixel);
-            if (!report.surface || report.surface->hit.surface.id.instance != instance.id)
+            const auto &sample = report.samples.at(0);
+            if (!sample.surface || sample.surface->hit.surface.id.instance != instance.id)
             {
                 throw std::runtime_error("Normal map probe missed its triangle");
             }
-            near(report.surface->shading_normal.value(), expected, "World shading normal");
+            near(sample.surface->shading_normal.value(), expected, "World shading normal");
             const auto color = frame[pixel.y, pixel.x];
             const Vec3 eye = preview.view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
-            const MetallicRoughnessBrdf brdf{report.surface->material, expected, eye};
+            const MetallicRoughnessBrdf brdf{sample.surface->material, expected, eye};
             near({color.r, color.g, color.b}, brdf.evaluate_times_cosine(unit({0.5, -0.3, 1})) * std::numbers::pi,
                  "Normal-mapped direct lighting");
         }

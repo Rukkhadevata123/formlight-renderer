@@ -105,8 +105,9 @@ void check_frame_replacement(const std::filesystem::path &asset, const std::file
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
     const auto &pick = *session.report();
-    if (!pick.surface || pick.surface->hit.surface.id.instance != InstanceId{1} ||
-        pick.lights.at(0).samples.size() != expected_samples || pick.lights.at(0).sampling_seed != 7 ||
+    const auto &sample = pick.samples.at(0);
+    if (!sample.surface || sample.surface->hit.surface.id.instance != InstanceId{1} ||
+        sample.lights.at(0).samples.size() != expected_samples || sample.lights.at(0).sampling_seed != 7 ||
         std::tie(preview_color.r, preview_color.g, preview_color.b) !=
             std::tie(pick.color.r, pick.color.g, pick.color.b))
     {
@@ -235,6 +236,7 @@ void check_frame_replacement(const std::filesystem::path &asset, const std::file
     document.open_model(external_model);
     session.render_settings().sampling.samples = 4;
     session.render_settings().extent = {43, 67};
+    session.render_settings().ssaa = 2;
     document.apply_settings();                      // This edit must reach the first frame of the new asset.
     session.light_settings()->lights[0].width = -1; // An unapplied draft survives the switch.
     document.set_display_settings({-2});
@@ -249,6 +251,7 @@ void check_frame_replacement(const std::filesystem::path &asset, const std::file
     config.scene.asset = external_model;
     config.render.sampling.samples = 4;
     config.render.extent = {43, 67};
+    config.render.ssaa = 2;
     config.lighting->lights[0].width = 9; // The earlier unapplied width was accepted by Apply during this load.
     check_image(*opened, config);
 }

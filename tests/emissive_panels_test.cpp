@@ -40,9 +40,10 @@ void check_light_sum(SceneConfig config, const ScenePreview &preview)
         }
     }
     const auto report = diagnose_pixel(preview.scene, preview.view, {38, 16}, prepare_render(config).lighting);
-    if (report.lights.size() != 2 || report.lights[0].direct.x <= 0 || report.lights[1].direct.z <= 0 ||
-        report.sample_contribution(0, 0) != report.lights[0].direct * 0.5 ||
-        report.sample_contribution(1, 0) != report.lights[1].direct * 0.5)
+    const auto &sample = report.samples.at(0);
+    if (sample.lights.size() != 2 || sample.lights[0].direct.x <= 0 || sample.lights[1].direct.z <= 0 ||
+        sample.sample_contribution(0, 0) != sample.lights[0].direct * 0.5 ||
+        sample.sample_contribution(1, 0) != sample.lights[1].direct * 0.5)
     {
         throw std::runtime_error("The translucent layer must report each light with its own sample weight");
     }
@@ -71,10 +72,11 @@ try
         const auto check = [&](int x, Vec3 expected)
         {
             const auto report = renderer.diagnose(preview.view, {x, 16});
+            const auto &sample = report.samples.at(0);
             const auto color = frame[16, x];
             const auto delta = abs_components(Vec3{color.r, color.g, color.b} - expected);
-            if (std::max({delta.x, delta.y, delta.z}) > 1e-6 || report.lights.at(0).samples.size() != 1 ||
-                report.sample_contribution(0, 0) != Vec3{} ||
+            if (std::max({delta.x, delta.y, delta.z}) > 1e-6 || sample.lights.at(0).samples.size() != 1 ||
+                sample.sample_contribution(0, 0) != Vec3{} ||
                 std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b))
             {
                 throw std::runtime_error(std::format("Incorrect emission or direct light at ({}, 16)", x));

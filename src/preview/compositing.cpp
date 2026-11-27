@@ -13,6 +13,28 @@ namespace
 {
 constexpr LinearColor background{0.035f, 0.045f, 0.06f, 1.0f};
 
+PreviewView sample_grid_view(const PreviewView &view)
+{
+    const auto extent = sample_grid_extent(view.camera.extent(), view.ssaa);
+    if (view.ssaa == 1)
+    {
+        return view;
+    }
+    return {PinholeCamera{view.camera.view(), extent}, view.depth, view.area_light_pattern};
+}
+
+LinearColor resolve_samples(int count, auto color_at)
+{
+    Vec3 sum{};
+    for (int i = 0; i < count; ++i)
+    {
+        const auto c = color_at(i);
+        sum = sum + Vec3{c.r, c.g, c.b};
+    }
+    // All samples have already been composited onto the opaque background.
+    return {static_cast<float>(sum.x / count), static_cast<float>(sum.y / count), static_cast<float>(sum.z / count), 1};
+}
+
 struct BlendFragment
 {
     int column;
@@ -118,11 +140,30 @@ void composite_layers(std::span<LinearColor> row, std::span<BlendFragment> fragm
 
 ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop) const
 {
-    const ImageExtent extent = view.camera.extent();
-    if (extent.width > std::numeric_limits<int>::max() / extent.height)
+    auto samples = render_sample_grid(sample_grid_view(view), stop);
+    if (view.ssaa == 1)
     {
-        throw std::invalid_argument("Preview exceeds visibility buffer capacity");
+        return samples;
     }
+    const auto extent = view.camera.extent();
+    ColorImage resolved{extent};
+    for (int y = 0; y < extent.height; ++y)
+    {
+        if (stop.stop_requested())
+        {
+            throw std::runtime_error("Rendering cancelled");
+        }
+        for (int x = 0; x < extent.width; ++x)
+        {
+            resolved[y, x] = resolve_samples(4, [&](int i) { return samples[2 * y + i / 2, 2 * x + i % 2]; });
+        }
+    }
+    return resolved;
+}
+
+ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::stop_token stop) const
+{
+    const ImageExtent extent = view.camera.extent();
     ColorImage image{extent, background};
     std::vector<std::optional<RasterHit>> pixels(static_cast<std::size_t>(extent.width) * extent.height);
     const VisibilityBuffer visible{pixels.data(), extent.height, extent.width};
@@ -160,10 +201,31 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
         throw std::out_of_range(
             std::format("Pixel ({}, {}) is outside the {} x {} image", pixel.x, pixel.y, extent.width, extent.height));
     }
+    const auto grid = sample_grid_view(view);
+    const auto pieces = RasterTriangle::prepare(grid.camera, scene_.instances(), grid.depth, stop);
+    const int axis = view.ssaa;
+    const int count = axis * axis;
+    PixelDiagnostic report{.pixel = pixel, .samples = {}, .color = {}};
+    report.samples.reserve(count);
+    for (int i = 0; i < count; ++i)
+    {
+        const PixelCoord sample{pixel.x * axis + i % axis, pixel.y * axis + i / axis};
+        const auto center = pixel_center(sample.x, sample.y);
+        auto &record = report.samples.emplace_back(SampleDiagnostic{
+            .position = {center.x / axis, center.y / axis}, .weight = 1.0 / count, .color = background});
+        diagnose_sample(grid, sample, pieces, record, stop);
+    }
+    report.color = resolve_samples(count, [&](int i) { return report.samples[i].color; });
+    return report;
+}
+
+void PreviewRenderer::diagnose_sample(const PreviewView &view, PixelCoord pixel, std::span<const RasterTriangle> pieces,
+                                      SampleDiagnostic &report, std::stop_token stop) const
+{
     const auto center = pixel_center(pixel.x, pixel.y);
     std::optional<RasterHit> solid;
     std::vector<BlendFragment> blends;
-    for (const auto &piece : RasterTriangle::prepare(view.camera, scene_.instances(), view.depth, stop))
+    for (const auto &piece : pieces)
     {
         if (stop.stop_requested())
         {
@@ -183,7 +245,6 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
         }
     }
 
-    PixelDiagnostic report{.pixel = pixel, .color = background};
     const auto shade_hit = [&](int, const RasterHit &hit) { return shade(hit, pixel, view, stop, &report); };
     if (solid)
     {
@@ -191,6 +252,5 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
     }
     std::erase_if(blends, [&](const auto &fragment) { return !in_front_of_solid(fragment.hit, solid); });
     composite_layers({&report.color, 1}, blends, shade_hit);
-    return report;
 }
 } // namespace formlight

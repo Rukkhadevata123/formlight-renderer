@@ -58,6 +58,10 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
         {
             config.render.mode = parse_choice<RenderMode>(value);
         }
+        else if (option == "--ssaa")
+        {
+            config.render.ssaa = integer_option<int>(option, value);
+        }
         else if (option == "--light-samples")
         {
             config.render.sampling.samples = integer_option<std::uint32_t>(option, value);

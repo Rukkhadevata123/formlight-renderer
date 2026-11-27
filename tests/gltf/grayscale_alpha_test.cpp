@@ -44,13 +44,14 @@ void check_panel(const GltfScene &scene)
         const auto l = std::lerp(gray[left], gray[right], texel - left);
         const auto a = std::lerp(opacity[left], opacity[right], texel - left);
         const auto report = renderer.diagnose(view, {x, 32});
-        if (report.surface.has_value() != (a > 0))
+        const auto &sample = report.samples.at(0);
+        if (sample.surface.has_value() != (a > 0))
         {
             throw std::runtime_error(std::format("Unexpected BLEND pick at x={}", x));
         }
-        if (report.surface)
+        if (sample.surface)
         {
-            check_color(report.surface->material.base_color, l, l, l, a, "filtered texel at x", x);
+            check_color(sample.surface->material.base_color, l, l, l, a, "filtered texel at x", x);
         }
         const auto r = std::lerp(double{background.r}, l, a);
         const auto g = std::lerp(double{background.g}, l, a);

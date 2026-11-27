@@ -19,7 +19,8 @@ void check_lighting(const GltfScene &scene, Vec3 base)
         const PreviewRenderer renderer{scene, lighting};
         const auto color = renderer.render(view)[pixel.y, pixel.x];
         const auto report = renderer.diagnose(view, pixel);
-        if (!report.surface ||
+        const auto &sample = report.samples.at(0);
+        if (!sample.surface ||
             std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b))
         {
             throw std::runtime_error("Panel pixel inspection disagrees with rendering");

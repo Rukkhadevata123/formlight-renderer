@@ -54,9 +54,8 @@ struct GuiShutdown
     }
 };
 
-void show_report(const PixelDiagnostic &report)
+void show_sample(const SampleDiagnostic &report)
 {
-    ImGui::Text("Pixel (%d, %d)", report.pixel.x, report.pixel.y);
     if (const auto &surface = report.surface)
     {
         const auto id = surface->hit.surface.id;
@@ -89,6 +88,25 @@ void show_report(const PixelDiagnostic &report)
         const auto blocked = std::ranges::count_if(light.samples, [](const LightSample &sample)
                                                    { return sample.shadow.state == ShadowState::Blocked; });
         ImGui::Text("Blocked samples   %zu / %zu", static_cast<std::size_t>(blocked), light.samples.size());
+    }
+}
+
+void show_report(const PixelDiagnostic &report)
+{
+    ImGui::Text("Pixel (%d, %d)", report.pixel.x, report.pixel.y);
+    for (const auto &sample : report.samples)
+    {
+        if (report.samples.size() == 1)
+        {
+            show_sample(sample);
+        }
+        else if (ImGui::TreeNode(&sample, "Sample (%.2f, %.2f), weight %.2g", sample.position.x, sample.position.y,
+                                 sample.weight))
+        {
+            show_sample(sample);
+            ImGui::Text("Sample RGB   %.7g  %.7g  %.7g", sample.color.r, sample.color.g, sample.color.b);
+            ImGui::TreePop();
+        }
     }
     ImGui::Spacing();
     ImGui::SeparatorText("Linear RGB");

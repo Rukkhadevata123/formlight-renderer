@@ -6,10 +6,10 @@ namespace
 {
 using namespace formlight;
 
-void check_samples(const PixelDiagnostic &report, ShadowMethod method, bool blocked, InstanceId panel_id,
+void check_samples(const SampleDiagnostic &sample, ShadowMethod method, bool blocked, InstanceId panel_id,
                    const std::string &label)
 {
-    for (const auto &light : report.lights)
+    for (const auto &light : sample.lights)
     {
         if (light.samples.size() != (light.scene_index == 2 ? 4u : 1u))
         {
@@ -79,12 +79,13 @@ void check_shadows(const std::filesystem::path &model, double side)
                 const auto p = camera.project(receiver).value().image;
                 const PixelCoord pixel{static_cast<int>(p.x), static_cast<int>(p.y)};
                 const auto report = renderer.diagnose(view, pixel);
-                if (!report.surface || report.surface->hit.surface.id.instance != scene->instances().back().id ||
-                    report.lights.size() != 3)
+                const auto &sample = report.samples.at(0);
+                if (!sample.surface || sample.surface->hit.surface.id.instance != scene->instances().back().id ||
+                    sample.lights.size() != 3)
                 {
                     throw std::runtime_error(label + ": expected three lights on the receiver");
                 }
-                check_samples(report, method, blocked, panel.id, label);
+                check_samples(sample, method, blocked, panel.id, label);
                 const auto color = frame[pixel.y, pixel.x];
                 if ((color.r > 0) == blocked ||
                     std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b))

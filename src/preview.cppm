@@ -15,6 +15,7 @@ export struct PreviewView
     ViewDepthRange depth{};
     // Pixel inspection replays the light samples used by the displayed frame.
     AreaLightPattern area_light_pattern{AreaLightPattern::ShiftedHalton};
+    int ssaa{1};
 };
 
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
@@ -86,9 +87,10 @@ export struct DiagnosticLight
     Vec3 direct{}; // Mean visible direct light on the selected surface, before opacity.
 };
 
-export struct PixelDiagnostic
+export struct SampleDiagnostic
 {
-    PixelCoord pixel;
+    ImagePoint position; // Coordinates in the output image.
+    double weight;
     std::optional<DiagnosticSurface> surface{};
     std::vector<DiagnosticLight> lights{};
     LinearColor color{};
@@ -98,8 +100,15 @@ export struct PixelDiagnostic
     {
         const auto &samples = lights.at(light).samples;
         const auto &sample = samples.at(index);
-        return sample.direct * (surface.value().material.base_color.a / static_cast<double>(samples.size()));
+        return sample.direct * (weight * surface.value().material.base_color.a / static_cast<double>(samples.size()));
     }
+};
+
+export struct PixelDiagnostic
+{
+    PixelCoord pixel;
+    std::vector<SampleDiagnostic> samples;
+    LinearColor color;
 };
 
 // Borrows a static scene. Camera changes and pixel inspections share the prepared shadow data.
@@ -113,8 +122,11 @@ export class PreviewRenderer
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
   private:
+    [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop) const;
+    void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
+                         SampleDiagnostic &report, std::stop_token stop) const;
     [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
-                                    const std::stop_token &stop, PixelDiagnostic *record = nullptr) const;
+                                    const std::stop_token &stop, SampleDiagnostic *record = nullptr) const;
     [[nodiscard]] Vec3 shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
                                    const Triangle &face, Barycentrics weights, std::uint64_t pixel,
                                    AreaLightPattern pattern, std::stop_token stop, DiagnosticLight *record) const;
@@ -163,8 +175,9 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
         add_preview_ground(*scene, subject);
         bounds = world_bounds(scene->instances());
     }
-    const auto view = request.camera ? clip_to_bounds(*request.camera, bounds)
-                                     : frame_bounds(bounds, subject, request.extent, request.vertical_fov_radians);
+    auto view = request.camera ? clip_to_bounds(*request.camera, bounds)
+                               : frame_bounds(bounds, subject, request.extent, request.vertical_fov_radians);
+    view.ssaa = request.ssaa;
     return {std::move(*scene), view, bounds, subject};
 }
 

@@ -98,12 +98,14 @@ struct RenderSettings
     RenderMode mode{RenderMode::Raster};
     ImageExtent extent{640, 480};
     LightSampling sampling{};
+    int ssaa{1}; // Samples per image axis.
 
     void fields(this auto &self, auto &&field)
     {
         field("mode", self.mode);
         field("width", self.extent.width);
         field("height", self.extent.height);
+        field("ssaa", self.ssaa);
         field("light_samples", self.sampling.samples);
         field("seed", self.sampling.seed);
     }
@@ -232,7 +234,23 @@ struct RenderRequest
     double vertical_fov_radians;
     std::optional<PinholeCamera> camera;
     std::optional<PreviewLighting> lighting;
+    int ssaa{1};
 };
+
+[[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
+{
+    if (ssaa != 1 && ssaa != 2)
+    {
+        throw std::invalid_argument("render.ssaa must be 1 or 2 samples per axis");
+    }
+    if (extent.width <= 0 || extent.height <= 0 ||
+        extent.width > std::numeric_limits<int>::max() / extent.height / ssaa / ssaa)
+    {
+        throw std::invalid_argument(
+            "render.width, render.height and render.ssaa must form a representable sample grid");
+    }
+    return {extent.width * ssaa, extent.height * ssaa};
+}
 
 [[nodiscard]] DirectLight prepare_light(const LightSettings &light, const RenderSettings &render)
 {
@@ -272,11 +290,7 @@ struct RenderRequest
     {
         throw std::invalid_argument("scene.asset requires a model path");
     }
-    if (render.extent.width <= 0 || render.extent.height <= 0 ||
-        render.extent.width > std::numeric_limits<int>::max() / render.extent.height)
-    {
-        throw std::invalid_argument("render.width and render.height must form a positive, representable image");
-    }
+    (void)sample_grid_extent(render.extent, render.ssaa);
     if (render.sampling.samples == 0)
     {
         throw std::invalid_argument("render.light_samples must be positive");
@@ -286,7 +300,8 @@ struct RenderRequest
         throw std::invalid_argument("camera.vertical_fov_degrees must be between 0 and 180");
     }
     RenderRequest request{
-        scene.asset, scene.ground, render.extent, camera.vertical_fov_degrees * (std::numbers::pi / 180), {}, {}};
+        scene.asset, scene.ground, render.extent, camera.vertical_fov_degrees * (std::numbers::pi / 180),
+        {},          {},           render.ssaa};
     if (!camera.auto_frame)
     {
         try

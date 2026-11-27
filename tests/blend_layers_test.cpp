@@ -56,9 +56,10 @@ try
                                   background * (1 - coral_share - blue_share - stone_share);
             const auto color = frame[pixel.y, pixel.x];
             const auto report = renderer.diagnose(view, pixel);
+            const auto &sample = report.samples.at(0);
             const auto delta = abs_components(Vec3{color.r, color.g, color.b} - expected);
-            if (std::max({delta.x, delta.y, delta.z}) > 1e-6 || color.a != 1 || !report.surface ||
-                report.surface->hit.surface.id.instance != front || report.lights.at(0).samples.size() != 1 ||
+            if (std::max({delta.x, delta.y, delta.z}) > 1e-6 || color.a != 1 || !sample.surface ||
+                sample.surface->hit.surface.id.instance != front || sample.lights.at(0).samples.size() != 1 ||
                 std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b))
             {
                 throw std::runtime_error(std::format("Incorrect blend or pick at pixel ({}, {})", pixel.x, pixel.y));

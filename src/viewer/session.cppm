@@ -263,9 +263,13 @@ void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
     if (focus_pending_ && report_)
     {
         focus_pending_ = false;
-        if (report_->surface)
+        // Focus the nearest visible sample when the selected pixel straddles a silhouette.
+        const auto closest = std::ranges::min_element(
+            report_->samples, {}, [](const SampleDiagnostic &sample)
+            { return sample.surface ? sample.surface->hit.view_depth : std::numeric_limits<double>::infinity(); });
+        if (closest != report_->samples.end() && closest->surface)
         {
-            const auto &instance = scene_->preview.scene.instance(report_->surface->hit.surface.id.instance);
+            const auto &instance = scene_->preview.scene.instance(closest->surface->hit.surface.id.instance);
             camera.focus(world_bounds(std::span{&instance, 1}));
             changed = true;
         }
@@ -313,6 +317,7 @@ void ViewerSession::schedule_render(Clock::time_point now)
         return;
     }
     auto view = scene_->preview.view;
+    view.ssaa = applied_.request.ssaa;
     const bool navigating = frame_ && frame_->request.revision != requested_ && requested_ > settings_revision_;
     if (!navigating && now < refine_after_)
     {
