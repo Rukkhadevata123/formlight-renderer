@@ -2,6 +2,7 @@ export module formlight.direct_lighting;
 
 import std;
 import formlight.lighting;
+import formlight.material;
 import formlight.ray_query;
 
 namespace formlight
@@ -35,14 +36,21 @@ export struct ShadowResult
 export struct LightSample
 {
     std::optional<Vec3> position; // A directional light has no finite endpoint.
-    double diffuse_weight;
+    Vec3 direct;                  // Visible, linear RGB before sample averaging or layer compositing.
     ShadowResult shadow;
-
-    [[nodiscard]] double visible_weight() const noexcept
-    {
-        return shadow.state == ShadowState::Blocked || shadow.state == ShadowState::ZeroWeight ? 0.0 : diffuse_weight;
-    }
 };
+
+export [[nodiscard]] LightSample evaluate_light_sample(const MetallicRoughnessBrdf &brdf, IncidentLight incident,
+                                                       std::optional<Vec3> position, auto visibility)
+{
+    const Vec3 direct = incident.weight > 0 ? brdf.evaluate_times_cosine(incident.direction) * incident.weight : Vec3{};
+    if (direct == Vec3{})
+    {
+        return {position, {}, {}};
+    }
+    const ShadowResult shadow = visibility();
+    return {position, shadow.state == ShadowState::Blocked ? Vec3{} : direct, shadow};
+}
 
 export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, const Ray &ray, RayInterval interval,
                                                bool identify_blocker)
@@ -86,12 +94,12 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 }
 } // namespace
 
-export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, const SurfaceRayOrigin &receiver,
-                                                Vec3 unit_normal, LightSampling sampling, std::uint64_t pixel,
-                                                const TriangleBvh *blockers,
-                                                AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
-                                                std::vector<LightSample> *record = nullptr,
-                                                const std::stop_token &stop = {})
+export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const SurfaceRayOrigin &receiver,
+                                            const MetallicRoughnessBrdf &brdf, LightSampling sampling,
+                                            std::uint64_t pixel, const TriangleBvh *blockers,
+                                            AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
+                                            std::vector<LightSample> *record = nullptr,
+                                            const std::stop_token &stop = {})
 {
     if (sampling.samples == 0)
     {
@@ -107,7 +115,7 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
         shift_v = static_cast<double>(static_cast<std::uint32_t>(bits)) * 0x1p-32;
         count = sampling.samples;
     }
-    double sum = 0;
+    Vec3 sum{};
     for (std::uint32_t i = 0; i < count; ++i)
     {
         if ((i % 256 == 0) && stop.stop_requested())
@@ -117,15 +125,14 @@ export [[nodiscard]] double sample_area_diffuse(const RectangleLight &light, con
         const double u = shifted_radical_inverse<2>(i, shift_u);
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);
-        const double weight = light.diffuse_weight(receiver.position(), unit_normal, sample);
-        ShadowResult shadow;
-        if (weight > 0)
+        const auto incident = light.incident(receiver.position(), sample);
+        const auto visibility = [&]
         {
-            shadow = blockers ? trace_shadow(*blockers, receiver.to(sample), {0, 1}, record != nullptr)
-                              : ShadowResult{ShadowState::Disabled};
-        }
-        const LightSample evaluated{sample, weight, shadow};
-        sum += evaluated.visible_weight();
+            return blockers ? trace_shadow(*blockers, receiver.to(sample), {0, 1}, record != nullptr)
+                            : ShadowResult{ShadowState::Disabled};
+        };
+        const auto evaluated = evaluate_light_sample(brdf, incident, sample, visibility);
+        sum = sum + evaluated.direct;
         if (record)
         {
             record->push_back(evaluated);

@@ -39,7 +39,8 @@ void print_pixel_report(const PixelDiagnostic &report)
         std::println("Surface: instance {}, primitive {}, material slot {}, depth {:.9g}",
                      std::to_underlying(id.instance), std::to_underlying(id.primitive), surface->material_index,
                      surface->hit.view_depth);
-        const auto &[base, emission] = surface->colors;
+        const auto &[base, emission, metallic, roughness] = surface->material;
+        std::println("Metallic: {}  Roughness: {}", metallic, roughness);
         std::println("Barycentrics: ({:.9g}, {:.9g}, {:.9g})  Base linear RGB: ({}, {}, {})", weights.a, weights.b,
                      weights.c, base.r, base.g, base.b);
         std::println("Surface emission (linear RGB): ({}, {}, {})", emission.r, emission.g, emission.b);

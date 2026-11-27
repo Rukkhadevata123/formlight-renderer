@@ -18,6 +18,10 @@ Two intersecting, half-opacity sheets change depth order across the image. An op
 
 A half-opacity sheet covers the right half of an amber panel. Its two emissive texels have different RGB and alpha values. The sheet uses `KHR_materials_emissive_strength` to multiply emission by four. In the backlit example, the cyan texel exceeds 1 in linear RGB before compositing, and Reinhard tone mapping preserves the difference between its green and blue channels. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## MaterialSpheres.glb
+
+Six spheres share one untextured geometry and the same copper-colored base. The top row is metallic and the bottom row is dielectric. Roughness increases from 0.2 to 0.5 to 1 across each row. The rightmost metal uses the glTF defaults for both factors. Created for Formlight and distributed under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

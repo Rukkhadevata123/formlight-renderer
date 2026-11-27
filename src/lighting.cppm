@@ -5,7 +5,13 @@ import formlight.geometry;
 
 export namespace formlight
 {
-// White directional light, scaled so a surface facing the light returns its base color.
+struct IncidentLight
+{
+    Vec3 direction{};
+    double weight{}; // Incident radiance including the light-sampling measure.
+};
+
+// The white directional light gives a unit Lambertian reflector unit brightness at normal incidence.
 class DirectionalLight
 {
   public:
@@ -19,9 +25,9 @@ class DirectionalLight
         return toward_light_;
     }
 
-    [[nodiscard]] float diffuse_weight(Vec3 unit_world_normal) const noexcept
+    [[nodiscard]] IncidentLight incident() const noexcept
     {
-        return static_cast<float>(std::max(0.0, dot(unit_world_normal, toward_light_)));
+        return {toward_light_, std::numbers::pi};
     }
 
   private:
@@ -37,15 +43,15 @@ class RectangleLight
     {
         return center_ + edge_u_ * (u - 0.5) + edge_v_ * (v - 0.5);
     }
-    [[nodiscard]] double diffuse_weight(Vec3 receiver, Vec3 unit_normal, Vec3 light_point) const noexcept;
+    [[nodiscard]] IncidentLight incident(Vec3 receiver, Vec3 light_point) const noexcept;
 
   private:
     Vec3 center_, edge_u_, edge_v_, normal_{};
-    double diffuse_scale_;
+    double radiance_times_area_;
 };
 
 RectangleLight::RectangleLight(Vec3 center, Vec3 edge_u, Vec3 edge_v, double power)
-    : center_(center), edge_u_(edge_u), edge_v_(edge_v), diffuse_scale_(power / (std::numbers::pi * std::numbers::pi))
+    : center_(center), edge_u_(edge_u), edge_v_(edge_v), radiance_times_area_(power / std::numbers::pi)
 {
     if (!std::isfinite(center.x) || !std::isfinite(center.y) || !std::isfinite(center.z))
     {
@@ -64,18 +70,17 @@ RectangleLight::RectangleLight(Vec3 center, Vec3 edge_u, Vec3 edge_v, double pow
     normal_ = unit_vector(cross(u, v), "Invalid rectangle light normal");
 }
 
-double RectangleLight::diffuse_weight(Vec3 receiver, Vec3 unit_normal, Vec3 light_point) const noexcept
+IncidentLight RectangleLight::incident(Vec3 receiver, Vec3 light_point) const noexcept
 {
     const Vec3 delta = light_point - receiver;
     const double distance_squared = dot(delta, delta);
     if (!(distance_squared > 0) || !std::isfinite(distance_squared))
     {
-        return 0;
+        return {};
     }
-    // Uniform area sampling cancels the A in Le = power / (pi * A). Lambert's BRDF adds the second 1/pi.
-    // Each dot uses an unnormalized direction, so their product contains another factor of distance squared.
-    const double receiver_cos_over_r = std::max(0.0, dot(unit_normal, delta)) / distance_squared;
-    const double emitter_cos_over_r = std::max(0.0, -dot(normal_, delta)) / distance_squared;
-    return diffuse_scale_ * receiver_cos_over_r * emitter_cos_over_r;
+    // Uniform area sampling cancels the area in Le = power / (pi * area).
+    const Vec3 direction = delta / std::sqrt(distance_squared);
+    const double emitter_cosine = std::max(0.0, -dot(normal_, direction));
+    return {direction, radiance_times_area_ * emitter_cosine / distance_squared};
 }
 } // namespace formlight

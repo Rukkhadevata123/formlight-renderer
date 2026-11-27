@@ -247,11 +247,17 @@ GltfMaterial read_material(const fastgltf::Asset &asset, const fastgltf::Materia
     const auto &pbr = material.pbrData;
     const auto &f = pbr.baseColorFactor;
     const auto &e = material.emissiveFactor;
+    if (!(pbr.metallicFactor >= 0 && pbr.metallicFactor <= 1 && pbr.roughnessFactor >= 0 && pbr.roughnessFactor <= 1))
+    {
+        throw std::runtime_error("metallicFactor and roughnessFactor must be in [0, 1]");
+    }
     if (!std::isfinite(material.emissiveStrength) || material.emissiveStrength < 0)
     {
         throw std::runtime_error("emissiveStrength must be finite and nonnegative");
     }
     GltfMaterial result{.base_color_factor = {f[0], f[1], f[2], f[3]},
+                        .metallic_factor = pbr.metallicFactor,
+                        .roughness_factor = pbr.roughnessFactor,
                         .emission_multiplier = scale_rgb({e[0], e[1], e[2]}, material.emissiveStrength),
                         .double_sided = material.doubleSided};
     if (material.alphaMode == fastgltf::AlphaMode::Mask)
@@ -396,7 +402,7 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
     meshes_.reserve(meshes_.size() + 1);
     node_instance_slots_.reserve(node_instance_slots_.size() + 1);
     instances_.reserve(instances_.size() + 1);
-    materials_.emplace_back(GltfMaterial{.base_color_factor = color});
+    materials_.emplace_back(GltfMaterial{.base_color_factor = color, .metallic_factor = 0});
     meshes_.push_back(std::move(mesh));
     node_instance_slots_.push_back(instances_.size());
     instances_.push_back({id, meshes_.back(), {}});
@@ -420,7 +426,7 @@ LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Tri
     return color;
 }
 
-SurfaceColors GltfScene::surface_colors(const Triangle &face, Barycentrics weights) const
+SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics weights) const
 {
     const auto &mat = material(face);
     auto color = sample_base_color(mat, face, weights);
@@ -431,7 +437,7 @@ SurfaceColors GltfScene::surface_colors(const Triangle &face, Barycentrics weigh
         const auto texel = sample(*mat.emissive_texture, face.uv_at(weights));
         emission = {emission.r * texel.r, emission.g * texel.g, emission.b * texel.b};
     }
-    return {color, emission};
+    return {color, emission, mat.metallic_factor, mat.roughness_factor};
 }
 
 SurfaceFilter GltfScene::solid_filter() const &

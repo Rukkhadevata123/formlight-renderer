@@ -72,7 +72,7 @@ export struct DiagnosticSurface
 {
     RasterHit hit;
     std::size_t material_index;
-    SurfaceColors colors;
+    SurfaceMaterial material;
 };
 
 export struct PixelDiagnostic
@@ -88,8 +88,7 @@ export struct PixelDiagnostic
     [[nodiscard]] Vec3 sample_contribution(std::size_t index) const
     {
         const auto &sample = samples.at(index);
-        const auto &base = surface.value().colors.base_color;
-        return Vec3{base.r, base.g, base.b} * (base.a * sample.visible_weight() / static_cast<double>(samples.size()));
+        return sample.direct * (surface.value().material.base_color.a / static_cast<double>(samples.size()));
     }
 };
 
@@ -104,12 +103,12 @@ export class PreviewRenderer
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
   private:
-    [[nodiscard]] LinearColor shade(const RasterHit &hit, std::uint64_t pixel, AreaLightPattern area_light_pattern,
+    [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
                                     const std::stop_token &stop, bool back_face,
                                     PixelDiagnostic *record = nullptr) const;
-    [[nodiscard]] LightSample directional_sample(const DirectionalLighting &light, const MeshInstance &instance,
-                                                 const Triangle &face, Barycentrics weights, Vec3 normal,
-                                                 bool identify_blocker) const;
+    [[nodiscard]] ShadowResult directional_shadow(const DirectionalLighting &light, const MeshInstance &instance,
+                                                  const Triangle &face, Barycentrics weights,
+                                                  bool identify_blocker) const;
     const GltfScene &scene_;
     SurfaceFilter solid_filter_;
     std::optional<PreviewLighting> lighting_;

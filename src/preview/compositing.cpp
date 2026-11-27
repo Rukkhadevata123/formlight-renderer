@@ -47,11 +47,6 @@ SurfacePass surface_pass(const GltfScene &scene, SurfaceId id, Vec3 eye)
     return material.double_sided ? SurfacePass::BlendBack : SurfacePass::Cull;
 }
 
-std::uint64_t pixel_index(PixelCoord pixel, ImageExtent extent) noexcept
-{
-    return static_cast<std::uint64_t>(pixel.y) * extent.width + pixel.x;
-}
-
 bool in_front_of_solid(const RasterHit &hit, const std::optional<RasterHit> &solid)
 {
     return !solid || hit.view_depth < solid->view_depth;
@@ -142,7 +137,7 @@ ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop
     const auto shade_row = [&](int y)
     {
         const auto shade_hit = [&](int x, const RasterHit &hit, bool back_face)
-        { return shade(hit, pixel_index({x, y}, extent), view.area_light_pattern, stop, back_face); };
+        { return shade(hit, {x, y}, view, stop, back_face); };
         if (stop.stop_requested())
         {
             throw std::runtime_error("Rendering cancelled");
@@ -198,7 +193,7 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
 
     PixelDiagnostic report{.pixel = pixel, .color = background};
     const auto shade_hit = [&](int, const RasterHit &hit, bool back_face)
-    { return shade(hit, pixel_index(pixel, extent), view.area_light_pattern, stop, back_face, &report); };
+    { return shade(hit, pixel, view, stop, back_face, &report); };
     if (solid)
     {
         report.color = shade_hit(0, *solid, false);

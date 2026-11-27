@@ -6,33 +6,39 @@ import formlight.ray_query;
 
 namespace
 {
-bool check_diffuse_box(const formlight::GltfScene &scene)
+bool check_lit_box(const formlight::GltfScene &scene)
 {
     using namespace formlight;
     const auto view = frame_scene(scene, {64, 48});
     const auto base = render_preview(scene, view);
-    const auto lit = render_preview(scene, view, DirectionalLighting{DirectionalLight{{-2, 2, 1}}});
-    const auto check_face = [&](Vec3 center, float cosine)
+    const DirectionalLighting lighting{DirectionalLight{{-2, 2, 1}}};
+    const auto lit = render_preview(scene, view, lighting);
+    const auto check_face = [&](Vec3 normal)
     {
-        const auto point = view.camera.project(center).value().image;
+        const auto point = view.camera.project(normal * 0.5).value().image;
         const int x = static_cast<int>(point.x), y = static_cast<int>(point.y);
         const auto color = base[y, x], shaded = lit[y, x];
-        return std::max({color.r, color.g, color.b}) > 0.01f && std::abs(shaded.r - color.r * cosine) < 1e-6f &&
-               std::abs(shaded.g - color.g * cosine) < 1e-6f && std::abs(shaded.b - color.b * cosine) < 1e-6f;
+        const auto view_direction = view.camera.ray_for_sample(pixel_center(x, y)).direction * -1;
+        // BoxTextured specifies metallic zero and relies on the glTF default roughness of one.
+        const MetallicRoughnessBrdf brdf{{color, {}, 0, 1}, normal, view_direction};
+        const Vec3 expected = brdf.evaluate_times_cosine(lighting.light.toward_light()) * std::numbers::pi;
+        const auto error = abs_components(expected - Vec3{shaded.r, shaded.g, shaded.b});
+        return std::max({color.r, color.g, color.b}) > 0.01f && std::max({error.x, error.y, error.z}) < 1e-6;
     };
     // The three visible face normals in world space are +X, +Y and +Z.
-    return check_face({0.5, 0, 0}, 0) && check_face({0, 0.5, 0}, 2.0f / 3) && check_face({0, 0, 0.5}, 1.0f / 3);
+    return check_face({1, 0, 0}) && check_face({0, 1, 0}) && check_face({0, 0, 1});
 }
 bool check_area_light()
 {
     using namespace formlight;
-    // Power = 4 pi^2 gives a unit Lambertian weight at the center, two units below the light.
+    // Power = 4 pi^2 gives incident weight pi two units below the light center.
     const RectangleLight light{{0, 2, 0}, {2, 0, 0}, {0, 0, 2}, 4 * std::numbers::pi * std::numbers::pi};
     const Vec3 up{0, 1, 0};
     const Vec3 center = light.sample(0.5, 0.5);
-    if (std::abs(light.diffuse_weight({}, up, center) - 1) > 1e-12 ||
-        std::abs(light.diffuse_weight({}, up, light.sample(1, 0.5)) - 16.0 / 25) > 1e-12 ||
-        light.diffuse_weight({0, 4, 0}, {0, -1, 0}, center) != 0)
+    if (std::abs(light.incident({}, center).weight - std::numbers::pi) > 1e-12 ||
+        std::abs(light.incident({}, light.sample(1, 0.5)).weight - 8 * std::numbers::pi / (5 * std::sqrt(5.0))) >
+            1e-12 ||
+        light.incident({0, 4, 0}, center).weight != 0)
     {
         std::cerr << "Rectangle emission or diffuse geometry term disagrees with the analytic weight\n";
         return false;
@@ -42,15 +48,34 @@ bool check_area_light()
         Triangle{.vertices = {TriangleVertex{{-8, 0, -8}}, TriangleVertex{{0, 0, 8}}, TriangleVertex{{8, 0, -8}}}}};
     const MeshInstance floor{InstanceId{0}, mesh};
     const SurfaceRayOrigin receiver{floor, mesh.front(), {0.25, 0.5, 0.25}};
+    const MetallicRoughnessBrdf metal{{{0.75f, 0.375f, 0.125f}, {}, 1, 0.5}, up, up};
     // Adjacent pixels on this flat receiver should both see the unit-weight light center during navigation.
     for (const auto pixel : {40u, 41u})
     {
         std::vector<LightSample> samples;
-        const double weight =
-            sample_area_diffuse(light, receiver, up, {16, 7}, pixel, {}, AreaLightPattern::Center, &samples);
-        if (samples.size() != 1 || std::abs(weight - 1) > 1e-12)
+        const auto color =
+            sample_area_light(light, receiver, metal, {16, 7}, pixel, {}, AreaLightPattern::Center, &samples);
+        // At normal incidence the GGX lobe returns four times the metal's base RGB under this light.
+        const auto error = abs_components(color - Vec3{3, 1.5, 0.5});
+        if (samples.size() != 1 || samples.front().position != center || std::max({error.x, error.y, error.z}) > 1e-12)
         {
             std::cerr << "Navigation samples must hit the same rectangle center at every pixel\n";
+            return false;
+        }
+    }
+    const MetallicRoughnessBrdf white_metal{{{1, 1, 1}, {}, 1, 1}, up, up};
+    std::vector<LightSample> samples;
+    const auto unobstructed =
+        sample_area_light(light, receiver, white_metal, {16, 7}, 0, {}, AreaLightPattern::ShiftedHalton, &samples);
+    for (const auto &sample : samples)
+    {
+        // For F0 = 1, roughness = 1 and V = N, the BRDF times N.L reduces to c / (2 pi (1 + c)).
+        const auto incident = light.incident(receiver.position(), sample.position.value());
+        const double cosine = dot(up, incident.direction);
+        const double expected = incident.weight * cosine / (2 * std::numbers::pi * (1 + cosine));
+        if (std::abs(sample.direct.x - expected) > 1e-12)
+        {
+            std::cerr << "Rectangle BRDF must use each sampled direction\n";
             return false;
         }
     }
@@ -58,10 +83,9 @@ bool check_area_light()
     {
         const std::array panels{MeshInstance{InstanceId{1}, mesh, {Basis3{}, {0, height, 0}}}};
         const TriangleBvh blockers{panels};
-        return sample_area_diffuse(light, receiver, up, {16, 7}, 0, &blockers);
+        return sample_area_light(light, receiver, white_metal, {16, 7}, 0, &blockers);
     };
-    const double unobstructed = sample_area_diffuse(light, receiver, up, {16, 7}, 0, {});
-    if (!(unobstructed > 0 && with_panel(1) == 0 && with_panel(3) == unobstructed))
+    if (!(unobstructed.x > 0 && with_panel(1) == Vec3{} && with_panel(3) == unobstructed))
     {
         std::cerr << "Only the panel between the receiver and rectangle should cast a shadow\n";
         return false;
@@ -270,7 +294,7 @@ auto main(int argc, char **argv) -> int
         std::cerr << "Repeated base-color texture has the wrong colors or orientation\n";
         return 1;
     }
-    if (!check_diffuse_box(*scene))
+    if (!check_lit_box(*scene))
     {
         std::cerr << "Directional light disagrees with the world-space box face normals\n";
         return 1;

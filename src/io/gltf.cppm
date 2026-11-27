@@ -3,6 +3,7 @@ export module formlight.gltf;
 import std;
 export import formlight.mesh_instance;
 export import formlight.texture;
+export import formlight.material;
 
 namespace formlight
 {
@@ -28,18 +29,13 @@ export enum class AlphaMode
 export struct GltfMaterial
 {
     LinearColor base_color_factor{1, 1, 1, 1};
+    double metallic_factor{1}, roughness_factor{1};
     std::optional<TextureBinding> base_color_texture{};
     LinearColor emission_multiplier{};
     std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};
     float alpha_cutoff{0.5f};
     bool double_sided{};
-};
-
-export struct SurfaceColors
-{
-    LinearColor base_color;
-    LinearColor emission;
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -51,7 +47,7 @@ export class GltfScene
 
     [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
                                                                         GltfContent content);
-    [[nodiscard]] SurfaceColors surface_colors(const Triangle &face, Barycentrics weights) const;
+    [[nodiscard]] SurfaceMaterial surface_material(const Triangle &face, Barycentrics weights) const;
     [[nodiscard]] const GltfMaterial &material(const Triangle &face) const
     {
         return materials_.at(face.material_index).value();

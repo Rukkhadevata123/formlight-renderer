@@ -8,11 +8,11 @@ namespace formlight
 {
 namespace
 {
-LinearColor shade_diffuse(const SurfaceColors &surface, double weight) noexcept
+LinearColor outgoing_color(const SurfaceMaterial &surface, Vec3 reflected) noexcept
 {
-    const auto reflected = scale_rgb(surface.base_color, weight);
     const auto &emission = surface.emission;
-    return {reflected.r + emission.r, reflected.g + emission.g, reflected.b + emission.b, surface.base_color.a};
+    return {static_cast<float>(reflected.x + emission.r), static_cast<float>(reflected.y + emission.g),
+            static_cast<float>(reflected.z + emission.b), surface.base_color.a};
 }
 } // namespace
 
@@ -45,31 +45,34 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
     lighting_ = std::move(lighting);
 }
 
-LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, AreaLightPattern area_light_pattern,
+LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
                                    const std::stop_token &stop, bool back_face, PixelDiagnostic *record) const
 {
     const auto &[id, weights] = hit.surface;
     const auto &instance = scene_.instance(id.instance);
     const auto &face = instance.triangles[std::to_underlying(id.primitive)];
-    const auto colors = scene_.surface_colors(face, weights);
-    if (colors.base_color.a == 0)
+    const auto material = scene_.surface_material(face, weights);
+    const auto &base = material.base_color;
+    if (base.a == 0)
     {
-        return colors.base_color;
+        return base;
     }
     if (record)
     {
         // Layers are visited back to front. Keep lighting details for the nearest nonzero layer.
         record->samples.clear();
-        record->surface = DiagnosticSurface{hit, face.material_index, colors};
+        record->surface = DiagnosticSurface{hit, face.material_index, material};
     }
     if (!lighting_)
     {
         // The no-light preview shows the base color at unit weight.
-        return shade_diffuse(colors, 1);
+        return outgoing_color(material, {base.r, base.g, base.b});
     }
 
     const Vec3 local_normal = face.normal_at(weights);
     const Vec3 normal = instance.transform.to_world_normal(back_face ? local_normal * -1 : local_normal);
+    const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
+    const MetallicRoughnessBrdf brdf{material, normal, to_eye};
     if (const auto *area = std::get_if<AreaLighting>(&*lighting_))
     {
         if (record)
@@ -77,48 +80,41 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, std::uint64_t pixel, Ar
             record->light = LightKind::Rectangle;
             record->sampling_seed = area->sampling.seed;
         }
-        const double weight = sample_area_diffuse(area->light, SurfaceRayOrigin{instance, face, weights}, normal,
-                                                  area->sampling, pixel, area->shadows ? blockers_.get() : nullptr,
-                                                  area_light_pattern, record ? &record->samples : nullptr, stop);
-        return shade_diffuse(colors, weight);
+        const auto index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
+        const auto direct = sample_area_light(area->light, SurfaceRayOrigin{instance, face, weights}, brdf,
+                                              area->sampling, index, area->shadows ? blockers_.get() : nullptr,
+                                              view.area_light_pattern, record ? &record->samples : nullptr, stop);
+        return outgoing_color(material, direct);
     }
 
-    const LightSample sample = directional_sample(std::get<DirectionalLighting>(*lighting_), instance, face, weights,
-                                                  normal, record != nullptr);
+    const auto &directional = std::get<DirectionalLighting>(*lighting_);
+    const auto sample =
+        evaluate_light_sample(brdf, directional.light.incident(), std::nullopt, [&]
+                              { return directional_shadow(directional, instance, face, weights, record != nullptr); });
     if (record)
     {
         record->light = LightKind::Directional;
         record->samples.push_back(sample);
     }
-    return shade_diffuse(colors, sample.visible_weight());
+    return outgoing_color(material, sample.direct);
 }
 
-LightSample PreviewRenderer::directional_sample(const DirectionalLighting &light, const MeshInstance &instance,
-                                                const Triangle &face, Barycentrics weights, Vec3 normal,
-                                                bool identify_blocker) const
+ShadowResult PreviewRenderer::directional_shadow(const DirectionalLighting &light, const MeshInstance &instance,
+                                                 const Triangle &face, Barycentrics weights,
+                                                 bool identify_blocker) const
 {
-    const double weight = light.light.diffuse_weight(normal);
-    ShadowResult shadow;
-    if (weight <= 0)
-    {
-        return {std::nullopt, weight, shadow};
-    }
     if (shadow_map_)
     {
         const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
         const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
-        shadow.state = shadow_map_->visible(world, geometric_normal) ? ShadowState::Visible : ShadowState::Blocked;
+        return {shadow_map_->visible(world, geometric_normal) ? ShadowState::Visible : ShadowState::Blocked};
     }
-    else if (light.shadows == ShadowMethod::Ray)
+    if (light.shadows == ShadowMethod::Ray)
     {
         const Ray ray = SurfaceRayOrigin{instance, face, weights}.along(light.light.toward_light());
-        shadow = trace_shadow(*blockers_, ray, {0, std::numeric_limits<double>::infinity()}, identify_blocker);
+        return trace_shadow(*blockers_, ray, {0, std::numeric_limits<double>::infinity()}, identify_blocker);
     }
-    else
-    {
-        shadow.state = ShadowState::Disabled;
-    }
-    return {std::nullopt, weight, shadow};
+    return {ShadowState::Disabled};
 }
 
 } // namespace formlight
