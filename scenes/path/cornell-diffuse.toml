@@ -13,6 +13,7 @@ width = 128
 height = 128
 path_samples = 128
 max_bounces = 3
+bounce_sampling = "light_mixture"
 seed = 7
 
 [display]

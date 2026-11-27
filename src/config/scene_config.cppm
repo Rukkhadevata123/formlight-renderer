@@ -14,6 +14,12 @@ enum class RenderMode
     Path
 };
 
+enum class BounceSampling
+{
+    Cosine,
+    LightMixture
+};
+
 template <class E> struct NamedValue
 {
     std::string_view name;
@@ -32,6 +38,12 @@ inline constexpr std::array tone_mappings{NamedValue{"clip", ToneMapping::Clip},
 constexpr auto &choices(RenderMode) noexcept
 {
     return render_modes;
+}
+inline constexpr std::array bounce_sampling_modes{NamedValue{"cosine", BounceSampling::Cosine},
+                                                  NamedValue{"light_mixture", BounceSampling::LightMixture}};
+constexpr auto &choices(BounceSampling) noexcept
+{
+    return bounce_sampling_modes;
 }
 constexpr auto &choices(LightKind) noexcept
 {
@@ -96,6 +108,7 @@ struct RenderSettings
     LightSampling sampling{};
     int ssaa{1}; // Samples per image axis.
     std::uint32_t path_samples{1}, max_bounces{};
+    BounceSampling bounce_sampling{BounceSampling::Cosine};
 
     void fields(this auto &self, auto &&field)
     {
@@ -107,6 +120,7 @@ struct RenderSettings
         field("seed", self.sampling.seed);
         field("path_samples", self.path_samples);
         field("max_bounces", self.max_bounces);
+        field("bounce_sampling", self.bounce_sampling);
     }
 };
 
@@ -225,6 +239,7 @@ struct PathSampling
 {
     std::uint32_t samples{1}, max_bounces{};
     std::uint64_t seed{};
+    BounceSampling method{BounceSampling::Cosine};
 };
 
 // A render owns a snapshot. The editor can continue changing its SceneConfig.
@@ -307,9 +322,15 @@ struct RenderRequest
     {
         throw std::invalid_argument("camera.vertical_fov_degrees must be between 0 and 180");
     }
-    RenderRequest request{
-        scene.asset, scene.ground, render.extent, camera.vertical_fov_degrees * (std::numbers::pi / 180),         {},
-        {},          render.ssaa,  render.mode,   {render.path_samples, render.max_bounces, render.sampling.seed}};
+    RenderRequest request{scene.asset,
+                          scene.ground,
+                          render.extent,
+                          camera.vertical_fov_degrees * (std::numbers::pi / 180),
+                          {},
+                          {},
+                          render.ssaa,
+                          render.mode,
+                          {render.path_samples, render.max_bounces, render.sampling.seed, render.bounce_sampling}};
     if (!camera.auto_frame)
     {
         try

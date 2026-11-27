@@ -113,6 +113,17 @@ void check_box(SceneConfig config)
         throw std::runtime_error("Relighting lost the edited rectangle settings");
     }
     check_near(rgb(path.diagnose(preview.view, pixel).color), rgb(frame[pixel.y, pixel.x]), 0, "Original frame", pixel);
+
+    // The analytical rectangle is not an emissive mesh. An empty target distribution must preserve the cosine stream.
+    view.path_sampling = {.samples = 32, .max_bounces = 2, .seed = 17};
+    const auto cosine = edited.diagnose(view, pixel);
+    view.path_sampling.method = BounceSampling::LightMixture;
+    const auto fallback = edited.diagnose(view, pixel);
+    for (std::size_t i = 0; i < cosine.samples.size(); ++i)
+    {
+        check_near(fallback.samples.at(i).bounce_radiance.value(), cosine.samples[i].bounce_radiance.value(), 0,
+                   "Empty emitter fallback", pixel);
+    }
 }
 } // namespace
 

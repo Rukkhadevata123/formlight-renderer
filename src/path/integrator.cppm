@@ -5,6 +5,7 @@ import formlight.gltf;
 import formlight.ray_query;
 import formlight.scene_config;
 import formlight.sampling;
+import formlight.emitter_sampling;
 
 namespace formlight
 {
@@ -24,7 +25,15 @@ export class PathIntegrator
   public:
     explicit PathIntegrator(const GltfScene &scene)
         : scene_(scene), surfaces_(std::make_shared<TriangleBvh>(scene.instances(), scene.solid_filter(),
-                                                                 scene.face_culling(CullFace::Back)))
+                                                                 scene.face_culling(CullFace::Back))),
+          emitters_(std::make_shared<EmitterSampler>(scene.instances(),
+                                                     [&scene](const Triangle &face)
+                                                     {
+                                                         const auto &material = scene.material(face);
+                                                         const auto &e = material.emission_multiplier;
+                                                         return material.alpha_mode != AlphaMode::Blend &&
+                                                                (e.r > 0 || e.g > 0 || e.b > 0);
+                                                     }))
     {
     }
 
@@ -80,7 +89,7 @@ export class PathIntegrator
         for (std::uint32_t i = 0; i < sampling.samples; ++i)
         {
             PathSampler sampler{sampling.seed, pixel, i};
-            sum = sum + diffuse_path(surface, ray.direction * -1, sampler, sampling.max_bounces, pattern, stop);
+            sum = sum + diffuse_path(surface, ray.direction * -1, sampler, sampling, pattern, stop);
         }
         const Vec3 bounced = sum / sampling.samples;
         if (first)
@@ -133,17 +142,59 @@ export class PathIntegrator
         return direct;
     }
 
-    [[nodiscard]] Vec3 diffuse_path(Interaction surface, Vec3 outgoing, PathSampler &sampler, std::uint32_t max_bounces,
-                                    AreaLightPattern pattern, std::stop_token stop) const
+    struct Bounce
+    {
+        Ray ray;
+        double weight; // (cos(theta) / pi) divided by the sampling density.
+    };
+
+    [[nodiscard]] std::optional<Bounce> sample_bounce(const Interaction &surface, PathSampler &sampler,
+                                                      BounceSampling method) const
+    {
+        const Vec3 geometric = surface.origin.geometric_normal() * (surface.back_face ? -1 : 1);
+        const Vec3 origin = surface.origin.along(geometric).origin;
+        const bool mixed = method == BounceSampling::LightMixture && !emitters_->empty();
+        Vec3 direction;
+        if (mixed && sampler.uniform() < 0.5)
+        {
+            const auto sampled = emitters_->sample(origin, sampler);
+            if (!sampled)
+            {
+                return std::nullopt;
+            }
+            direction = *sampled;
+        }
+        else
+        {
+            const double u = sampler.uniform();
+            const double v = sampler.uniform();
+            direction = cosine_hemisphere(surface.normal, u, v);
+        }
+        const double cosine = dot(surface.normal, direction);
+        if (cosine <= 0 || dot(geometric, direction) <= 0)
+        {
+            return std::nullopt;
+        }
+        const Ray ray{origin, direction};
+        if (!mixed)
+        {
+            return Bounce{ray, 1};
+        }
+        const double cosine_pdf = cosine / std::numbers::pi;
+        const double mixture_pdf = 0.5 * (cosine_pdf + emitters_->density(ray));
+        return Bounce{ray, cosine_pdf / mixture_pdf};
+    }
+
+    [[nodiscard]] Vec3 diffuse_path(Interaction surface, Vec3 outgoing, PathSampler &sampler,
+                                    const PathSampling &sampling, AreaLightPattern pattern, std::stop_token stop) const
     {
         Vec3 radiance{}, throughput{1, 1, 1};
-        for (std::uint32_t depth = 0; depth < max_bounces; ++depth)
+        for (std::uint32_t depth = 0; depth < sampling.max_bounces; ++depth)
         {
             if (stop.stop_requested())
             {
                 throw std::runtime_error("Rendering cancelled");
             }
-            // Lambertian f*cos/pdf equals diffuse albedo for cosine-weighted sampling.
             const auto &base = surface.material.base_color;
             throughput = Vec3{throughput.x * base.r, throughput.y * base.g, throughput.z * base.b} *
                          (1 - surface.material.metallic);
@@ -151,15 +202,13 @@ export class PathIntegrator
             {
                 break;
             }
-            const double u = sampler.uniform();
-            const double v = sampler.uniform();
-            const Vec3 direction = cosine_hemisphere(surface.normal, u, v);
-            const Vec3 geometric = surface.origin.geometric_normal() * (surface.back_face ? -1 : 1);
-            if (dot(direction, geometric) <= 0)
+            const auto bounce = sample_bounce(surface, sampler, sampling.method);
+            if (!bounce)
             {
                 break;
             }
-            const Ray ray = surface.origin.along(direction);
+            throughput = throughput * bounce->weight;
+            const Ray ray = bounce->ray;
             const auto hit = surfaces_->intersect(ray, {0, std::numeric_limits<double>::infinity()});
             if (!hit)
             {
@@ -176,6 +225,7 @@ export class PathIntegrator
 
     const GltfScene &scene_;
     std::shared_ptr<const TriangleBvh> surfaces_, blockers_;
+    std::shared_ptr<const EmitterSampler> emitters_;
     std::vector<std::pair<std::size_t, AreaLighting>> rectangles_;
 };
 } // namespace formlight

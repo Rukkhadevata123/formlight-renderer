@@ -16,6 +16,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.render.ssaa = 2;
     config.render.path_samples = 11;
     config.render.max_bounces = 3;
+    config.render.bounce_sampling = BounceSampling::LightMixture;
     config.render.sampling = {4, std::numeric_limits<std::uint64_t>::max()};
     config.camera.auto_frame = false;
     config.camera.position = {2, 1, 3};
@@ -58,7 +59,8 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     }
     if (!std::filesystem::equivalent(config.scene.asset, loaded.scene.asset) ||
         loaded.render.sampling.seed != config.render.sampling.seed || loaded.render.ssaa != 2 ||
-        loaded.render.path_samples != 11 || loaded.render.max_bounces != 3 || loaded.camera.auto_frame)
+        loaded.render.path_samples != 11 || loaded.render.max_bounces != 3 ||
+        loaded.render.bounce_sampling != BounceSampling::LightMixture || loaded.camera.auto_frame)
     {
         throw std::runtime_error("Save As lost the asset reference, camera, or full-width seed");
     }

@@ -120,9 +120,10 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
 }
 
 // Mesh-space Möller–Trumbore intersection in the open interval (min, max).
-[[nodiscard]] std::optional<RayHit> intersect_triangle(const Ray &ray, const Triangle &triangle, InstanceId instance,
-                                                       RayInterval interval, const SurfaceFilter &accept,
-                                                       CullFace cull = CullFace::None)
+export [[nodiscard]] std::optional<RayHit> intersect_triangle(const Ray &ray, const Triangle &triangle,
+                                                              InstanceId instance, RayInterval interval,
+                                                              const SurfaceFilter &accept,
+                                                              CullFace cull = CullFace::None)
 {
     const auto &[a, b, c] = triangle.vertices;
     const Vec3 ab = b.position - a.position;

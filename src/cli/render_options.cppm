@@ -78,6 +78,10 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
         {
             config.render.max_bounces = integer_option<std::uint32_t>(option, value);
         }
+        else if (option == "--bounce-sampling")
+        {
+            config.render.bounce_sampling = parse_choice<BounceSampling>(value);
+        }
         else
         {
             throw std::invalid_argument(std::format("Unexpected render option: {}", option));

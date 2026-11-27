@@ -38,7 +38,9 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 运行 `formlight-renderer --scene scenes/lighting/box-area-light.toml --mode path --pixel 85 310` 可重放半影。种子 7 下，方盒挡住了 64 个灯面样本中的 35 个，地面的线性 RGB 三个通道均为 0.06451683。把模式切换为 `hybrid` 可逐样本核对灯面位置、遮挡物与直接光贡献。[方盒阴影对照](docs/box-shadows.md)
 
-将 `max_bounces` 设为正数会从首命中继续追踪漫反射。每个相机样本平均 `path_samples` 条路径，按余弦加权的半球分布采样方向；Lambertian 反射的 BRDF 乘以余弦再除以采样密度，得到该表面的漫反射颜色。当前反弹按底色乘以非金属占比着色。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Diffuse bounces` 为它们带回的线性 RGB。
+将 `max_bounces` 设为正数会从首命中继续追踪漫反射。每个相机样本平均 `path_samples` 条路径。默认的 `bounce_sampling = "cosine"` 按余弦加权半球分布采样，此时 Lambertian 权重化简为表面底色乘以非金属占比。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Diffuse bounces` 为它们带回的线性 RGB。
+
+Cornell 场景启用 `bounce_sampling = "light_mixture"`。每次反弹各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。场景缺少发光网格时自动使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
 
 Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：
 

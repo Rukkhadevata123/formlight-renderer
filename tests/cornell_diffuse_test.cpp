@@ -29,6 +29,20 @@ double ceiling_reference(Vec3 receiver)
     return sum * (0.96 * 0.8 / (cells * cells)) * (8 * 0.73 / std::numbers::pi);
 }
 
+double rms_error(const PreviewRenderer &renderer, PreviewView view, PixelCoord pixel, double reference,
+                 BounceSampling method)
+{
+    double sum = 0;
+    constexpr unsigned seeds = 64;
+    for (unsigned seed = 0; seed < seeds; ++seed)
+    {
+        view.path_sampling = {.samples = 128, .max_bounces = 1, .seed = seed, .method = method};
+        const double diff = renderer.diagnose(view, pixel).color.r - reference;
+        sum += diff * diff;
+    }
+    return std::sqrt(sum / seeds);
+}
+
 void check_back_wall(const PreviewRenderer &renderer, PreviewView view, PixelCoord pixel, bool red_wall)
 {
     view.path_sampling = {.samples = 65536, .max_bounces = 1, .seed = 7};
@@ -56,6 +70,21 @@ void check_back_wall(const PreviewRenderer &renderer, PreviewView view, PixelCoo
     }
     std::println("({}, {}) direct {:.5f}, reference {:.5f}, three bounces ({:.5f}, {:.5f}, {:.5f})", pixel.x, pixel.y,
                  gray.x, reference, multi.color.r, multi.color.g, multi.color.b);
+
+    view.path_sampling.method = BounceSampling::LightMixture;
+    const auto mixed_multi = rgb(renderer.diagnose(view, pixel).color);
+    const auto delta = abs_components(mixed_multi - rgb(multi.color));
+    view.path_sampling.max_bounces = 1;
+    const double mixed_direct = renderer.diagnose(view, pixel).color.r;
+    const double cosine_rms = rms_error(renderer, view, pixel, reference, BounceSampling::Cosine);
+    const double mixed_rms = rms_error(renderer, view, pixel, reference, BounceSampling::LightMixture);
+    if (!(std::abs(mixed_direct - reference) < 0.005 && std::max({delta.x, delta.y, delta.z}) < 0.025 &&
+          mixed_rms < cosine_rms / 2))
+    {
+        throw std::runtime_error("Mixed sampling must preserve radiance and reduce Cornell direct-light error");
+    }
+    std::println("Mixed direct {:.5f}, 128-path RMS cosine {:.5f}, mixture {:.5f}", mixed_direct, cosine_rms,
+                 mixed_rms);
 }
 } // namespace
 
