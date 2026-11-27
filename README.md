@@ -55,15 +55,17 @@ build/release/formlight-renderer.exe --scene $scene --path-samples 2048 --max-bo
 
 在玻璃球场景的 `[scene]` 中，`sampling_targets = [1]` 指定 glTF 节点 1 的网格实例为额外方向采样目标。漫反射路径有 1/2 的概率采样余弦半球、1/4 采样顶灯、1/4 均匀采样玻璃球包围球张开的立体角。光线随后仍与真实网格求交，玻璃的自发光为零。将列表改为 `[]` 即可在同一场景比较只采样余弦半球与顶灯的效果。固定 128 条路径、64 个种子，球底三个地面探针的线性红通道综合 RMS 误差由 0.264 降到 0.232，球外对照点由 0.028 升到 0.045。[采样实现](src/path/target_sampling.cppm) · [焦散回归](tests/cornell_caustic_test.cpp)
 
-[Cornell 解析球](scenes/path/cornell-analytic.toml)沿用网格球的机位、球心、半径和折射率。这个版本在 TOML 的 `[[scene.spheres]]` 中直接指定世界坐标 `center` 和 `radius`。在 `path` 模式下，三角形和球共用一个 BVH；每个球占一个图元，像素诊断会显示球的序号和曲面法线。球可使用 `diffuse`、`mirror` 或 `dielectric` 材质，`sampling_target = true` 将它加入方向采样。只含球的场景可以省略 `scene.asset`。用 `--pixel 46 96` 对照两份 Cornell 配置，解析球的视深为 3.32187887，网格球为 3.32302275。[求交回归](tests/sphere_query_test.cpp)
+[Cornell 解析球](scenes/path/cornell-analytic.toml)沿用网格球的机位、球心、半径和折射率。这个版本在 TOML 的 `[[scene.spheres]]` 中直接指定世界坐标 `center` 和 `radius`。在 `path` 模式下，三角形和球共用一个 BVH；每个球占一个图元，像素诊断会显示球的序号和曲面法线。球可使用 `diffuse`、`mirror`、`metal` 或 `dielectric` 材质，`sampling_target = true` 将它加入方向采样。只含球的场景可以省略 `scene.asset`。用 `--pixel 46 96` 对照两份 Cornell 配置，解析球的视深为 3.32187887，网格球为 3.32302275。[求交回归](tests/sphere_query_test.cpp)
 
-[Many Balls](scenes/path/many-balls.toml) 使用针孔相机观察固定布局的静止球，环境辐亮度为 (0.7, 0.8, 1.0)。默认场景种子 42 生成 480 个小球，另有三个半径为 1 的主球和一个地面球。当前金属球使用理想镜面。默认预览为 256×144，每像素 32 条路径，最多反弹 8 次。
+[Many Balls](scenes/path/many-balls.toml) 使用针孔相机观察固定布局的静止球，环境辐亮度为 (0.7, 0.8, 1.0)。默认场景种子 42 生成 480 个小球，另有三个半径为 1 的主球和一个地面球。其中 73 个小金属球各有固定的模糊度，前景大金属球使用理想镜面。默认预览为 256×144，每像素 32 条路径，最多反弹 8 次。
 
 ```powershell
 build/release/formlight-renderer.exe --preset many_balls --scene-seed 42 --seed 7 --output build/release/many-balls.png
 ```
 
 `--scene-seed` 控制小球的位置和材质，`--seed` 控制路径采样。CLI 和 viewer 均可用 `--scene scenes/path/many-balls.toml` 加载同一预设，再用 TOML 覆盖相机、环境色或采样数。[布局与环境光回归](tests/many_balls_test.cpp)
+
+在 Many Balls 的 `[scene]` 中，`metal_fuzz_max` 控制小金属球模糊度的上限，默认值为 0.5。将它设为 0，可用同一机位和种子复现理想镜面基线。在单个 `[[scene.spheres]]` 或 `[[scene.path_materials]]` 中，设 `type = "metal"` 和 `fuzz = 0.3` 即可指定模糊度（范围 0 到 1）。积分器在镜面反射方向上加一个长度为 `fuzz`、方向在球面上均匀分布的向量，再将结果归一化。落到几何表面下方的样本贡献为零。`--pixel` 可查看命中金属的实际模糊度。[散射实现](src/path/specular.cppm) · [反射探针](tests/path_specular_test.cpp)
 
 ### 自定义光栅 shader
 

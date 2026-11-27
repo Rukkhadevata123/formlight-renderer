@@ -42,7 +42,14 @@ void print_sample(const SampleDiagnostic &report)
         {
             std::println("World shading normal: ({}, {}, {})", n->x, n->y, n->z);
         }
-        std::println("Metallic: {}  Roughness: {}", metallic, roughness);
+        if (surface->metal_fuzz)
+        {
+            std::println("Path metal fuzz: {}", *surface->metal_fuzz);
+        }
+        else
+        {
+            std::println("Metallic: {}  Roughness: {}", metallic, roughness);
+        }
         if (const auto *triangle = std::get_if<TriangleCoordinates>(&surface->hit.surface.coordinates))
         {
             const auto weights = triangle->weights;

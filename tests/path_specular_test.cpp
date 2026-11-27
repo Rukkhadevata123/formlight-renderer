@@ -1,6 +1,7 @@
 import std;
 import formlight.preview;
 import formlight.scene_toml;
+import formlight.sampling;
 
 namespace
 {
@@ -37,6 +38,37 @@ void check_optics()
     {
         throw std::runtime_error("Wrong Fresnel branch at normal incidence or above the critical angle");
     }
+}
+
+void check_metal_sampling()
+{
+    const Vec3 normal{0, 1, 0}, grazing{std::sqrt(0.96), 0.2, 0};
+    PathSampler rng{7, 0, 0};
+    auto untouched = rng;
+    if (sample_metal(grazing, normal, 0, rng) != grazing || rng.next_bits() != untouched.next_bits())
+    {
+        throw std::runtime_error("Zero fuzz must preserve both mirror direction and sampler state");
+    }
+
+    constexpr double fuzz = 0.5;
+    constexpr unsigned samples = 16384;
+    unsigned accepted = 0;
+    for (unsigned i = 0; i < samples; ++i)
+    {
+        if (const auto d = sample_metal(grazing, normal, fuzz, rng))
+        {
+            near(dot(*d, *d), 1, 1e-12, "unit metal direction");
+            if (dot(*d, normal) <= 0 || dot(*d, grazing) < std::sqrt(1 - fuzz * fuzz) - 1e-14)
+            {
+                throw std::runtime_error("Metal scattered below the surface or outside the reflection cone");
+            }
+            ++accepted;
+        }
+    }
+    // The normal component of a uniform unit vector is uniform in [-1,1].
+    const double fraction = static_cast<double>(accepted) / samples;
+    near(fraction, (1 + grazing.y / fuzz) / 2, 0.015, "grazing metal survival probability");
+    std::println("Grazing metal survival {:.5f}, expected 0.70000", fraction);
 }
 
 // Axial probes hit the sphere away from the triangle seams, directly below the ceiling lamp.
@@ -82,6 +114,19 @@ void check_cornell(SceneConfig &config, auto &sphere)
     near(lamp.color.r, 8 * 0.8, 1e-6, "red mirror reflectance");
     near(lamp.color.g, 8 * 0.9, 1e-6, "green mirror reflectance");
     near(lamp.color.b, 8, 0, "blue mirror reflectance");
+    sphere.type = PathSurface::Metal;
+    const auto smooth = load_preview(prepare_render(config));
+    const auto sharp = probe(smooth, {-0.358, 1, 0.141}, false, 1, BounceSampling::LightMixture);
+    near(sharp.color.b, lamp.color.b, 0, "zero-fuzz ceiling reflection");
+    sphere.fuzz = 0.5;
+    const auto metal = load_preview(prepare_render(config));
+    const auto blurred = probe(metal, {-0.358, 1, 0.141}, false, 1, BounceSampling::LightMixture);
+    near(blurred.surface.value().metal_fuzz.value(), sphere.fuzz, 0, "diagnosed metal fuzz");
+    if (!(blurred.color.b > 0 && blurred.color.b < sharp.color.b))
+    {
+        throw std::runtime_error("Expected a fraction of fuzzy reflection paths to reach the ceiling lamp");
+    }
+    std::println("Ceiling reflection blue channel: sharp {:.4f}, fuzz 0.5 {:.4f}", sharp.color.b, blurred.color.b);
     std::println("Cornell ceiling radiance through one glass exit: {:.5f}; mirror RGB: {:.2f}, {:.2f}, {:.2f}",
                  exit.color.r, lamp.color.r, lamp.color.g, lamp.color.b);
 }
@@ -95,6 +140,7 @@ try
         return 1;
     }
     check_optics();
+    check_metal_sampling();
     auto config = load_scene_config(argv[1]);
     if (config.scene.spheres.empty())
     {

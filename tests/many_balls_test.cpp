@@ -9,7 +9,7 @@ using namespace formlight;
 bool same_sphere(const SphereSettings &a, const SphereSettings &b)
 {
     return a.shape.center == b.shape.center && a.shape.radius == b.shape.radius && a.type == b.type &&
-           a.albedo == b.albedo && a.ior == b.ior;
+           a.albedo == b.albedo && a.ior == b.ior && a.fuzz == b.fuzz;
 }
 
 void check_layout(SceneConfig config)
@@ -27,7 +27,7 @@ void check_layout(SceneConfig config)
     {
         throw std::runtime_error("First small sphere moved for scene seed 42");
     }
-    std::array<unsigned, 3> counts{};
+    std::array<unsigned, 4> counts{};
     for (const auto &ball : small)
     {
         const auto c = ball.shape.center;
@@ -37,8 +37,12 @@ void check_layout(SceneConfig config)
             throw std::runtime_error("Small sphere outside the authored layout");
         }
         ++counts.at(std::to_underlying(ball.type));
+        if (ball.type == PathSurface::Metal && !(ball.fuzz > 0 && ball.fuzz < 0.5))
+        {
+            throw std::runtime_error("Unexpected small metal sphere fuzz for scene seed 42");
+        }
     }
-    if (counts != std::array<unsigned, 3>{382, 73, 25})
+    if (counts != std::array<unsigned, 4>{382, 0, 25, 73})
     {
         throw std::runtime_error("Small sphere material counts changed for scene seed 42");
     }

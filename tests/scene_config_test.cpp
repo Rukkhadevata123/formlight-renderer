@@ -100,10 +100,16 @@ void check_sphere_scene(const std::filesystem::path &destination)
     config.render.mode = RenderMode::Path;
     config.render.extent = {1, 1};
     config.scene.spheres = {
-        {.shape = {{2, 0, 0}, 0.75}, .type = PathSurface::Dielectric, .ior = 1.33, .sampling_target = true}};
+        {.shape = {{2, 0, 0}, 0.75}, .type = PathSurface::Dielectric, .ior = 1.33, .sampling_target = true},
+        {.shape = {{2, 0, 0}, 0.25}, .type = PathSurface::Metal, .fuzz = 0.35}};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     const auto &sphere = loaded.scene.spheres.at(0);
+    const auto &metal = loaded.scene.spheres.at(1);
+    if (metal.type != PathSurface::Metal || metal.fuzz != 0.35)
+    {
+        throw std::runtime_error("Metal fuzz changed during TOML round trip");
+    }
     if (!loaded.scene.asset.empty() || sphere.shape.center != Vec3{2, 0, 0} || sphere.shape.radius != 0.75 ||
         sphere.type != PathSurface::Dielectric || sphere.ior != 1.33 || !sphere.sampling_target)
     {
@@ -121,13 +127,14 @@ void check_preset_round_trip(const std::filesystem::path &destination)
     using namespace formlight;
     auto config = preset_config(ScenePreset::ManyBalls);
     config.scene.seed = std::numeric_limits<std::uint64_t>::max();
+    config.scene.metal_fuzz_max = 0.25;
     config.render.sampling.seed = 17;
     config.scene.environment = {0.4, 0.5, 0.6};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     if (loaded.scene.preset != ScenePreset::ManyBalls || loaded.scene.seed != config.scene.seed ||
         loaded.render.sampling.seed != 17 || loaded.scene.environment != config.scene.environment ||
-        !loaded.scene.spheres.empty())
+        loaded.scene.metal_fuzz_max != 0.25 || !loaded.scene.spheres.empty())
     {
         throw std::runtime_error("Preset, seeds or environment changed during TOML round trip");
     }

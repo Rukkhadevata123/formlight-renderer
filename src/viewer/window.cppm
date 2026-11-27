@@ -74,7 +74,14 @@ void show_sample(const SampleDiagnostic &report)
         {
             ImGui::Text("World shading normal   %.3g  %.3g  %.3g", n->x, n->y, n->z);
         }
-        ImGui::Text("Metallic   %.3g    Roughness   %.3g", metallic, roughness);
+        if (surface->metal_fuzz)
+        {
+            ImGui::Text("Path metal fuzz   %.3g", *surface->metal_fuzz);
+        }
+        else
+        {
+            ImGui::Text("Metallic   %.3g    Roughness   %.3g", metallic, roughness);
+        }
         ImGui::Text("Surface emission (linear RGB)   %.3g  %.3g  %.3g", emission.r, emission.g, emission.b);
         const auto ambient = surface->ambient;
         ImGui::Text("Occlusion   %.3g", occlusion);

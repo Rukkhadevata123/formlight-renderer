@@ -53,9 +53,9 @@ constexpr auto &choices(ScenePreset) noexcept
 {
     return scene_presets;
 }
-inline constexpr std::array path_surfaces{NamedValue{"diffuse", PathSurface::Diffuse},
-                                          NamedValue{"mirror", PathSurface::Mirror},
-                                          NamedValue{"dielectric", PathSurface::Dielectric}};
+inline constexpr std::array path_surfaces{
+    NamedValue{"diffuse", PathSurface::Diffuse}, NamedValue{"mirror", PathSurface::Mirror},
+    NamedValue{"dielectric", PathSurface::Dielectric}, NamedValue{"metal", PathSurface::Metal}};
 constexpr auto &choices(PathSurface) noexcept
 {
     return path_surfaces;
@@ -96,6 +96,7 @@ struct PathMaterialSettings
     int material{-1}; // Zero-based glTF material index.
     PathSurface type{PathSurface::Diffuse};
     double ior{1.5};
+    double fuzz{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -104,6 +105,10 @@ struct PathMaterialSettings
         if (self.type == PathSurface::Dielectric)
         {
             field("ior", self.ior);
+        }
+        if (self.type == PathSurface::Metal)
+        {
+            field("fuzz", self.fuzz);
         }
     }
 };
@@ -115,6 +120,7 @@ struct SphereSettings
     PathSurface type{PathSurface::Diffuse};
     double ior{1.5};
     bool sampling_target{};
+    double fuzz{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -128,6 +134,10 @@ struct SphereSettings
         else
         {
             field("albedo", self.albedo);
+        }
+        if (self.type == PathSurface::Metal)
+        {
+            field("fuzz", self.fuzz);
         }
         field("sampling_target", self.sampling_target);
     }
@@ -143,6 +153,7 @@ struct SceneSettings
     ScenePreset preset{ScenePreset::None};
     std::uint64_t seed{42};
     Vec3 environment{};
+    double metal_fuzz_max{0.5};
 
     void fields(this auto &self, auto &&field)
     {
@@ -156,6 +167,7 @@ struct SceneSettings
         if (self.preset != ScenePreset::None)
         {
             field("seed", self.seed);
+            field("metal_fuzz_max", self.metal_fuzz_max);
         }
     }
 };
@@ -276,7 +288,7 @@ struct SceneConfig
 };
 
 [[nodiscard]] SceneConfig preset_config(ScenePreset preset);
-void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed);
+void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed, double max_fuzz = 0.5);
 
 enum class ShadowMethod
 {
@@ -402,9 +414,20 @@ struct RenderRequest
     {
         throw std::invalid_argument("Analytic spheres require path mode");
     }
+    const auto validate_fuzz = [](double fuzz)
+    {
+        if (!(fuzz >= 0 && fuzz <= 1))
+        {
+            throw std::invalid_argument("Metal fuzz must be in [0, 1]");
+        }
+    };
     for (const auto &sphere : scene.spheres)
     {
         (void)sphere.shape.bounds();
+        if (sphere.type == PathSurface::Metal)
+        {
+            validate_fuzz(sphere.fuzz);
+        }
         if (sphere.type == PathSurface::Dielectric && !(std::isfinite(sphere.ior) && sphere.ior >= 1))
         {
             throw std::invalid_argument("Dielectric ior must be finite and at least 1");
@@ -421,6 +444,10 @@ struct RenderRequest
     std::set<int> assigned;
     for (const auto &entry : scene.path_materials)
     {
+        if (entry.type == PathSurface::Metal)
+        {
+            validate_fuzz(entry.fuzz);
+        }
         if (entry.material < 0 || !assigned.insert(entry.material).second)
         {
             throw std::invalid_argument("scene.path_materials requires distinct nonnegative glTF material indices");
@@ -457,7 +484,8 @@ struct RenderRequest
                           scene.environment};
     if (scene.preset == ScenePreset::ManyBalls)
     {
-        append_many_balls(request.spheres, scene.seed);
+        validate_fuzz(scene.metal_fuzz_max);
+        append_many_balls(request.spheres, scene.seed, scene.metal_fuzz_max);
     }
     if (!camera.auto_frame)
     {

@@ -119,6 +119,7 @@ export class PathIntegrator
         bool back_face;
         PathSurface type;
         double ior;
+        double fuzz;
     };
 
     [[nodiscard]] Interaction interaction(const SurfaceHit &hit, const Ray &ray) const
@@ -134,7 +135,8 @@ export class PathIntegrator
                     back ? n * -1 : n,
                     back,
                     mat.path_surface,
-                    mat.ior};
+                    mat.ior,
+                    mat.fuzz};
         }
         const auto [id, weights, gradients] = hit.surface.triangle();
         const auto &instance = scene_.instance(id.instance);
@@ -151,7 +153,8 @@ export class PathIntegrator
                 scene_.shading_normal(instance, face, weights, gradients, back),
                 back,
                 mat.path_surface,
-                mat.ior};
+                mat.ior,
+                mat.fuzz};
     }
 
     [[nodiscard]] Vec3 direct_light(const Interaction &surface, const Ray &ray, std::uint64_t pixel,
@@ -184,18 +187,24 @@ export class PathIntegrator
         Vec3 weight;
     };
 
-    [[nodiscard]] static Bounce specular_bounce(const Interaction &surface, Vec3 incident, Vec3 geometric, Vec3 albedo,
-                                                PathSampler &sampler)
+    [[nodiscard]] static std::optional<Bounce> specular_bounce(const Interaction &surface, Vec3 incident,
+                                                               Vec3 geometric, Vec3 albedo, PathSampler &sampler)
     {
         const Vec3 normal = dot(surface.normal, incident) < 0 ? surface.normal : geometric;
-        if (surface.type == PathSurface::Mirror)
+        if (surface.type == PathSurface::Mirror || surface.type == PathSurface::Metal)
         {
             Vec3 direction = mirror_direction(incident, normal);
             if (dot(direction, geometric) <= 0)
             {
                 direction = mirror_direction(incident, geometric);
             }
-            return Bounce{surface.origin.along(direction), albedo};
+            const double fuzz = surface.type == PathSurface::Metal ? surface.fuzz : 0;
+            const auto scattered = sample_metal(direction, geometric, fuzz, sampler);
+            if (!scattered)
+            {
+                return std::nullopt;
+            }
+            return Bounce{surface.origin.along(*scattered), albedo};
         }
         const double eta = surface.back_face ? surface.ior : 1 / surface.ior;
         const double u = sampler.uniform();

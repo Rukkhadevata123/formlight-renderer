@@ -84,6 +84,7 @@ export struct DiagnosticSurface
     SurfaceMaterial material;
     Vec3 ambient;
     std::optional<Vec3> shading_normal{};
+    std::optional<double> metal_fuzz{};
 };
 
 export struct SampleDiagnostic
@@ -176,7 +177,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     }
     for (const auto &entry : request.path_materials)
     {
-        scene->set_path_material(entry.material, entry.type, entry.ior);
+        scene->set_path_material(entry.material, entry.type, entry.ior, entry.fuzz);
     }
     for (const auto node : request.sampling_targets)
     {

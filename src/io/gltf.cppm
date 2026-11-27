@@ -64,6 +64,7 @@ export struct GltfMaterial
     bool double_sided{};
     PathSurface path_surface{PathSurface::Diffuse};
     double ior{1.5};
+    double fuzz{};
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -103,7 +104,7 @@ export class GltfScene
     FaceCulling face_culling(CullFace) const && = delete;
     // Procedural meshes such as the preview floor are opaque and visible from either side.
     void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
-    void set_path_material(std::size_t gltf_index, PathSurface type, double ior);
+    void set_path_material(std::size_t gltf_index, PathSurface type, double ior, double fuzz = 0);
     void mark_sampling_target(std::uint32_t node_index);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
     {

@@ -274,6 +274,11 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
                                             first->material,
                                             {},
                                             first->shading_normal};
+        const auto &material = scene_.material(material_index);
+        if (material.path_surface == PathSurface::Metal)
+        {
+            record->surface->metal_fuzz = material.fuzz;
+        }
         record->lights = std::move(first->lights);
         record->bounce_radiance = first->bounce_radiance;
     }

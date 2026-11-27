@@ -42,6 +42,14 @@ class PathSampler
            normal * cos_theta;
 }
 
+[[nodiscard]] inline Vec3 uniform_sphere(double u, double v)
+{
+    const double z = 1 - 2 * u;
+    const double radius = std::sqrt((1 - z) * (1 + z));
+    const double phi = 2 * std::numbers::pi * v;
+    return {radius * std::cos(phi), radius * std::sin(phi), z};
+}
+
 // Map a uniform disk to the hemisphere. The resulting solid-angle density is cos(theta) / pi.
 [[nodiscard]] inline Vec3 cosine_hemisphere(Vec3 normal, double u, double v)
 {

@@ -361,7 +361,8 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
             .metallic_factor = 0,
             .roughness_factor = sphere.type == PathSurface::Diffuse ? 1.0 : 0.0,
             .path_surface = sphere.type,
-            .ior = sphere.ior});
+            .ior = sphere.ior,
+            .fuzz = sphere.fuzz});
         spheres_.push_back({id, sphere.shape, materials_.size() - 1, sphere.sampling_target});
         node_instance_slots_.push_back(std::nullopt);
     }
@@ -383,7 +384,7 @@ Bounds3 GltfScene::bounds() const
     return bounds;
 }
 
-void GltfScene::set_path_material(std::size_t gltf_index, PathSurface type, double ior)
+void GltfScene::set_path_material(std::size_t gltf_index, PathSurface type, double ior, double fuzz)
 {
     // Slot zero belongs to primitives that omit the glTF material.
     if (materials_.empty() || gltf_index >= materials_.size() - 1 || !materials_[gltf_index + 1])
@@ -393,6 +394,7 @@ void GltfScene::set_path_material(std::size_t gltf_index, PathSurface type, doub
     auto &mat = *materials_[gltf_index + 1];
     mat.path_surface = type;
     mat.ior = ior;
+    mat.fuzz = fuzz;
 }
 
 void GltfScene::mark_sampling_target(std::uint32_t node_index)

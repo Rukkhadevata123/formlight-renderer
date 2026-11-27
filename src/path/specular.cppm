@@ -2,6 +2,7 @@ export module formlight.specular;
 
 import std;
 import formlight.geometry;
+import formlight.sampling;
 
 export namespace formlight
 {
@@ -9,7 +10,8 @@ enum class PathSurface
 {
     Diffuse,
     Mirror,
-    Dielectric
+    Dielectric,
+    Metal
 };
 
 struct SpecularSample
@@ -23,6 +25,22 @@ struct SpecularSample
 [[nodiscard]] inline Vec3 mirror_direction(Vec3 incident, Vec3 normal) noexcept
 {
     return incident - normal * (2 * dot(incident, normal));
+}
+
+// Offset the ideal reflection by a point on the surface of a sphere of radius fuzz.
+[[nodiscard]] inline std::optional<Vec3> sample_metal(Vec3 reflected, Vec3 geometric, double fuzz, PathSampler &sampler)
+{
+    if (fuzz == 0)
+    {
+        return reflected;
+    }
+    const double u = sampler.uniform();
+    const Vec3 scattered = reflected + uniform_sphere(u, sampler.uniform()) * fuzz;
+    if (dot(geometric, scattered) <= 0)
+    {
+        return std::nullopt;
+    }
+    return unit_vector(scattered, "Invalid metal scattering direction");
 }
 
 [[nodiscard]] inline SpecularSample sample_dielectric(Vec3 incident, Vec3 normal, double eta_i_over_t,

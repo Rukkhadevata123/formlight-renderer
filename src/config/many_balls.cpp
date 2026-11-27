@@ -22,7 +22,7 @@ SceneConfig preset_config(ScenePreset preset)
     return config;
 }
 
-void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed)
+void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed, double max_fuzz)
 {
     constexpr int half_grid = 11, side = 2 * half_grid;
     spheres.reserve(spheres.size() + side * side + 4);
@@ -51,8 +51,9 @@ void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed)
             }
             else if (choice < 0.95)
             {
-                ball.type = PathSurface::Mirror;
+                ball.type = PathSurface::Metal;
                 ball.albedo = {0.5 + 0.5 * rng.uniform(), 0.5 + 0.5 * rng.uniform(), 0.5 + 0.5 * rng.uniform()};
+                ball.fuzz = max_fuzz * rng.uniform();
             }
             else
             {
