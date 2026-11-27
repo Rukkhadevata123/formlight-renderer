@@ -37,8 +37,13 @@ void read_vertex_colors(const fastgltf::Asset &asset, const fastgltf::Accessor &
     }
 }
 
+struct PrimitiveLocation
+{
+    std::size_t mesh, primitive;
+};
+
 void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primitive, std::span<TriangleVertex> vertices,
-                    GltfContent content, std::size_t mesh_index, std::size_t primitive_index)
+                    GltfContent content, PrimitiveLocation location)
 {
     const auto &asset = resources.asset;
     constexpr std::array<std::string_view, 2> names{"TEXCOORD_0", "TEXCOORD_1"};
@@ -56,7 +61,7 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
         if (uvs.count != vertices.size() || uvs.type != fastgltf::AccessorType::Vec2)
         {
             throw std::runtime_error(std::format("Mesh {} primitive {}: {} must supply one VEC2 per position",
-                                                 mesh_index, primitive_index, name));
+                                                 location.mesh, location.primitive, name));
         }
         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
             asset, uvs,
@@ -65,7 +70,7 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
                 if (!std::isfinite(uv[0]) || !std::isfinite(uv[1]))
                 {
                     throw std::runtime_error(std::format("Mesh {} primitive {}: {} contains a non-finite coordinate",
-                                                         mesh_index, primitive_index, name));
+                                                         location.mesh, location.primitive, name));
                 }
                 vertices[i].texcoords[set] = {uv[0], uv[1]};
             });
@@ -83,7 +88,7 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
             if (set >= present.size() || !present[set])
             {
                 throw std::runtime_error(std::format("Mesh {} primitive {} material {}: {} requires {} TEXCOORD_{}",
-                                                     mesh_index, primitive_index, *primitive.materialIndex, slot,
+                                                     location.mesh, location.primitive, *primitive.materialIndex, slot,
                                                      set >= present.size() ? "unsupported" : "missing", set));
             }
         };
@@ -123,7 +128,7 @@ struct IndexedFaces
 };
 
 IndexedFaces read_indices(ModelResources &resources, const fastgltf::Primitive &primitive, std::size_t vertex_count,
-                          std::size_t previous_faces)
+                          std::size_t previous_faces, PrimitiveLocation location)
 {
     // GenerateMeshIndices supplies consecutive indices for non-indexed primitives.
     const auto &accessor = resources.geometry_accessor(primitive.indicesAccessor.value());
@@ -151,7 +156,9 @@ IndexedFaces read_indices(ModelResources &resources, const fastgltf::Primitive &
     {
         if (index >= vertex_count)
         {
-            throw std::runtime_error("Triangle index exceeds POSITION count");
+            throw std::runtime_error(
+                std::format("Mesh {} primitive {}: indices[{}] = {} is out of range for {} POSITION vertices",
+                            location.mesh, location.primitive, i, index, vertex_count));
         }
         indices[i] = index;
     };
@@ -220,6 +227,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
     for (std::size_t primitive_index = 0; primitive_index < mesh.primitives.size(); ++primitive_index)
     {
         const auto &primitive = mesh.primitives[primitive_index];
+        const PrimitiveLocation location{mesh_index, primitive_index};
         using enum fastgltf::PrimitiveType;
         if (primitive.type != Triangles && primitive.type != TriangleStrip && primitive.type != TriangleFan)
         {
@@ -258,7 +266,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
                 asset, normals, [&](auto n, std::size_t i)
                 { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
         }
-        read_texcoords(resources, primitive, vertices, content, mesh_index, primitive_index);
+        read_texcoords(resources, primitive, vertices, content, location);
         const auto tangent = primitive.findAttribute("TANGENT");
         const bool use_tangents = content == GltfContent::Materials && normal != primitive.attributes.end() &&
                                   tangent != primitive.attributes.end();
@@ -287,7 +295,7 @@ export std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t me
             read_vertex_colors(asset, resources.geometry_accessor(color->accessorIndex), vertices);
         }
         const auto start = triangles.size();
-        const auto faces = read_indices(resources, primitive, vertices.size(), start);
+        const auto faces = read_indices(resources, primitive, vertices.size(), start, location);
         if (normal == primitive.attributes.end())
         {
             generate_area_weighted_normals(faces, vertices);
