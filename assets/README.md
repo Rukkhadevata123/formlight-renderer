@@ -26,6 +26,10 @@ Six spheres share one untextured geometry and the same copper-colored base. The 
 
 A square panel uses one two-texel PNG for base color, metallic-roughness, and ambient occlusion. The RGB bytes are (32, 64, 192) and (224, 160, 48). The metallic and roughness factors are both 0.5. The red channel controls occlusion with strength 0.25. The sampler uses linear filtering. The [ambient lighting scene](../scenes/occlusion-panel.toml) shows the panel under uniform colored light. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## DualUvPanel.glb
+
+This variant of MetallicRoughnessPanel uses the same two texels for all four material bindings. UV0 runs left to right. UV1 mirrors U and uses normalized unsigned-short coordinates. Base color (UV1) and emission (UV0) use linear filtering. Metallic-roughness (UV0) and occlusion (UV1) use nearest filtering. Created for Formlight and distributed under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

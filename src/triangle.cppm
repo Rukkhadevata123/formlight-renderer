@@ -18,7 +18,7 @@ struct TexCoord
 struct TriangleVertex
 {
     Vec3 position{};
-    TexCoord uv{};
+    std::array<TexCoord, 2> texcoords{};
     Vec3 normal{}; // Zero when the mesh has no vertex normals.
     LinearColor color{1, 1, 1, 1};
 };
@@ -41,12 +41,14 @@ struct Triangle
         return a.position + (b.position - a.position) * weights.b + (c.position - a.position) * weights.c;
     }
 
-    [[nodiscard]] constexpr TexCoord uv_at(Barycentrics weights) const noexcept
+    [[nodiscard]] constexpr TexCoord uv_at(Barycentrics weights, std::size_t set = 0) const
     {
-        const auto &[a, b, c] = vertices;
+        const auto a = vertices[0].texcoords.at(set);
+        const auto b = vertices[1].texcoords.at(set);
+        const auto c = vertices[2].texcoords.at(set);
         return {
-            .u = a.uv.u * weights.a + b.uv.u * weights.b + c.uv.u * weights.c,
-            .v = a.uv.v * weights.a + b.uv.v * weights.b + c.uv.v * weights.c,
+            .u = a.u * weights.a + b.u * weights.b + c.u * weights.c,
+            .v = a.v * weights.a + b.v * weights.b + c.v * weights.c,
         };
     }
 

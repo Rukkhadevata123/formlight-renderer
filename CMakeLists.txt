@@ -96,6 +96,10 @@ if(BUILD_TESTING)
     add_test(NAME metallic_roughness_texture COMMAND metallic_roughness_texture_test
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/MetallicRoughnessPanel.glb")
 
+    add_executable(texture_coordinates_test tests/texture_coordinates_test.cpp)
+    target_link_libraries(texture_coordinates_test PRIVATE formlight_gltf)
+    add_test(NAME texture_coordinates COMMAND texture_coordinates_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/DualUvPanel.glb")
+
     add_executable(mask_visibility_test tests/mask_visibility_test.cpp)
     target_link_libraries(mask_visibility_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME mask_visibility COMMAND mask_visibility_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mask-panel.toml")

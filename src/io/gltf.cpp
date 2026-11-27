@@ -76,11 +76,70 @@ void read_vertex_colors(const fastgltf::Asset &asset, const fastgltf::Accessor &
     }
 }
 
-std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Mesh &mesh, GltfContent content)
+void read_texcoords(const fastgltf::Asset &asset, const fastgltf::Primitive &primitive,
+                    std::span<TriangleVertex> vertices, GltfContent content, std::size_t mesh_index,
+                    std::size_t primitive_index)
 {
-    std::vector<Triangle> triangles;
-    for (const auto &primitive : mesh.primitives)
+    constexpr std::array<std::string_view, 2> names{"TEXCOORD_0", "TEXCOORD_1"};
+    std::array<bool, names.size()> present{};
+    for (std::size_t set = 0; set < names.size(); ++set)
     {
+        const auto name = names[set];
+        const auto attribute = primitive.findAttribute(name);
+        if (attribute == primitive.attributes.end())
+        {
+            continue;
+        }
+        present[set] = true;
+        const auto &uvs = geometry_accessor(asset, attribute->accessorIndex);
+        if (uvs.count != vertices.size() || uvs.type != fastgltf::AccessorType::Vec2)
+        {
+            throw std::runtime_error(std::format("Mesh {} primitive {}: {} must supply one VEC2 per position",
+                                                 mesh_index, primitive_index, name));
+        }
+        fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
+            asset, uvs,
+            [&](auto uv, std::size_t i)
+            {
+                if (!std::isfinite(uv[0]) || !std::isfinite(uv[1]))
+                {
+                    throw std::runtime_error(std::format("Mesh {} primitive {}: {} contains a non-finite coordinate",
+                                                         mesh_index, primitive_index, name));
+                }
+                vertices[i].texcoords[set] = {uv[0], uv[1]};
+            });
+    }
+    if (content == GltfContent::Materials && primitive.materialIndex)
+    {
+        const auto &material = asset.materials.at(*primitive.materialIndex);
+        const auto require = [&](std::string_view slot, const auto &binding)
+        {
+            if (!binding)
+            {
+                return;
+            }
+            const auto set = binding->texCoordIndex;
+            if (set >= present.size() || !present[set])
+            {
+                throw std::runtime_error(std::format("Mesh {} primitive {} material {}: {} requires {} TEXCOORD_{}",
+                                                     mesh_index, primitive_index, *primitive.materialIndex, slot,
+                                                     set >= present.size() ? "unsupported" : "missing", set));
+            }
+        };
+        require("baseColorTexture", material.pbrData.baseColorTexture);
+        require("metallicRoughnessTexture", material.pbrData.metallicRoughnessTexture);
+        require("occlusionTexture", material.occlusionTexture);
+        require("emissiveTexture", material.emissiveTexture);
+    }
+}
+
+std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_index, GltfContent content)
+{
+    const auto &mesh = asset.meshes.at(mesh_index);
+    std::vector<Triangle> triangles;
+    for (std::size_t primitive_index = 0; primitive_index < mesh.primitives.size(); ++primitive_index)
+    {
+        const auto &primitive = mesh.primitives[primitive_index];
         if (primitive.type != fastgltf::PrimitiveType::Triangles || !primitive.targets.empty())
         {
             throw std::runtime_error("Expected a static TRIANGLES primitive");
@@ -113,40 +172,13 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, const fastgltf::Me
                 asset, normals, [&](auto n, std::size_t i)
                 { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
         }
-        const auto texcoord = primitive.findAttribute("TEXCOORD_0");
+        read_texcoords(asset, primitive, vertices, content, mesh_index, primitive_index);
         if (const auto color = primitive.findAttribute("COLOR_0");
             content == GltfContent::Materials && color != primitive.attributes.end())
         {
             read_vertex_colors(asset, geometry_accessor(asset, color->accessorIndex), vertices);
         }
         const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
-        if (content == GltfContent::Materials && texcoord == primitive.attributes.end() && primitive.materialIndex)
-        {
-            const auto &material = asset.materials.at(*primitive.materialIndex);
-            if (material.pbrData.baseColorTexture || material.pbrData.metallicRoughnessTexture ||
-                material.occlusionTexture || material.emissiveTexture)
-            {
-                throw std::runtime_error("Textured primitive is missing TEXCOORD_0");
-            }
-        }
-        if (texcoord != primitive.attributes.end())
-        {
-            const auto &uvs = geometry_accessor(asset, texcoord->accessorIndex);
-            if (uvs.count != positions.count)
-            {
-                throw std::runtime_error("TEXCOORD_0 and POSITION have different vertex counts");
-            }
-            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec2>(
-                asset, uvs,
-                [&](auto uv, std::size_t i)
-                {
-                    if (!std::isfinite(uv[0]) || !std::isfinite(uv[1]))
-                    {
-                        throw std::runtime_error("TEXCOORD_0 contains a non-finite coordinate");
-                    }
-                    vertices[i].uv = {uv[0], uv[1]};
-                });
-        }
 
         // GenerateMeshIndices also supplies consecutive indices for non-indexed primitives.
         const auto &indices = geometry_accessor(asset, primitive.indicesAccessor.value());
@@ -230,10 +262,6 @@ struct TextureLoader
 
 TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, RgbEncoding encoding)
 {
-    if (info.texCoordIndex != 0)
-    {
-        throw std::runtime_error("Preview textures require TEXCOORD_0");
-    }
     const auto &texture = asset.textures.at(info.textureIndex);
     const auto image = texture.imageIndex.value();
     const auto [slot, inserted] = image_slots.try_emplace(std::pair{image, encoding}, images.size());
@@ -248,7 +276,7 @@ TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, RgbEncodin
         sampler = {wrap_mode(source.wrapS), wrap_mode(source.wrapT),
                    source.magFilter == fastgltf::Filter::Nearest ? TexelFilter::Nearest : TexelFilter::Linear};
     }
-    return {slot->second, sampler};
+    return {slot->second, sampler, info.texCoordIndex};
 }
 
 GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &textures)
@@ -380,7 +408,7 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
                 if (!slot)
                 {
                     slot = result.meshes_.size();
-                    result.meshes_.push_back(read_mesh(asset, asset.meshes.at(*node.meshIndex), content));
+                    result.meshes_.push_back(read_mesh(asset, *node.meshIndex, content));
                 }
                 result.node_instance_slots_[index] = result.instances_.size();
                 result.instances_.push_back(
@@ -430,9 +458,9 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
     instances_.push_back({id, meshes_.back(), {}});
 }
 
-LinearColor GltfScene::sample(const TextureBinding &binding, TexCoord uv) const
+LinearColor GltfScene::sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights) const
 {
-    return sample_texture(images_[binding.image], uv, binding.sampler);
+    return sample_texture(images_[binding.image], face.uv_at(weights, binding.texcoord_set), binding.sampler);
 }
 
 LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Triangle &face, Barycentrics weights) const
@@ -442,7 +470,7 @@ LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Tri
     LinearColor color{factor.r * vertex.r, factor.g * vertex.g, factor.b * vertex.b, factor.a * vertex.a};
     if (const auto &binding = material.base_color_texture)
     {
-        const auto texel = sample(*binding, face.uv_at(weights));
+        const auto texel = sample(*binding, face, weights);
         color = {color.r * texel.r, color.g * texel.g, color.b * texel.b, color.a * texel.a};
     }
     return color;
@@ -456,21 +484,21 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
     auto emission = mat.emission_multiplier;
     if (color.a > 0 && mat.emissive_texture)
     {
-        const auto texel = sample(*mat.emissive_texture, face.uv_at(weights));
+        const auto texel = sample(*mat.emissive_texture, face, weights);
         emission = {emission.r * texel.r, emission.g * texel.g, emission.b * texel.b};
     }
     double metallic = mat.metallic_factor;
     double roughness = mat.roughness_factor;
     if (const auto &binding = mat.metallic_roughness_texture)
     {
-        const auto texel = sample(*binding, face.uv_at(weights));
+        const auto texel = sample(*binding, face, weights);
         metallic *= texel.b;
         roughness *= texel.g;
     }
     double occlusion = 1;
     if (const auto &binding = mat.occlusion_texture)
     {
-        const auto texel = sample(*binding, face.uv_at(weights));
+        const auto texel = sample(*binding, face, weights);
         occlusion = std::lerp(1.0, static_cast<double>(texel.r), mat.occlusion_strength);
     }
     return {color, emission, metallic, roughness, occlusion};

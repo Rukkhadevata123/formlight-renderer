@@ -17,6 +17,7 @@ struct TextureBinding
 {
     std::size_t image;
     TextureSampler sampler;
+    std::size_t texcoord_set{};
 };
 
 export enum class AlphaMode
@@ -76,7 +77,7 @@ export class GltfScene
 
   private:
     GltfScene() = default;
-    [[nodiscard]] LinearColor sample(const TextureBinding &binding, TexCoord uv) const;
+    [[nodiscard]] LinearColor sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights) const;
     [[nodiscard]] LinearColor sample_base_color(const GltfMaterial &material, const Triangle &face,
                                                 Barycentrics weights) const;
     std::vector<std::vector<Triangle>> meshes_;

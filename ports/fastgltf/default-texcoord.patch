@@ -1,0 +1,14 @@
+diff --git a/src/parser.cpp b/src/parser.cpp
+--- a/src/parser.cpp
++++ b/src/parser.cpp
+@@ -248,7 +248,9 @@
+ 			if (!isValidIndex(index)) [[unlikely]]
+ 				return Error::ValueOutOfRange;
+ 			info->texCoordIndex = static_cast<std::size_t>(index);
+-		} else if (error != NO_SUCH_FIELD) [[unlikely]] {
++		} else if (error == NO_SUCH_FIELD) {
++			info->texCoordIndex = 0;
++		} else [[unlikely]] {
+ 			return Error::InvalidJson;
+ 		}
+ 
