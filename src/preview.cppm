@@ -79,15 +79,6 @@ export struct DiagnosticSurface
     std::optional<Vec3> shading_normal{};
 };
 
-export struct DiagnosticLight
-{
-    std::size_t scene_index{};
-    LightKind kind{};
-    std::uint64_t sampling_seed{};
-    std::vector<LightSample> samples{};
-    Vec3 direct{}; // Mean visible direct light on the selected surface, before opacity.
-};
-
 export struct SampleDiagnostic
 {
     ImagePoint position; // Coordinates in the output image.
@@ -126,7 +117,7 @@ export class PreviewRenderer
 
   private:
     [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop) const;
-    [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel,
+    [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel, std::stop_token stop,
                                             SampleDiagnostic *record = nullptr) const;
     void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
                          SampleDiagnostic &report, std::stop_token stop) const;
@@ -143,7 +134,7 @@ export class PreviewRenderer
     std::optional<PreviewLighting> lighting_;
     std::vector<std::shared_ptr<const DirectionalShadowMap>> shadow_maps_;
     std::shared_ptr<const TriangleBvh> blockers_;
-    std::shared_ptr<const PathIntegrator> path_;
+    std::optional<PathIntegrator> path_;
 };
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,

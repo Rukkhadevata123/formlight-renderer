@@ -45,6 +45,18 @@ void check_emitter(SceneConfig config)
     check_rgb(miss.color, {});
     check_rgb(image[0, 0], {});
 
+    // Put a rectangle in front of the opaque emitter so both emission and reflection reach the camera.
+    config.lighting.value().lights = {{.type = LightKind::Rectangle, .shadows = false, .center = {0, 2, 2}}};
+    const auto lit = diagnose_pixel(prepare_render(config), {20, 16});
+    const Vec3 reflected = lit.samples.at(0).lights.at(0).direct;
+    if (!(reflected.x > 0 && reflected.y > 0 && reflected.z > 0))
+    {
+        throw std::runtime_error("Expected nonzero direct reflection on the emitter");
+    }
+    const Vec3 expected = amber + reflected;
+    check_rgb(lit.color,
+              {static_cast<float>(expected.x), static_cast<float>(expected.y), static_cast<float>(expected.z)});
+
     // A dark triangle in front must stop the ray even though the panel behind it emits light.
     auto preview = load_preview(request);
     const TriangleVertex a{{-1, -1, 1}}, b{{1, -1, 1}}, c{{0, 1, 1}};

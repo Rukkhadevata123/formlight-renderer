@@ -12,6 +12,12 @@ struct SurfaceMaterial
     LinearColor emission;
     double metallic{1}, roughness{1};
     double occlusion{1};
+
+    [[nodiscard]] LinearColor outgoing_color(Vec3 reflected) const noexcept
+    {
+        return {static_cast<float>(reflected.x + emission.r), static_cast<float>(reflected.y + emission.g),
+                static_cast<float>(reflected.z + emission.b), base_color.a};
+    }
 };
 
 // Terms shared by every light sample at the same surface point and camera direction.

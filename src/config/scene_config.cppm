@@ -13,12 +13,6 @@ enum class RenderMode
     Hybrid,
     Path
 };
-enum class LightKind
-{
-    Directional,
-    Point,
-    Rectangle
-};
 
 template <class E> struct NamedValue
 {
@@ -197,12 +191,6 @@ struct DirectionalLighting
     DirectionalLight light{LightSettings{}.toward_light};
     ShadowMethod shadows{ShadowMethod::None};
     bool pcf{};
-};
-struct AreaLighting
-{
-    RectangleLight light;
-    LightSampling sampling{};
-    bool shadows{true};
 };
 struct PointLighting
 {

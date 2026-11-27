@@ -42,6 +42,22 @@ export struct LightSample
     ShadowResult shadow;
 };
 
+export enum class LightKind
+{
+    Directional,
+    Point,
+    Rectangle
+};
+
+export struct DiagnosticLight
+{
+    std::size_t scene_index{};
+    LightKind kind{};
+    std::uint64_t sampling_seed{};
+    std::vector<LightSample> samples{};
+    Vec3 direct{}; // Mean visible direct light on the selected surface, before opacity.
+};
+
 export [[nodiscard]] LightSample evaluate_light_sample(const MetallicRoughnessBrdf &brdf, IncidentLight incident,
                                                        std::optional<Vec3> position, auto visibility)
 {
@@ -155,4 +171,24 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
     }
     return sum / count;
 }
+
+export struct AreaLighting
+{
+    RectangleLight light;
+    LightSampling sampling{};
+    bool shadows{true};
+
+    [[nodiscard]] Vec3 evaluate(const SurfaceRayOrigin &receiver, const MetallicRoughnessBrdf &brdf,
+                                std::uint64_t pixel, const TriangleBvh *blockers, AreaLightPattern pattern,
+                                DiagnosticLight *record, std::stop_token stop) const
+    {
+        if (record)
+        {
+            record->kind = LightKind::Rectangle;
+            record->sampling_seed = sampling.seed;
+        }
+        return sample_area_light(light, receiver, brdf, sampling, pixel, shadows ? blockers : nullptr, pattern,
+                                 record ? &record->samples : nullptr, stop);
+    }
+};
 } // namespace formlight

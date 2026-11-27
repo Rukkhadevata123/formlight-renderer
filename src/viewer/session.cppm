@@ -249,8 +249,7 @@ ViewerSession::Quality ViewerSession::navigation_quality(Clock::duration budget)
         const auto *area = std::get_if<AreaLighting>(&light.source);
         return area && area->sampling.samples > 1;
     };
-    if (applied_.request.mode != RenderMode::Path && lighting && light_center_cost_ <= budget &&
-        std::ranges::any_of(lighting->direct, multisampled))
+    if (lighting && light_center_cost_ <= budget && std::ranges::any_of(lighting->direct, multisampled))
     {
         return Quality::LightCenter;
     }

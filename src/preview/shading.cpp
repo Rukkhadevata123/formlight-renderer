@@ -6,16 +6,6 @@ import formlight.shadow_map;
 
 namespace formlight
 {
-namespace
-{
-LinearColor outgoing_color(const SurfaceMaterial &surface, Vec3 reflected) noexcept
-{
-    const auto &emission = surface.emission;
-    return {static_cast<float>(reflected.x + emission.r), static_cast<float>(reflected.y + emission.g),
-            static_cast<float>(reflected.z + emission.b), surface.base_color.a};
-}
-} // namespace
-
 PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting, RenderMode mode)
     : scene_(scene), solid_filter_(scene.solid_filter())
 {
@@ -28,14 +18,16 @@ void PreviewRenderer::configure(RenderMode mode, std::optional<PreviewLighting> 
     {
         if (!path_)
         {
-            path_ = std::make_shared<PathIntegrator>(scene_);
+            path_.emplace(scene_);
         }
         lighting_.reset();
         shadow_maps_.clear();
         blockers_.reset();
-        return;
     }
-    path_.reset();
+    else
+    {
+        path_.reset();
+    }
     set_lighting(std::move(lighting));
 }
 
@@ -43,6 +35,7 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 {
     if (path_)
     {
+        path_->set_lighting(lighting ? std::span<const ActiveLight>{lighting->direct} : std::span<const ActiveLight>{});
         return;
     }
     std::vector<std::shared_ptr<const DirectionalShadowMap>> maps;
@@ -109,11 +102,11 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     if (!lighting_)
     {
         // The no-light preview shows the base color at unit weight.
-        return outgoing_color(material, {base.r, base.g, base.b});
+        return material.outgoing_color({base.r, base.g, base.b});
     }
     if (lighting_->direct.empty())
     {
-        return outgoing_color(material, ambient);
+        return material.outgoing_color(ambient);
     }
 
     const Vec3 normal = scene_.shading_normal(instance, face, weights, gradients, hit.back_face);
@@ -141,7 +134,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
             light_record->direct = contribution;
         }
     }
-    return outgoing_color(material, ambient + direct);
+    return material.outgoing_color(ambient + direct);
 }
 
 Vec3 PreviewRenderer::shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
@@ -151,14 +144,8 @@ Vec3 PreviewRenderer::shade_light(std::size_t index, const MetallicRoughnessBrdf
     const auto &light = lighting_->direct[index].source;
     if (const auto *area = std::get_if<AreaLighting>(&light))
     {
-        if (record)
-        {
-            record->kind = LightKind::Rectangle;
-            record->sampling_seed = area->sampling.seed;
-        }
-        return sample_area_light(area->light, SurfaceRayOrigin{instance, face, weights}, brdf, area->sampling, pixel,
-                                 area->shadows ? blockers_.get() : nullptr, pattern,
-                                 record ? &record->samples : nullptr, stop);
+        return area->evaluate(SurfaceRayOrigin{instance, face, weights}, brdf, pixel, blockers_.get(), pattern, record,
+                              stop);
     }
 
     LightSample sample;

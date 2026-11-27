@@ -177,7 +177,7 @@ ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::sto
             }
             for (int x = 0; x < extent.width; ++x)
             {
-                image[y, x] = trace_primary(view, {x, y});
+                image[y, x] = trace_primary(view, {x, y}, stop);
             }
         };
         oneapi::tbb::parallel_for(0, extent.height, trace_row, frame_tasks);
@@ -237,7 +237,7 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
             {
                 throw std::runtime_error("Pixel inspection cancelled");
             }
-            record.color = trace_primary(grid, sample, &record);
+            record.color = trace_primary(grid, sample, stop, &record);
         }
         else
         {
@@ -248,7 +248,8 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
     return report;
 }
 
-LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord pixel, SampleDiagnostic *record) const
+LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord pixel, std::stop_token stop,
+                                           SampleDiagnostic *record) const
 {
     const auto ray = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y));
     const double depth_per_unit = view.camera.forward_component(ray.direction);
@@ -257,16 +258,21 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
         std::nextafter(view.depth.near_depth / depth_per_unit, 0.0),
         std::nextafter(view.depth.far_depth / depth_per_unit, std::numeric_limits<double>::infinity())};
     std::optional<PathHit> first;
-    const auto color = path_->radiance(ray, interval, record ? &first : nullptr);
+    const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
+    const auto color =
+        path_->radiance(ray, interval, record ? &first : nullptr, pixel_index, view.area_light_pattern, stop);
     if (record && first)
     {
         const auto &hit = first->intersection;
         const auto id = hit.surface.id;
         const auto &instance = scene_.instance(id.instance);
         const auto &face = instance.triangles[std::to_underlying(id.primitive)];
-        const bool back_face = dot(face.geometric_normal(), instance.transform.to_local_vector(ray.direction)) > 0;
-        record->surface = DiagnosticSurface{
-            {hit.surface, hit.t * depth_per_unit, back_face}, face.material_index, first->material, {}};
+        record->surface = DiagnosticSurface{{hit.surface, hit.t * depth_per_unit, first->back_face},
+                                            face.material_index,
+                                            first->material,
+                                            {},
+                                            first->shading_normal};
+        record->lights = std::move(first->lights);
     }
     return color;
 }

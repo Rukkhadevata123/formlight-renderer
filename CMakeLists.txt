@@ -187,6 +187,10 @@ if(BUILD_TESTING)
     target_link_libraries(path_first_hit_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME path_first_hit COMMAND path_first_hit_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/emissive-panels.toml")
 
+    add_executable(path_direct_light_test tests/path_direct_light_test.cpp)
+    target_link_libraries(path_direct_light_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME path_direct_light COMMAND path_direct_light_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
+
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
     add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
