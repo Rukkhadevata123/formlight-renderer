@@ -14,7 +14,7 @@ export class DirectionalShadowMap
   public:
     DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
                          const SurfaceFilter &accept = {}, const FaceCulling &culling = {});
-    [[nodiscard]] bool visible(Vec3 world, Vec3 geometric_normal) const noexcept;
+    [[nodiscard]] double visibility(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept;
 
   private:
     static constexpr int resolution = 1024;
@@ -94,26 +94,46 @@ void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, c
     coverage.for_each_sample({resolution, resolution}, write_depth);
 }
 
-bool DirectionalShadowMap::visible(Vec3 world, Vec3 geometric_normal) const noexcept
+double DirectionalShadowMap::visibility(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept
 {
     const auto p = project(world);
     if (!(p.x >= 0 && p.x < resolution && p.y >= 0 && p.y < resolution))
     {
-        return true;
+        return 1.0;
     }
     const int x = static_cast<int>(p.x), y = static_cast<int>(p.y);
-    double receiver_depth = p.z;
+    // The receiver's geometric plane gives the depth change for one texel along each axis.
+    double dz_dx = 0, dz_dy = 0;
     const double nz = dot(geometric_normal, forward_);
     if (std::abs(nz) > 32 * std::numeric_limits<double>::epsilon())
     {
-        // Compare both depths at the texel center, using the geometric plane even for smooth shading.
-        const auto center = pixel_center(x, y);
-        const double dx = (center.x - p.x) * texel_size_, dy = (center.y - p.y) * texel_size_;
-        // At a silhouette the plane extension may lie behind a different surface.
-        // Only shift the receiver toward the light when it crosses a texel.
-        const double depth_offset = -(dx * dot(geometric_normal, right_) + dy * dot(geometric_normal, down_)) / nz;
-        receiver_depth += std::min(0.0, depth_offset);
+        dz_dx = -dot(geometric_normal, right_) / nz * texel_size_;
+        dz_dy = -dot(geometric_normal, down_) / nz * texel_size_;
     }
-    return receiver_depth <= depths_[y * resolution + x] + depth_epsilon_;
+    const auto lit = [&](int column, int row)
+    {
+        if (column < 0 || column >= resolution || row < 0 || row >= resolution)
+        {
+            return true;
+        }
+        const auto center = pixel_center(column, row);
+        const double offset = (center.x - p.x) * dz_dx + (center.y - p.y) * dz_dy;
+        // At silhouettes the plane extension can lie behind a different surface.
+        const double receiver_depth = p.z + std::min(0.0, offset);
+        return receiver_depth <= depths_[row * resolution + column] + depth_epsilon_;
+    };
+    if (!pcf)
+    {
+        return lit(x, y) ? 1.0 : 0.0;
+    }
+    int visible = 0;
+    for (int row = y - 1; row <= y + 1; ++row)
+    {
+        for (int column = x - 1; column <= x + 1; ++column)
+        {
+            visible += lit(column, row);
+        }
+    }
+    return visible / 9.0;
 }
 } // namespace formlight

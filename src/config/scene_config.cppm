@@ -116,6 +116,7 @@ struct LightSettings
     LightKind type{LightKind::Directional};
     bool enabled{true};
     bool shadows{true};
+    bool pcf{};
     Vec3 toward_light{1, 4, 3};
     Vec3 position{3, 3, 0.75}, attenuation{PointLight::default_attenuation};
     Vec3 color{1, 1, 1};
@@ -136,6 +137,7 @@ struct LightSettings
         if (self.type == LightKind::Directional)
         {
             field("toward_light", self.toward_light);
+            field("pcf", self.pcf);
         }
         else if (self.type == LightKind::Point)
         {
@@ -192,6 +194,7 @@ struct DirectionalLighting
 {
     DirectionalLight light{LightSettings{}.toward_light};
     ShadowMethod shadows{ShadowMethod::None};
+    bool pcf{};
 };
 struct AreaLighting
 {
@@ -258,7 +261,7 @@ struct RenderRequest
     {
         const auto method = render.mode == RenderMode::Hybrid ? ShadowMethod::Ray : ShadowMethod::Map;
         const DirectionalLight directional{light.toward_light, light.color, light.intensity};
-        return DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None};
+        return DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None, light.pcf};
     }
     else if (light.type == LightKind::Point)
     {

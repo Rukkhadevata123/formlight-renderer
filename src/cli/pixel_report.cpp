@@ -20,6 +20,8 @@ std::string describe_shadow(const ShadowResult &shadow)
         return "blocked by shadow map";
     case ShadowState::Visible:
         return "visible";
+    case ShadowState::PartiallyVisible:
+        return std::format("shadow map visibility {:.6g}", shadow.visibility);
     case ShadowState::Disabled:
         return "shadows off";
     case ShadowState::ZeroWeight:

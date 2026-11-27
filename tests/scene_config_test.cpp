@@ -31,7 +31,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     }
 
     config.lighting->lights.push_back({.type = LightKind::Directional, .enabled = false});
-    config.lighting->lights.push_back({.type = LightKind::Directional, .color = {0.1, 0.6, 1}});
+    config.lighting->lights.push_back({.type = LightKind::Directional, .pcf = true, .color = {0.1, 0.6, 1}});
 
     // Change worker counts across the round trip; fixed samples must give identical linear pixels.
     const auto before = oneapi::tbb::task_arena{1}.execute([&] { return render_scene(prepare_render(config)); });
@@ -45,6 +45,10 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
     config.display.tone_mapping = ToneMapping::Reinhard;
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
+    if (!loaded.lighting.value().lights.back().pcf)
+    {
+        throw std::runtime_error("Save As lost the directional light's PCF setting");
+    }
     // Exposed values 2, 4 and 0.5 map to 2/3, 4/5 and 1/3 before sRGB encoding.
     if (DisplayTransform{loaded.display}.rgb8(highlights) != std::array<std::uint8_t, 3>{213, 231, 156})
     {

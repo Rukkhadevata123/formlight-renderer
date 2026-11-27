@@ -85,6 +85,11 @@ void show_sample(const SampleDiagnostic &report)
     {
         ImGui::Text("Light %zu direct RGB   %.3g  %.3g  %.3g", light.scene_index, light.direct.x, light.direct.y,
                     light.direct.z);
+        if (light.kind == LightKind::Directional && light.samples.front().shadow.state == ShadowState::PartiallyVisible)
+        {
+            ImGui::Text("Shadow map visibility   %.3f", light.samples.front().shadow.visibility);
+            continue;
+        }
         const auto blocked = std::ranges::count_if(light.samples, [](const LightSample &sample)
                                                    { return sample.shadow.state == ShadowState::Blocked; });
         ImGui::Text("Blocked samples   %zu / %zu", static_cast<std::size_t>(blocked), light.samples.size());

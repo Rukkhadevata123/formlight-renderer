@@ -24,13 +24,15 @@ export enum class ShadowState
     ZeroWeight,
     Disabled,
     Visible,
-    Blocked
+    Blocked,
+    PartiallyVisible
 };
 
 export struct ShadowResult
 {
     ShadowState state{ShadowState::ZeroWeight};
     std::optional<SurfaceId> blocker{};
+    double visibility{state == ShadowState::Blocked || state == ShadowState::ZeroWeight ? 0.0 : 1.0};
 };
 
 export struct LightSample
@@ -54,7 +56,7 @@ export [[nodiscard]] LightSample evaluate_light_sample(const MetallicRoughnessBr
         return {position, {}, {}};
     }
     const ShadowResult shadow = visibility();
-    return {position, shadow.state == ShadowState::Blocked ? Vec3{} : direct, shadow};
+    return {position, shadow.visibility == 0 ? Vec3{} : direct * shadow.visibility, shadow};
 }
 
 export [[nodiscard]] ShadowResult trace_shadow(const TriangleBvh &blockers, const Ray &ray, RayInterval interval,

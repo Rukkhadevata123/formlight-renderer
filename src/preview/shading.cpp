@@ -177,7 +177,12 @@ ShadowResult PreviewRenderer::directional_shadow(const DirectionalLighting &ligh
     {
         const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
         const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
-        return {map->visible(world, geometric_normal) ? ShadowState::Visible : ShadowState::Blocked};
+        const double visibility = map->visibility(world, geometric_normal, light.pcf);
+        if (visibility == 0 || visibility == 1)
+        {
+            return {visibility == 0 ? ShadowState::Blocked : ShadowState::Visible};
+        }
+        return {.state = ShadowState::PartiallyVisible, .visibility = visibility};
     }
     if (light.shadows == ShadowMethod::Ray)
     {
