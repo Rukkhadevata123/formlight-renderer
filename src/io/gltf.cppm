@@ -33,6 +33,8 @@ export struct GltfMaterial
     double metallic_factor{1}, roughness_factor{1};
     std::optional<TextureBinding> base_color_texture{};
     std::optional<TextureBinding> metallic_roughness_texture{};
+    std::optional<TextureBinding> normal_texture{};
+    double normal_scale{1};
     std::optional<TextureBinding> occlusion_texture{};
     double occlusion_strength{1};
     LinearColor emission_multiplier{};
@@ -41,6 +43,8 @@ export struct GltfMaterial
     float alpha_cutoff{0.5f};
     bool double_sided{};
 };
+
+void generate_tangents(std::span<Triangle> triangles, std::size_t uv_set);
 
 // Instances borrow the local mesh storage owned by this scene.
 export class GltfScene
@@ -53,6 +57,8 @@ export class GltfScene
                                                                         GltfContent content);
     [[nodiscard]] SurfaceMaterial surface_material(const Triangle &face, Barycentrics weights,
                                                    WeightGradients gradients = {}) const;
+    [[nodiscard]] Vec3 shading_normal(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
+                                      WeightGradients gradients, bool back_face) const;
     [[nodiscard]] const GltfMaterial &material(const Triangle &face) const
     {
         return materials_.at(face.material_index).value();

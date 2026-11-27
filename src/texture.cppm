@@ -23,6 +23,12 @@ export enum class MipFilter
     Nearest,
     Linear
 };
+export enum class TextureUsage
+{
+    Color,
+    Data,
+    Normal
+};
 export struct TextureSampler
 {
     WrapMode u = WrapMode::Repeat, v = WrapMode::Repeat;
@@ -90,7 +96,7 @@ LinearColor sample_level(const ColorImage &image, TexCoord uv, TextureSampler sa
     return mix(mix(image[y0, x0], image[y0, x1], fx), mix(image[y1, x0], image[y1, x1], fx), fy);
 }
 
-ColorImage downsample(const ColorImage &source)
+ColorImage downsample(const ColorImage &source, TextureUsage usage)
 {
     const auto [w, h] = source.extent();
     const ImageExtent extent{std::max(1, w / 2), std::max(1, h / 2)};
@@ -120,6 +126,15 @@ ColorImage downsample(const ColorImage &source)
                     mean.a += weight * color.a;
                 }
             }
+            if (usage == TextureUsage::Normal)
+            {
+                const Vec3 n{2.0 * mean.r - 1, 2.0 * mean.g - 1, 2.0 * mean.b - 1};
+                const double length = std::hypot(n.x, n.y, n.z);
+                const auto unit = length > 1e-7 ? n / length : Vec3{0, 0, 1};
+                mean.r = static_cast<float>(0.5 * (unit.x + 1));
+                mean.g = static_cast<float>(0.5 * (unit.y + 1));
+                mean.b = static_cast<float>(0.5 * (unit.z + 1));
+            }
             result[y, x] = mean;
         }
     }
@@ -130,7 +145,7 @@ ColorImage downsample(const ColorImage &source)
 export class TextureImage
 {
   public:
-    explicit TextureImage(ColorImage base)
+    explicit TextureImage(ColorImage base, TextureUsage usage = TextureUsage::Data) : usage_(usage)
     {
         levels_.push_back(std::move(base));
     }
@@ -140,7 +155,7 @@ export class TextureImage
         auto extent = levels_.back().extent();
         while (extent.width > 1 || extent.height > 1)
         {
-            levels_.push_back(downsample(levels_.back()));
+            levels_.push_back(downsample(levels_.back(), usage_));
             extent = levels_.back().extent();
         }
     }
@@ -186,5 +201,6 @@ export class TextureImage
 
   private:
     std::vector<ColorImage> levels_;
+    TextureUsage usage_;
 };
 } // namespace formlight

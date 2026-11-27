@@ -6,6 +6,7 @@ endif()
 project(formlight-renderer LANGUAGES C CXX)
 
 find_package(fastgltf CONFIG REQUIRED)
+find_package(mikktspace CONFIG REQUIRED)
 find_package(Stb REQUIRED)
 find_package(TBB CONFIG REQUIRED COMPONENTS tbb)
 find_package(tomlplusplus CONFIG REQUIRED)
@@ -39,9 +40,9 @@ target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES F
 target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
-add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp)
+add_library(formlight_gltf STATIC src/io/gltf.cpp src/io/gltf_tangents.cpp src/preview/shading.cpp src/preview/compositing.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/preview.cppm)
-target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf formlight_io TBB::tbb)
+target_link_libraries(formlight_gltf PUBLIC formlight_renderer_core PRIVATE fastgltf::fastgltf mikktspace::mikktspace formlight_io TBB::tbb)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang" AND CMAKE_CXX_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
     # fastgltf's accessor templates emit half-float conversions. CMake invokes the MSVC-style linker directly.
     execute_process(COMMAND "${CMAKE_CXX_COMPILER}" --rtlib=compiler-rt --print-libgcc-file-name
@@ -103,6 +104,10 @@ if(BUILD_TESTING)
     add_executable(texture_minification_test tests/texture_minification_test.cpp)
     target_link_libraries(texture_minification_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME texture_minification COMMAND texture_minification_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mip-checker.toml")
+
+    add_executable(normal_mapping_test tests/normal_mapping_test.cpp)
+    target_link_libraries(normal_mapping_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME normal_mapping COMMAND normal_mapping_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/normal-panels.toml")
 
     add_executable(mask_visibility_test tests/mask_visibility_test.cpp)
     target_link_libraries(mask_visibility_test PRIVATE formlight_gltf formlight_io)

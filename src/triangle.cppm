@@ -21,6 +21,8 @@ struct TriangleVertex
     std::array<TexCoord, 2> texcoords{};
     Vec3 normal{}; // Zero when the mesh has no vertex normals.
     LinearColor color{1, 1, 1, 1};
+    Vec3 tangent{};
+    double tangent_sign{1};
 };
 
 // Weights always refer to vertices 0, 1 and 2 of the original triangle.

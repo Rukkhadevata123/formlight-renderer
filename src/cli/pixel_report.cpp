@@ -41,6 +41,10 @@ void print_pixel_report(const PixelDiagnostic &report)
                      std::to_underlying(id.instance), std::to_underlying(id.primitive), surface->material_index,
                      surface->hit.view_depth);
         const auto &[base, emission, metallic, roughness, occlusion] = surface->material;
+        if (const auto &n = surface->shading_normal)
+        {
+            std::println("World shading normal: ({}, {}, {})", n->x, n->y, n->z);
+        }
         std::println("Metallic: {}  Roughness: {}", metallic, roughness);
         std::println("Barycentrics: ({:.9g}, {:.9g}, {:.9g})  Base linear RGB: ({}, {}, {})", weights.a, weights.b,
                      weights.c, base.r, base.g, base.b);

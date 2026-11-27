@@ -74,6 +74,7 @@ export struct DiagnosticSurface
     std::size_t material_index;
     SurfaceMaterial material;
     Vec3 ambient;
+    std::optional<Vec3> shading_normal{};
 };
 
 export struct DiagnosticLight

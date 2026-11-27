@@ -34,6 +34,10 @@ This variant of MetallicRoughnessPanel uses the same two texels for all four mat
 
 A floor uses UV1 to repeat a 64×64 checker at 32 texels per world unit. UV0 is constant. The same image supplies sRGB base color and linear metallic-roughness data. The sampler uses nearest magnification and trilinear minification. In the [oblique camera view](../scenes/mip-checker.toml), distant squares converge to the average of the decoded texels. Created for Formlight and distributed under the [project license](../LICENSE).
 
+## NormalPanels.glb
+
+The [normal-map scene](../scenes/normal-panels.toml) pairs authored tangents (left) with MikkTSpace tangents (right). The lower pair shares a mirrored, nonuniform scale; the center triangle supplies neither normals nor tangents. UV0 is constant. UV1 has negative handedness and samples a two-texel normal map with scale 0.5. Occlusion reads the same image as scalar data. Created for Formlight and distributed under the [project license](../LICENSE).
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

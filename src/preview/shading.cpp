@@ -93,8 +93,11 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         return outgoing_color(material, ambient);
     }
 
-    const Vec3 local_normal = face.normal_at(weights);
-    const Vec3 normal = instance.transform.to_world_normal(back_face ? local_normal * -1 : local_normal);
+    const Vec3 normal = scene_.shading_normal(instance, face, weights, gradients, back_face);
+    if (record)
+    {
+        record->surface->shading_normal = normal;
+    }
     const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
     const MetallicRoughnessBrdf brdf{material, normal, to_eye};
     const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;

@@ -128,6 +128,7 @@ void read_texcoords(const fastgltf::Asset &asset, const fastgltf::Primitive &pri
         };
         require("baseColorTexture", material.pbrData.baseColorTexture);
         require("metallicRoughnessTexture", material.pbrData.metallicRoughnessTexture);
+        require("normalTexture", material.normalTexture);
         require("occlusionTexture", material.occlusionTexture);
         require("emissiveTexture", material.emissiveTexture);
     }
@@ -161,7 +162,8 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
                 }
                 vertices[i].position = {p[0], p[1], p[2]};
             });
-        if (const auto normal = primitive.findAttribute("NORMAL"); normal != primitive.attributes.end())
+        const auto normal = primitive.findAttribute("NORMAL");
+        if (normal != primitive.attributes.end())
         {
             const auto &normals = geometry_accessor(asset, normal->accessorIndex);
             if (normals.count != positions.count || normals.type != fastgltf::AccessorType::Vec3)
@@ -173,6 +175,28 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
                 { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
         }
         read_texcoords(asset, primitive, vertices, content, mesh_index, primitive_index);
+        const auto tangent = primitive.findAttribute("TANGENT");
+        const bool use_tangents = content == GltfContent::Materials && normal != primitive.attributes.end() &&
+                                  tangent != primitive.attributes.end();
+        if (use_tangents)
+        {
+            const auto &accessor = geometry_accessor(asset, tangent->accessorIndex);
+            if (accessor.type != fastgltf::AccessorType::Vec4 || accessor.count != vertices.size())
+            {
+                throw std::runtime_error("TANGENT must supply one VEC4 per position");
+            }
+            fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec4>(
+                asset, accessor,
+                [&](auto t, std::size_t i)
+                {
+                    if (t[3] != 1 && t[3] != -1)
+                    {
+                        throw std::runtime_error("TANGENT.w must be +1 or -1");
+                    }
+                    vertices[i].tangent = unit_vector({t[0], t[1], t[2]}, "TANGENT must be finite and nonzero");
+                    vertices[i].tangent_sign = t[3];
+                });
+        }
         if (const auto color = primitive.findAttribute("COLOR_0");
             content == GltfContent::Materials && color != primitive.attributes.end())
         {
@@ -210,6 +234,14 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
                 triangle.material_index = material_slot;
                 triangle.vertices[i % 3] = vertices[index];
             });
+        if (content != GltfContent::Materials || use_tangents || !primitive.materialIndex)
+        {
+            continue;
+        }
+        if (const auto &map = asset.materials.at(*primitive.materialIndex).normalTexture)
+        {
+            generate_tangents(std::span{triangles}.subspan(start), map->texCoordIndex);
+        }
     }
     return triangles;
 }
@@ -278,19 +310,20 @@ struct TextureLoader
 {
     const fastgltf::Asset &asset;
     std::vector<TextureImage> &images;
-    std::map<std::pair<std::size_t, RgbEncoding>, std::size_t> image_slots{};
+    std::map<std::pair<std::size_t, TextureUsage>, std::size_t> image_slots{};
 
-    TextureBinding bind(const fastgltf::TextureInfo &info, RgbEncoding encoding);
+    TextureBinding bind(const fastgltf::TextureInfo &info, TextureUsage usage);
 };
 
-TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, RgbEncoding encoding)
+TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, TextureUsage usage)
 {
     const auto &texture = asset.textures.at(info.textureIndex);
     const auto image = texture.imageIndex.value();
-    const auto [slot, inserted] = image_slots.try_emplace(std::pair{image, encoding}, images.size());
+    const auto [slot, inserted] = image_slots.try_emplace(std::pair{image, usage}, images.size());
     if (inserted)
     {
-        images.emplace_back(read_image(asset, image, encoding));
+        const auto encoding = usage == TextureUsage::Color ? RgbEncoding::Srgb : RgbEncoding::Linear;
+        images.emplace_back(read_image(asset, image, encoding), usage);
     }
     TextureSampler sampler;
     if (texture.samplerIndex)
@@ -333,11 +366,20 @@ GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &te
     }
     if (const auto &info = pbr.baseColorTexture)
     {
-        result.base_color_texture = textures.bind(*info, RgbEncoding::Srgb);
+        result.base_color_texture = textures.bind(*info, TextureUsage::Color);
     }
     if (const auto &info = pbr.metallicRoughnessTexture)
     {
-        result.metallic_roughness_texture = textures.bind(*info, RgbEncoding::Linear);
+        result.metallic_roughness_texture = textures.bind(*info, TextureUsage::Data);
+    }
+    if (const auto &info = material.normalTexture)
+    {
+        if (!std::isfinite(info->scale))
+        {
+            throw std::runtime_error("normalTexture.scale must be finite");
+        }
+        result.normal_texture = textures.bind(*info, TextureUsage::Normal);
+        result.normal_scale = info->scale;
     }
     if (const auto &info = material.occlusionTexture)
     {
@@ -345,12 +387,12 @@ GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &te
         {
             throw std::runtime_error("occlusionTexture.strength must be in [0, 1]");
         }
-        result.occlusion_texture = textures.bind(*info, RgbEncoding::Linear);
+        result.occlusion_texture = textures.bind(*info, TextureUsage::Data);
         result.occlusion_strength = info->strength;
     }
     if (const auto &info = material.emissiveTexture)
     {
-        result.emissive_texture = textures.bind(*info, RgbEncoding::Srgb);
+        result.emissive_texture = textures.bind(*info, TextureUsage::Color);
     }
     return result;
 }
@@ -530,6 +572,35 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
         occlusion = std::lerp(1.0, static_cast<double>(texel.r), mat.occlusion_strength);
     }
     return {color, emission, metallic, roughness, occlusion};
+}
+
+Vec3 GltfScene::shading_normal(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
+                               WeightGradients gradients, bool back_face) const
+{
+    const auto n = instance.transform.to_world_normal(face.normal_at(weights));
+    const double side = back_face ? -1 : 1;
+    const auto &mat = material(face);
+    if (!mat.normal_texture)
+    {
+        return n * side;
+    }
+
+    const auto &[a, b, c] = face.vertices;
+    const auto tangent =
+        instance.transform.to_world_vector(a.tangent * weights.a + b.tangent * weights.b + c.tangent * weights.c);
+    const auto orthogonal = tangent - n * dot(n, tangent);
+    const double length = std::hypot(orthogonal.x, orthogonal.y, orthogonal.z);
+    if (!(length > 0))
+    {
+        return n * side;
+    }
+    const auto t = orthogonal / length;
+    const auto bitangent = cross(n, t) * (a.tangent_sign * instance.transform.handedness());
+    const auto texel = sample(*mat.normal_texture, face, weights, gradients);
+    const Vec3 mapped = t * ((2.0 * texel.r - 1) * mat.normal_scale) +
+                        bitangent * ((2.0 * texel.g - 1) * mat.normal_scale) + n * (2.0 * texel.b - 1);
+    const double magnitude = std::hypot(mapped.x, mapped.y, mapped.z);
+    return (magnitude > 0 ? mapped / magnitude : n) * side;
 }
 
 SurfaceFilter GltfScene::solid_filter() const &

@@ -64,6 +64,10 @@ void show_report(const PixelDiagnostic &report)
         ImGui::Text("Primitive %u", std::to_underlying(id.primitive));
         ImGui::Text("Material slot %zu", surface->material_index);
         const auto &[base, emission, metallic, roughness, occlusion] = surface->material;
+        if (const auto &n = surface->shading_normal)
+        {
+            ImGui::Text("World shading normal   %.3g  %.3g  %.3g", n->x, n->y, n->z);
+        }
         ImGui::Text("Metallic   %.3g    Roughness   %.3g", metallic, roughness);
         ImGui::Text("Surface emission (linear RGB)   %.3g  %.3g  %.3g", emission.r, emission.g, emission.b);
         const auto ambient = surface->ambient;

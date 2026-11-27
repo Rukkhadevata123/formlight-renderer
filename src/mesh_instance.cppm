@@ -44,6 +44,16 @@ export class AffineTransform
         return translation_ + (axes_.x * point.x + axes_.y * point.y + axes_.z * point.z);
     }
 
+    [[nodiscard]] Vec3 to_world_vector(Vec3 v) const noexcept
+    {
+        return axes_.x * v.x + axes_.y * v.y + axes_.z * v.z;
+    }
+
+    [[nodiscard]] double handedness() const noexcept
+    {
+        return handedness_;
+    }
+
     [[nodiscard]] Vec3 to_world_normal(Vec3 normal) const
     {
         const Vec3 world = inverse_rows_.x * normal.x + inverse_rows_.y * normal.y + inverse_rows_.z * normal.z;
@@ -72,6 +82,7 @@ export class AffineTransform
     Basis3 axes_;
     Vec3 translation_{};
     Basis3 inverse_rows_;
+    double handedness_{1};
 
     [[nodiscard]] Vec3 to_local_vector(Vec3 v) const noexcept
     {
@@ -107,6 +118,7 @@ AffineTransform::AffineTransform(Basis3 axes, Vec3 translation) : axes_(axes), t
     const Vec3 x = axes.x / scales.x, y = axes.y / scales.y, z = axes.z / scales.z;
     const Vec3 yz = cross(y, z);
     const double determinant = dot(x, yz);
+    handedness_ = std::copysign(1.0, determinant);
     if (std::abs(determinant) <= 16 * std::numeric_limits<double>::epsilon())
     {
         throw std::invalid_argument("Instance axes are linearly dependent at working precision");
