@@ -43,7 +43,12 @@ export struct LightSample
 export [[nodiscard]] LightSample evaluate_light_sample(const MetallicRoughnessBrdf &brdf, IncidentLight incident,
                                                        std::optional<Vec3> position, auto visibility)
 {
-    const Vec3 direct = incident.weight > 0 ? brdf.evaluate_times_cosine(incident.direction) * incident.weight : Vec3{};
+    if (incident.weight == Vec3{})
+    {
+        return {position, {}, {}};
+    }
+    const auto response = brdf.evaluate_times_cosine(incident.direction);
+    const Vec3 direct{response.x * incident.weight.x, response.y * incident.weight.y, response.z * incident.weight.z};
     if (direct == Vec3{})
     {
         return {position, {}, {}};

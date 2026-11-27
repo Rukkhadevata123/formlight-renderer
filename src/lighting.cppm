@@ -8,31 +8,52 @@ export namespace formlight
 struct IncidentLight
 {
     Vec3 direction{};
-    double weight{}; // Incident radiance including the light-sampling measure.
+    Vec3 weight{}; // Linear RGB radiance including the light-sampling measure.
 };
 
-// The white directional light gives a unit Lambertian reflector unit brightness at normal incidence.
+[[nodiscard]] inline bool valid_light_rgb(Vec3 rgb) noexcept
+{
+    const auto valid = [](double channel) { return std::isfinite(channel) && channel >= 0; };
+    return valid(rgb.x) && valid(rgb.y) && valid(rgb.z);
+}
+
 class DirectionalLight
 {
   public:
-    explicit DirectionalLight(Vec3 toward_light)
-        : toward_light_(unit_vector(toward_light, "light.toward_light must be finite and nonzero"))
-    {
-    }
+    // A unit Lambertian reflector under default white light has unit brightness at normal incidence.
+    static constexpr double default_intensity = std::numbers::pi;
+    explicit DirectionalLight(Vec3 toward_light, Vec3 color = {1, 1, 1}, double intensity = default_intensity);
 
     [[nodiscard]] Vec3 toward_light() const noexcept
     {
-        return toward_light_;
+        return incident_.direction;
     }
 
     [[nodiscard]] IncidentLight incident() const noexcept
     {
-        return {toward_light_, std::numbers::pi};
+        return incident_;
     }
 
   private:
-    Vec3 toward_light_;
+    IncidentLight incident_;
 };
+
+DirectionalLight::DirectionalLight(Vec3 toward_light, Vec3 color, double intensity)
+    : incident_{unit_vector(toward_light, "light.toward_light must be finite and nonzero"), color * intensity}
+{
+    if (!valid_light_rgb(color))
+    {
+        throw std::invalid_argument("light.color requires three finite, nonnegative channels");
+    }
+    if (!std::isfinite(intensity) || intensity < 0)
+    {
+        throw std::invalid_argument("light.intensity must be finite and nonnegative");
+    }
+    if (!valid_light_rgb(incident_.weight))
+    {
+        throw std::invalid_argument("light.color times light.intensity must be finite");
+    }
+}
 
 // One-sided white Lambertian emitter. The two full edge vectors determine size and emitting side.
 class RectangleLight
@@ -81,6 +102,7 @@ IncidentLight RectangleLight::incident(Vec3 receiver, Vec3 light_point) const no
     // Uniform area sampling cancels the area in Le = power / (pi * area).
     const Vec3 direction = delta / std::sqrt(distance_squared);
     const double emitter_cosine = std::max(0.0, -dot(normal_, direction));
-    return {direction, radiance_times_area_ * emitter_cosine / distance_squared};
+    const double weight = radiance_times_area_ * emitter_cosine / distance_squared;
+    return {direction, {weight, weight, weight}};
 }
 } // namespace formlight

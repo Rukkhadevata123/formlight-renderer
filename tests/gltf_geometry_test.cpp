@@ -35,10 +35,14 @@ bool check_area_light()
     const RectangleLight light{{0, 2, 0}, {2, 0, 0}, {0, 0, 2}, 4 * std::numbers::pi * std::numbers::pi};
     const Vec3 up{0, 1, 0};
     const Vec3 center = light.sample(0.5, 0.5);
-    if (std::abs(light.incident({}, center).weight - std::numbers::pi) > 1e-12 ||
-        std::abs(light.incident({}, light.sample(1, 0.5)).weight - 8 * std::numbers::pi / (5 * std::sqrt(5.0))) >
-            1e-12 ||
-        light.incident({0, 4, 0}, center).weight != 0)
+    const auto white_weight = [](IncidentLight sample, double expected)
+    {
+        return sample.weight.x == sample.weight.y && sample.weight.y == sample.weight.z &&
+               std::abs(sample.weight.x - expected) <= 1e-12;
+    };
+    if (!white_weight(light.incident({}, center), std::numbers::pi) ||
+        !white_weight(light.incident({}, light.sample(1, 0.5)), 8 * std::numbers::pi / (5 * std::sqrt(5.0))) ||
+        light.incident({0, 4, 0}, center).weight != Vec3{})
     {
         std::cerr << "Rectangle emission or diffuse geometry term disagrees with the analytic weight\n";
         return false;
@@ -72,7 +76,7 @@ bool check_area_light()
         // For F0 = 1, roughness = 1 and V = N, the BRDF times N.L reduces to c / (2 pi (1 + c)).
         const auto incident = light.incident(receiver.position(), sample.position.value());
         const double cosine = dot(up, incident.direction);
-        const double expected = incident.weight * cosine / (2 * std::numbers::pi * (1 + cosine));
+        const double expected = incident.weight.x * cosine / (2 * std::numbers::pi * (1 + cosine));
         if (std::abs(sample.direct.x - expected) > 1e-12)
         {
             std::cerr << "Rectangle BRDF must use each sampled direction\n";

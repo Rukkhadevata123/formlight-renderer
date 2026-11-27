@@ -44,10 +44,14 @@ void check_lighting(const GltfScene &scene, Vec3 base)
         0.5 * 192 / 255,
         0.5 * 64 / 255};
     const MetallicRoughnessBrdf brdf{reference, {0, 0, 1}, eye};
-    const auto incident = direct.light.incident();
-    const auto expected_direct = brdf.evaluate_times_cosine(incident.direction) * incident.weight;
+    const auto response = brdf.evaluate_times_cosine(direct.light.toward_light());
+    const auto expected_direct = response * std::numbers::pi;
     check_rgb(frame_color(direct), expected_direct, "Direct only");
     check_rgb(frame_color({direct, ambient}), expected_direct + expected_ambient, "Ambient and direct");
+
+    const DirectionalLighting colored{DirectionalLight{{0.3, 0.4, 1}, {0.25, 0, 1}, 2}};
+    check_rgb(frame_color({colored, ambient}), Vec3{0.5 * response.x, 0, 2 * response.z} + expected_ambient,
+              "Colored direct light with ambient");
 }
 } // namespace
 

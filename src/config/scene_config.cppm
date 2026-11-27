@@ -115,6 +115,8 @@ struct LightSettings
     LightKind type{LightKind::None};
     bool shadows{true};
     Vec3 toward_light{1, 4, 3};
+    Vec3 color{1, 1, 1};
+    double intensity{DirectionalLight::default_intensity};
     Vec3 center{3, 3, 0.75};
     double width{1.5}, height{1.5}, power{240};
     Vec3 ambient{};
@@ -133,6 +135,8 @@ struct LightSettings
         if (self.type == LightKind::Directional)
         {
             field("toward_light", self.toward_light);
+            field("color", self.color);
+            field("intensity", self.intensity);
         }
         else if (self.type == LightKind::Rectangle)
         {
@@ -242,8 +246,7 @@ struct RenderRequest
     {
         return request;
     }
-    const auto valid_channel = [](double value) { return std::isfinite(value) && value >= 0; };
-    if (!valid_channel(light.ambient.x) || !valid_channel(light.ambient.y) || !valid_channel(light.ambient.z))
+    if (!valid_light_rgb(light.ambient))
     {
         throw std::invalid_argument("light.ambient requires three finite, nonnegative channels");
     }
@@ -254,9 +257,9 @@ struct RenderRequest
     else if (light.type == LightKind::Directional)
     {
         const auto method = render.mode == RenderMode::Hybrid ? ShadowMethod::Ray : ShadowMethod::Map;
-        request.lighting.emplace(
-            DirectionalLighting{DirectionalLight{light.toward_light}, light.shadows ? method : ShadowMethod::None},
-            light.ambient);
+        const DirectionalLight directional{light.toward_light, light.color, light.intensity};
+        request.lighting.emplace(DirectionalLighting{directional, light.shadows ? method : ShadowMethod::None},
+                                 light.ambient);
     }
     else if (light.type == LightKind::Rectangle)
     {
