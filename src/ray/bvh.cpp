@@ -81,7 +81,7 @@ struct TriangleBvh::BuildPrimitive
     Primitive source;
 };
 
-TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept)
+TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept, const FaceCulling &culling)
     : instances_(instances), accept_(std::move(accept))
 {
     std::size_t count = 0;
@@ -102,7 +102,8 @@ TriangleBvh::TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter 
         for (std::size_t j = 0; j < instance.triangles.size(); ++j)
         {
             const auto bounds = triangle_bounds(instance, instance.triangles[j]);
-            work.push_back({bounds, bounds.center(), {i, j}});
+            const auto cull = culling ? culling({instance.id, instance.triangles[j].id}) : CullFace::None;
+            work.push_back({bounds, bounds.center(), {i, j, cull}});
         }
     }
     primitives_.reserve(count);
@@ -175,8 +176,8 @@ std::optional<RayHit> TriangleBvh::trace(const Ray &ray, RayInterval interval, R
                 {
                     ++stats->triangle_tests;
                 }
-                if (const auto hit =
-                        intersect_triangle(local, instance.triangles[p.triangle], instance.id, interval, accept_))
+                if (const auto hit = intersect_triangle(local, instance.triangles[p.triangle], instance.id, interval,
+                                                        accept_, p.cull))
                 {
                     if constexpr (Kind == Query::Any)
                     {

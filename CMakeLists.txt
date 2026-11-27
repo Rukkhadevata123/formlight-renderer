@@ -135,6 +135,10 @@ if(BUILD_TESTING)
     target_link_libraries(material_sidedness_test PRIVATE formlight_gltf)
     add_test(NAME material_sidedness COMMAND material_sidedness_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sided-panels.gltf")
 
+    add_executable(shadow_sidedness_test tests/shadow_sidedness_test.cpp)
+    target_link_libraries(shadow_sidedness_test PRIVATE formlight_gltf)
+    add_test(NAME shadow_sidedness COMMAND shadow_sidedness_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sided-panels.gltf")
+
     add_executable(blend_layers_test tests/blend_layers_test.cpp)
     target_link_libraries(blend_layers_test PRIVATE formlight_gltf)
     add_test(NAME blend_layers COMMAND blend_layers_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BlendLayers.glb")

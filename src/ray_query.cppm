@@ -22,12 +22,13 @@ export struct RayQueryStats
     std::uint64_t rays{}, triangle_tests{};
 };
 
-// Borrows the instances and their triangle storage. Rebuild after either geometry or transforms change.
+// Borrows the instances and snapshots face culling at build time. Rebuild if either changes.
 export class TriangleBvh
 {
   public:
     TriangleBvh() = default;
-    explicit TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept = {});
+    explicit TriangleBvh(std::span<const MeshInstance> instances, SurfaceFilter accept = {},
+                         const FaceCulling &culling = {});
     [[nodiscard]] bool empty() const noexcept
     {
         return nodes_.empty();
@@ -40,6 +41,7 @@ export class TriangleBvh
     struct Primitive
     {
         std::size_t instance, triangle;
+        CullFace cull;
     };
     struct BuildPrimitive;
 
@@ -113,16 +115,17 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
     negative_ = {outward(n.x, -normal_.x), outward(n.y, -normal_.y), outward(n.z, -normal_.z)};
 }
 
-// Two-sided Möller–Trumbore intersection in the open interval (min, max).
+// Mesh-space Möller–Trumbore intersection in the open interval (min, max).
 [[nodiscard]] std::optional<RayHit> intersect_triangle(const Ray &ray, const Triangle &triangle, InstanceId instance,
-                                                       RayInterval interval, const SurfaceFilter &accept)
+                                                       RayInterval interval, const SurfaceFilter &accept,
+                                                       CullFace cull = CullFace::None)
 {
     const auto &[a, b, c] = triangle.vertices;
     const Vec3 ab = b.position - a.position;
     const Vec3 ac = c.position - a.position;
     const Vec3 p = cross(ray.direction, ac);
     const double determinant = dot(ab, p);
-    if (determinant == 0.0)
+    if (determinant == 0.0 || culled(cull, determinant < 0.0))
     {
         return std::nullopt;
     }
@@ -164,7 +167,8 @@ void keep_nearest(std::optional<RayHit> &nearest, const RayHit &hit) noexcept
 
 // Brute-force nearest hit in (min, max).
 export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<const MeshInstance> instances,
-                                                     RayInterval interval, const SurfaceFilter &accept = {})
+                                                     RayInterval interval, const SurfaceFilter &accept = {},
+                                                     const FaceCulling &culling = {})
 {
     std::optional<RayHit> nearest;
     for (const auto &instance : instances)
@@ -172,7 +176,8 @@ export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<c
         const Ray local = instance.transform.to_local_ray(ray);
         for (const auto &triangle : instance.triangles)
         {
-            if (const auto hit = intersect_triangle(local, triangle, instance.id, interval, accept))
+            const auto cull = culling ? culling({instance.id, triangle.id}) : CullFace::None;
+            if (const auto hit = intersect_triangle(local, triangle, instance.id, interval, accept, cull))
             {
                 keep_nearest(nearest, *hit);
             }
@@ -183,14 +188,15 @@ export [[nodiscard]] std::optional<RayHit> intersect(const Ray &ray, std::span<c
 
 // Any accepted hit in the open interval blocks the ray.
 export [[nodiscard]] bool occluded(const Ray &ray, std::span<const MeshInstance> instances, RayInterval interval,
-                                   const SurfaceFilter &accept = {})
+                                   const SurfaceFilter &accept = {}, const FaceCulling &culling = {})
 {
     for (const auto &instance : instances)
     {
         const Ray local = instance.transform.to_local_ray(ray);
         for (const auto &triangle : instance.triangles)
         {
-            if (intersect_triangle(local, triangle, instance.id, interval, accept))
+            const auto cull = culling ? culling({instance.id, triangle.id}) : CullFace::None;
+            if (intersect_triangle(local, triangle, instance.id, interval, accept, cull))
             {
                 return true;
             }

@@ -27,6 +27,21 @@ export struct TrianglePoint
 // An empty filter accepts all geometric hits.
 export using SurfaceFilter = std::function<bool(const TrianglePoint &)>;
 
+export enum class CullFace
+{
+    None,
+    Front,
+    Back
+};
+
+// Classification uses the winding in mesh space, including for mirrored instances.
+export using FaceCulling = std::function<CullFace(SurfaceId)>;
+
+export constexpr bool culled(CullFace mode, bool back_face) noexcept
+{
+    return mode == (back_face ? CullFace::Back : CullFace::Front);
+}
+
 // World-space vectors corresponding to one unit along each local axis.
 export struct Basis3
 {
@@ -78,16 +93,16 @@ export class AffineTransform
         return {to_local_point(world.origin), to_local_vector(world.direction)};
     }
 
+    [[nodiscard]] Vec3 to_local_vector(Vec3 v) const noexcept
+    {
+        return {dot(inverse_rows_.x, v), dot(inverse_rows_.y, v), dot(inverse_rows_.z, v)};
+    }
+
   private:
     Basis3 axes_;
     Vec3 translation_{};
     Basis3 inverse_rows_;
     double handedness_{1};
-
-    [[nodiscard]] Vec3 to_local_vector(Vec3 v) const noexcept
-    {
-        return {dot(inverse_rows_.x, v), dot(inverse_rows_.y, v), dot(inverse_rows_.z, v)};
-    }
 };
 
 namespace

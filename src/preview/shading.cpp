@@ -37,7 +37,9 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
             if (!blockers_ && ((directional && directional->shadows == ShadowMethod::Ray) || (area && area->shadows) ||
                                (point && point->shadows)))
             {
-                blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_);
+                // Shadow rays travel toward the light, so their front face is the light's back face.
+                blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_,
+                                                          scene_.face_culling(CullFace::Front));
             }
             if (directional && directional->shadows == ShadowMethod::Map)
             {
@@ -49,8 +51,8 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
                 }
                 else
                 {
-                    maps[i] =
-                        std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light, solid_filter_);
+                    maps[i] = std::make_shared<DirectionalShadowMap>(
+                        scene_.instances(), directional->light, solid_filter_, scene_.face_culling(CullFace::Back));
                 }
             }
         }

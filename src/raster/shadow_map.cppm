@@ -13,7 +13,7 @@ export class DirectionalShadowMap
 {
   public:
     DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
-                         const SurfaceFilter &accept = {});
+                         const SurfaceFilter &accept = {}, const FaceCulling &culling = {});
     [[nodiscard]] bool visible(Vec3 world, Vec3 geometric_normal) const noexcept;
 
   private:
@@ -32,7 +32,7 @@ export class DirectionalShadowMap
 };
 
 DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
-                                           const SurfaceFilter &accept)
+                                           const SurfaceFilter &accept, const FaceCulling &culling)
     : depths_(resolution * resolution, std::numeric_limits<double>::infinity())
 {
     const auto bounds = world_bounds(instances);
@@ -47,12 +47,18 @@ DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instanc
     depth_epsilon_ = 32 * std::numeric_limits<double>::epsilon() * scale;
     for (const auto &instance : instances)
     {
+        const auto local_light = instance.transform.to_local_vector(light.toward_light());
         const auto light_point = [&](const TriangleVertex &v)
         { return project(instance.transform.to_world_point(v.position)); };
         for (const auto &triangle : instance.triangles)
         {
+            const SurfaceId id{instance.id, triangle.id};
+            if (culling && culled(culling(id), dot(triangle.geometric_normal(), local_light) < 0))
+            {
+                continue;
+            }
             const auto &[a, b, c] = triangle.vertices;
-            rasterize(light_point(a), light_point(b), light_point(c), {instance.id, triangle.id}, accept);
+            rasterize(light_point(a), light_point(b), light_point(c), id, accept);
         }
     }
 }

@@ -431,6 +431,15 @@ Vec3 GltfScene::shading_normal(const MeshInstance &instance, const Triangle &fac
     return (magnitude > 0 ? mapped / magnitude : n) * side;
 }
 
+FaceCulling GltfScene::face_culling(CullFace single_sided) const &
+{
+    return [this, single_sided](SurfaceId id)
+    {
+        const auto &face = instance(id.instance).triangles[std::to_underlying(id.primitive)];
+        return material(face).double_sided ? CullFace::None : single_sided;
+    };
+}
+
 SurfaceFilter GltfScene::solid_filter() const &
 {
     if (std::ranges::none_of(materials_, [](const auto &m) { return m && m->alpha_mode != AlphaMode::Opaque; }))
