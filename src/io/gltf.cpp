@@ -20,7 +20,68 @@ void check(fastgltf::Error error)
     }
 }
 
-std::span<const std::byte> embedded_bytes(const fastgltf::DataSource &source)
+using Path = std::filesystem::path;
+
+std::string path_text(const Path &path)
+{
+    const auto text = path.u8string();
+    return {text.begin(), text.end()};
+}
+
+struct ModelResources
+{
+    fastgltf::Asset &asset;
+    Path directory;
+    // Byte views in the parsed asset borrow this storage until mesh and texture import finishes.
+    std::map<Path, std::vector<std::byte>> files{};
+
+    std::span<const std::byte> buffer_bytes(std::size_t index);
+    const fastgltf::Accessor &geometry_accessor(std::size_t index);
+
+    Path local_path(const fastgltf::sources::URI &source) const
+    {
+        const auto &uri = *source.uri;
+        const auto relative = uri.fspath();
+        if (!uri.scheme().empty() || !uri.host().empty() || relative.empty() || relative.has_root_path() ||
+            relative.native().find(Path::value_type{}) != Path::string_type::npos)
+        {
+            return {};
+        }
+        return (directory / relative).lexically_normal();
+    }
+
+    Path require_path(const fastgltf::sources::URI &source) const
+    {
+        auto path = local_path(source);
+        if (path.empty())
+        {
+            throw std::runtime_error(std::format("Expected a relative file URI: {}", source.uri->string()));
+        }
+        return path;
+    }
+
+    std::span<const std::byte> read(const Path &path)
+    {
+        if (const auto it = files.find(path); it != files.end())
+        {
+            return it->second;
+        }
+        std::ifstream file(path, std::ios::binary | std::ios::ate);
+        const std::streamoff length = file.tellg();
+        if (length < 0 || !std::in_range<std::size_t>(length))
+        {
+            throw std::runtime_error(std::format("Cannot open or size external resource: {}", path_text(path)));
+        }
+        std::vector<std::byte> bytes(static_cast<std::size_t>(length));
+        if (!file.seekg(0) || !file.read(reinterpret_cast<char *>(bytes.data()), length))
+        {
+            throw std::runtime_error(std::format("Cannot read external resource: {}", path_text(path)));
+        }
+        return files.emplace(path, std::move(bytes)).first->second;
+    }
+};
+
+std::span<const std::byte> loaded_bytes(const fastgltf::DataSource &source)
 {
     if (const auto *a = std::get_if<fastgltf::sources::Array>(&source))
     {
@@ -34,10 +95,27 @@ std::span<const std::byte> embedded_bytes(const fastgltf::DataSource &source)
     {
         return v->bytes;
     }
-    throw std::runtime_error("Expected embedded GLB buffer or image data");
+    throw std::runtime_error("Expected glTF buffer or image bytes");
 }
 
-const fastgltf::Accessor &geometry_accessor(const fastgltf::Asset &asset, std::size_t index)
+std::span<const std::byte> ModelResources::buffer_bytes(std::size_t index)
+{
+    auto &buffer = asset.buffers.at(index);
+    if (const auto *uri = std::get_if<fastgltf::sources::URI>(&buffer.data))
+    {
+        const auto path = require_path(*uri);
+        const auto bytes = read(path);
+        if (bytes.size() < buffer.byteLength)
+        {
+            throw std::runtime_error(std::format("{}: buffer declares {} bytes, file contains {}", path_text(path),
+                                                 buffer.byteLength, bytes.size()));
+        }
+        buffer.data = fastgltf::sources::ByteView{bytes.first(buffer.byteLength), uri->mimeType};
+    }
+    return loaded_bytes(buffer.data);
+}
+
+const fastgltf::Accessor &ModelResources::geometry_accessor(std::size_t index)
 {
     const auto &accessor = asset.accessors.at(index);
     if (accessor.sparse)
@@ -47,8 +125,7 @@ const fastgltf::Accessor &geometry_accessor(const fastgltf::Asset &asset, std::s
     if (accessor.bufferViewIndex)
     {
         const auto &view = asset.bufferViews.at(*accessor.bufferViewIndex);
-        const auto &data = asset.buffers.at(view.bufferIndex).data;
-        embedded_bytes(data);
+        buffer_bytes(view.bufferIndex);
     }
     return accessor;
 }
@@ -76,10 +153,10 @@ void read_vertex_colors(const fastgltf::Asset &asset, const fastgltf::Accessor &
     }
 }
 
-void read_texcoords(const fastgltf::Asset &asset, const fastgltf::Primitive &primitive,
-                    std::span<TriangleVertex> vertices, GltfContent content, std::size_t mesh_index,
-                    std::size_t primitive_index)
+void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primitive, std::span<TriangleVertex> vertices,
+                    GltfContent content, std::size_t mesh_index, std::size_t primitive_index)
 {
+    const auto &asset = resources.asset;
     constexpr std::array<std::string_view, 2> names{"TEXCOORD_0", "TEXCOORD_1"};
     std::array<bool, names.size()> present{};
     for (std::size_t set = 0; set < names.size(); ++set)
@@ -91,7 +168,7 @@ void read_texcoords(const fastgltf::Asset &asset, const fastgltf::Primitive &pri
             continue;
         }
         present[set] = true;
-        const auto &uvs = geometry_accessor(asset, attribute->accessorIndex);
+        const auto &uvs = resources.geometry_accessor(attribute->accessorIndex);
         if (uvs.count != vertices.size() || uvs.type != fastgltf::AccessorType::Vec2)
         {
             throw std::runtime_error(std::format("Mesh {} primitive {}: {} must supply one VEC2 per position",
@@ -134,8 +211,9 @@ void read_texcoords(const fastgltf::Asset &asset, const fastgltf::Primitive &pri
     }
 }
 
-std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_index, GltfContent content)
+std::vector<Triangle> read_mesh(ModelResources &resources, std::size_t mesh_index, GltfContent content)
 {
+    const auto &asset = resources.asset;
     const auto &mesh = asset.meshes.at(mesh_index);
     std::vector<Triangle> triangles;
     for (std::size_t primitive_index = 0; primitive_index < mesh.primitives.size(); ++primitive_index)
@@ -150,7 +228,7 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
         {
             throw std::runtime_error("Triangle primitive is missing POSITION");
         }
-        const auto &positions = geometry_accessor(asset, position->accessorIndex);
+        const auto &positions = resources.geometry_accessor(position->accessorIndex);
         std::vector<TriangleVertex> vertices(positions.count);
         fastgltf::iterateAccessorWithIndex<fastgltf::math::fvec3>(
             asset, positions,
@@ -165,7 +243,7 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
         const auto normal = primitive.findAttribute("NORMAL");
         if (normal != primitive.attributes.end())
         {
-            const auto &normals = geometry_accessor(asset, normal->accessorIndex);
+            const auto &normals = resources.geometry_accessor(normal->accessorIndex);
             if (normals.count != positions.count || normals.type != fastgltf::AccessorType::Vec3)
             {
                 throw std::runtime_error("NORMAL must supply one VEC3 per position");
@@ -174,13 +252,13 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
                 asset, normals, [&](auto n, std::size_t i)
                 { vertices[i].normal = unit_vector({n[0], n[1], n[2]}, "NORMAL must be finite and nonzero"); });
         }
-        read_texcoords(asset, primitive, vertices, content, mesh_index, primitive_index);
+        read_texcoords(resources, primitive, vertices, content, mesh_index, primitive_index);
         const auto tangent = primitive.findAttribute("TANGENT");
         const bool use_tangents = content == GltfContent::Materials && normal != primitive.attributes.end() &&
                                   tangent != primitive.attributes.end();
         if (use_tangents)
         {
-            const auto &accessor = geometry_accessor(asset, tangent->accessorIndex);
+            const auto &accessor = resources.geometry_accessor(tangent->accessorIndex);
             if (accessor.type != fastgltf::AccessorType::Vec4 || accessor.count != vertices.size())
             {
                 throw std::runtime_error("TANGENT must supply one VEC4 per position");
@@ -200,12 +278,12 @@ std::vector<Triangle> read_mesh(const fastgltf::Asset &asset, std::size_t mesh_i
         if (const auto color = primitive.findAttribute("COLOR_0");
             content == GltfContent::Materials && color != primitive.attributes.end())
         {
-            read_vertex_colors(asset, geometry_accessor(asset, color->accessorIndex), vertices);
+            read_vertex_colors(asset, resources.geometry_accessor(color->accessorIndex), vertices);
         }
         const auto material_slot = primitive.materialIndex ? *primitive.materialIndex + 1 : 0;
 
         // GenerateMeshIndices also supplies consecutive indices for non-indexed primitives.
-        const auto &indices = geometry_accessor(asset, primitive.indicesAccessor.value());
+        const auto &indices = resources.geometry_accessor(primitive.indicesAccessor.value());
         using enum fastgltf::ComponentType;
         if (indices.type != fastgltf::AccessorType::Scalar || indices.normalized ||
             (indices.componentType != UnsignedByte && indices.componentType != UnsignedShort &&
@@ -252,20 +330,34 @@ AffineTransform instance_transform(const fastgltf::math::nmat4x4 &world)
     return {Basis3{column(0), column(1), column(2)}, column(3)};
 }
 
-ColorImage read_image(const fastgltf::Asset &asset, std::size_t index, RgbEncoding encoding)
+ColorImage read_image(ModelResources &resources, std::size_t index, RgbEncoding encoding)
 {
+    const auto &asset = resources.asset;
     const auto &source = asset.images.at(index).data;
     if (const auto *reference = std::get_if<fastgltf::sources::BufferView>(&source))
     {
         const auto &view = asset.bufferViews.at(reference->bufferViewIndex);
-        const auto bytes = embedded_bytes(asset.buffers.at(view.bufferIndex).data);
+        const auto bytes = resources.buffer_bytes(view.bufferIndex);
         if (view.byteOffset > bytes.size() || view.byteLength > bytes.size() - view.byteOffset)
         {
-            throw std::runtime_error("Image buffer view exceeds its embedded buffer");
+            throw std::runtime_error("Image buffer view exceeds its buffer");
         }
         return decode_image(bytes.subspan(view.byteOffset, view.byteLength), encoding);
     }
-    return decode_image(embedded_bytes(source), encoding);
+    if (const auto *uri = std::get_if<fastgltf::sources::URI>(&source))
+    {
+        const auto path = resources.require_path(*uri);
+        const auto bytes = resources.read(path);
+        try
+        {
+            return decode_image(bytes, encoding);
+        }
+        catch (const std::runtime_error &error)
+        {
+            throw std::runtime_error(std::format("{}: {}", path_text(path), error.what()));
+        }
+    }
+    return decode_image(loaded_bytes(source), encoding);
 }
 
 WrapMode wrap_mode(fastgltf::Wrap wrap)
@@ -308,7 +400,7 @@ TextureSampler read_sampler(const fastgltf::Sampler &source)
 
 struct TextureLoader
 {
-    const fastgltf::Asset &asset;
+    ModelResources &resources;
     std::vector<TextureImage> &images;
     std::map<std::pair<std::size_t, TextureUsage>, std::size_t> image_slots{};
 
@@ -317,13 +409,14 @@ struct TextureLoader
 
 TextureBinding TextureLoader::bind(const fastgltf::TextureInfo &info, TextureUsage usage)
 {
+    const auto &asset = resources.asset;
     const auto &texture = asset.textures.at(info.textureIndex);
     const auto image = texture.imageIndex.value();
     const auto [slot, inserted] = image_slots.try_emplace(std::pair{image, usage}, images.size());
     if (inserted)
     {
         const auto encoding = usage == TextureUsage::Color ? RgbEncoding::Srgb : RgbEncoding::Linear;
-        images.emplace_back(read_image(asset, image, encoding), usage);
+        images.emplace_back(read_image(resources, image, encoding), usage);
     }
     TextureSampler sampler;
     if (texture.samplerIndex)
@@ -397,11 +490,12 @@ GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &te
     return result;
 }
 
-std::vector<std::optional<GltfMaterial>> read_materials(const fastgltf::Asset &asset,
+std::vector<std::optional<GltfMaterial>> read_materials(ModelResources &resources,
                                                         std::span<const std::vector<Triangle>> meshes,
                                                         std::vector<TextureImage> &images)
 {
-    TextureLoader textures{asset, images};
+    const auto &asset = resources.asset;
+    TextureLoader textures{resources, images};
     std::vector<std::optional<GltfMaterial>> materials(1 + asset.materials.size());
     materials[0] = GltfMaterial{};
     for (const auto &mesh : meshes)
@@ -419,24 +513,26 @@ std::vector<std::optional<GltfMaterial>> read_materials(const fastgltf::Asset &a
 }
 } // namespace
 
-std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem::path &path, GltfContent content)
+std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::path &path, GltfContent content)
 {
     try
     {
         auto file = fastgltf::GltfDataBuffer::FromPath(path);
         if (file.error() != fastgltf::Error::None)
         {
-            throw std::runtime_error("Could not open or read GLB file");
+            throw std::runtime_error("Could not open or read glTF model");
         }
         fastgltf::Parser parser{fastgltf::Extensions::KHR_materials_emissive_strength};
-        auto parsed = parser.loadGltfBinary(file.get(), path.parent_path(), fastgltf::Options::GenerateMeshIndices);
+        const auto model = std::filesystem::absolute(path);
+        auto parsed = parser.loadGltf(file.get(), model.parent_path(), fastgltf::Options::GenerateMeshIndices);
         check(parsed.error());
-        const auto &asset = parsed.get();
+        auto &asset = parsed.get();
         check(fastgltf::validate(asset));
+        ModelResources resources{asset, model.parent_path()};
         const auto scene_index = asset.defaultScene.value_or(0);
         if (scene_index >= asset.scenes.size())
         {
-            throw std::runtime_error("GLB has no valid scene to load");
+            throw std::runtime_error("glTF model has no valid scene to load");
         }
         const auto &scene = asset.scenes[scene_index];
 
@@ -451,6 +547,23 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
             pending.push_back({root, fastgltf::math::nmat4x4{}});
         }
         GltfScene result;
+        result.source_files_.push_back(model);
+        // Protect referenced files even when only another scene or material in this asset uses them.
+        const auto remember_files = [&](const auto &entries)
+        {
+            for (const auto &entry : entries)
+            {
+                if (const auto *uri = std::get_if<fastgltf::sources::URI>(&entry.data))
+                {
+                    if (auto file_path = resources.local_path(*uri); !file_path.empty())
+                    {
+                        result.source_files_.push_back(std::move(file_path));
+                    }
+                }
+            }
+        };
+        remember_files(asset.buffers);
+        remember_files(asset.images);
         result.node_instance_slots_.resize(asset.nodes.size());
         std::vector<std::optional<std::size_t>> mesh_slots(asset.meshes.size());
         std::vector<bool> visited(asset.nodes.size());
@@ -475,7 +588,7 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
                 if (!slot)
                 {
                     slot = result.meshes_.size();
-                    result.meshes_.push_back(read_mesh(asset, *node.meshIndex, content));
+                    result.meshes_.push_back(read_mesh(resources, *node.meshIndex, content));
                 }
                 result.node_instance_slots_[index] = result.instances_.size();
                 result.instances_.push_back(
@@ -488,13 +601,28 @@ std::expected<GltfScene, std::string> GltfScene::load_glb(const std::filesystem:
         }
         if (content == GltfContent::Materials)
         {
-            result.materials_ = read_materials(asset, result.meshes_, result.images_);
+            result.materials_ = read_materials(resources, result.meshes_, result.images_);
         }
         return result;
     }
     catch (const std::exception &error)
     {
-        return std::unexpected(std::format("{}: {}", path.string(), error.what()));
+        return std::unexpected(std::format("{}: {}", path_text(path), error.what()));
+    }
+}
+
+void GltfScene::check_output_path(const std::filesystem::path &path) const
+{
+    if (!std::filesystem::exists(path))
+    {
+        return;
+    }
+    for (const auto &source : source_files_)
+    {
+        if (std::filesystem::exists(source) && std::filesystem::equivalent(path, source))
+        {
+            throw std::invalid_argument(std::format("Output would overwrite a model resource: {}", path_text(source)));
+        }
     }
 }
 

@@ -30,6 +30,8 @@ A square panel uses one two-texel PNG for base color, metallic-roughness, and am
 
 This variant of MetallicRoughnessPanel uses the same two texels for all four material bindings. UV0 runs left to right. UV1 mirrors U and uses normalized unsigned-short coordinates. Base color (UV1) and emission (UV0) use linear filtering. Metallic-roughness (UV0) and occlusion (UV1) use nearest filtering. Created for Formlight and distributed under the [project license](../LICENSE).
 
+The [multi-file version](DualUvPanel/DualUvPanel.gltf) uses the same mesh and PNG, stored in separate subdirectories. Its image URI uses `%20` for the space in the filename.
+
 ## MipChecker.glb
 
 A floor uses UV1 to repeat a 64×64 checker at 32 texels per world unit. UV0 is constant. The same image supplies sRGB base color and linear metallic-roughness data. The sampler uses nearest magnification and trilinear minification. In the [oblique camera view](../scenes/mip-checker.toml), distant squares converge to the average of the decoded texels. Created for Formlight and distributed under the [project license](../LICENSE).

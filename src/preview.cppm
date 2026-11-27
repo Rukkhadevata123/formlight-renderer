@@ -152,7 +152,7 @@ export struct ScenePreview
 
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 {
-    auto scene = GltfScene::load_glb(request.asset, GltfContent::Materials);
+    auto scene = GltfScene::load(request.asset, GltfContent::Materials);
     if (!scene)
     {
         throw std::runtime_error(scene.error());

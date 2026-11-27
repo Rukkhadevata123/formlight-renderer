@@ -55,7 +55,7 @@ export class SceneFileDialogs
         ImGui::BeginDisabled(!has_image || pending_.has_value() || document.opening_model());
         if (ImGui::Button("Open Model..."))
         {
-            static constexpr SDL_DialogFileFilter filter{"Binary glTF model", "glb"};
+            static constexpr SDL_DialogFileFilter filter{"glTF model", "gltf;glb"};
             const auto initial = path_text(document.session().applied_config().scene.asset.parent_path());
             auto selection = std::make_unique<Selection>();
             pending_.emplace(selection->get_future(), std::nullopt);
@@ -104,6 +104,7 @@ export class SceneFileDialogs
             }
             if (dialog.save_config)
             {
+                document.session().check_output_path(path);
                 save_scene_config(path, *dialog.save_config);
                 message_ = "Saved " + path_text(path);
                 document.saved_as(std::move(path));

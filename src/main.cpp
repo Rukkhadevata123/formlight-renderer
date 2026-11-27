@@ -8,17 +8,17 @@ auto main(int argc, char **argv) -> int
 {
     if (argc == 1 || (argc == 2 && std::string_view{argv[1]} == "--help"))
     {
-        std::println("Usage: formlight-renderer --inspect MODEL.glb\n"
-                     "       formlight-renderer --render MODEL.glb (--output IMAGE.png | --pixel X Y)\n"
+        std::println("Usage: formlight-renderer --inspect MODEL\n"
+                     "       formlight-renderer --render MODEL (--output IMAGE.png | --pixel X Y)\n"
                      "       formlight-renderer --scene SCENE.toml (--output IMAGE.png | --pixel X Y)\n"
                      "                         [--mode raster|hybrid] [--light-samples N] [--seed N]\n"
-                     "Pixel coordinates start at (0, 0) in the top-left corner.");
+                     "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
         return 0;
     }
 
     if (argc == 3 && std::string_view{argv[1]} == "--inspect")
     {
-        const auto scene = formlight::GltfScene::load_glb(argv[2], formlight::GltfContent::Geometry);
+        const auto scene = formlight::GltfScene::load(argv[2], formlight::GltfContent::Geometry);
         if (!scene)
         {
             std::cerr << scene.error() << '\n';
@@ -57,12 +57,13 @@ auto main(int argc, char **argv) -> int
                 return 0;
             }
             const auto &output = std::get<std::filesystem::path>(action);
-            if (std::filesystem::exists(output) &&
-                (std::filesystem::equivalent(input, output) || std::filesystem::equivalent(request.asset, output)))
+            if (std::filesystem::exists(output) && std::filesystem::equivalent(input, output))
             {
                 throw std::invalid_argument("Output image would overwrite the input model or scene");
             }
-            const auto image = render_scene(request);
+            const auto preview = load_preview(request);
+            preview.scene.check_output_path(output);
+            const auto image = render_preview(preview.scene, preview.view, request.lighting);
             write_png(output, image, config.display);
             std::println("Wrote {} ({} x {})", output.string(), request.extent.width, request.extent.height);
             return 0;

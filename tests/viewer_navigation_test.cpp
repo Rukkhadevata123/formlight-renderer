@@ -56,7 +56,7 @@ void check_image(const ColorImage &actual, const SceneConfig &config)
     }
 }
 
-void check_frame_replacement(const std::filesystem::path &asset)
+void check_frame_replacement(const std::filesystem::path &asset, const std::filesystem::path &external_model)
 {
     SceneConfig config;
     config.scene = {asset, true};
@@ -213,20 +213,40 @@ void check_frame_replacement(const std::filesystem::path &asset)
         throw std::runtime_error("Failed model import replaced the current scene");
     }
 
-    document.open_model(asset);
+    // Open a copy with its geometry intact but its image missing; the published frame and pose must survive.
+    const auto scratch = std::filesystem::current_path() / std::format("viewer-gltf-{:08x}", std::random_device{}());
+    if (!std::filesystem::create_directory(scratch))
+    {
+        throw std::runtime_error("Could not create glTF test directory");
+    }
+    std::filesystem::copy_file(external_model, scratch / external_model.filename());
+    std::filesystem::copy(external_model.parent_path() / "buffers", scratch / "buffers",
+                          std::filesystem::copy_options::recursive);
+    document.open_model(scratch / external_model.filename());
+    const auto *replacement = finish_open();
+    std::filesystem::remove_all(scratch);
+    if (replacement || document.open_error().find("two texels.png") == std::string::npos ||
+        document.display_path() != source ||
+        document.session().scene_snapshot().camera.position != snapshot.camera.position)
+    {
+        throw std::runtime_error("Missing external texture did not preserve the active scene");
+    }
+
+    document.open_model(external_model);
     session.render_settings().sampling.samples = 4;
     session.render_settings().extent = {43, 67};
     document.apply_settings();                      // This edit must reach the first frame of the new asset.
     session.light_settings()->lights[0].width = -1; // An unapplied draft survives the switch.
     document.set_display_settings({-2});
     const auto *opened = finish_open();
-    if (!opened || !document.open_error().empty() || document.display_path() != asset ||
+    if (!opened || !document.open_error().empty() || document.display_path() != external_model ||
         document.session().light_settings()->lights[0].width != -1 ||
         document.session().scene_snapshot().display.exposure_ev != -2)
     {
         throw std::runtime_error("Model replacement failed to commit the first frame or preserve the draft");
     }
     config.camera.auto_frame = true;
+    config.scene.asset = external_model;
     config.render.sampling.samples = 4;
     config.render.extent = {43, 67};
     config.lighting->lights[0].width = 9; // The earlier unapplied width was accepted by Apply during this load.
@@ -237,12 +257,12 @@ void check_frame_replacement(const std::filesystem::path &asset)
 int main(int argc, char **argv)
 try
 {
-    if (argc != 2)
+    if (argc != 3)
     {
         return 1;
     }
     check_pan_from_above();
-    check_frame_replacement(argv[1]);
+    check_frame_replacement(argv[1], argv[2]);
     return 0;
 }
 catch (const std::exception &error)

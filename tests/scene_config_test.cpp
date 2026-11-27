@@ -11,6 +11,7 @@ void round_trip(const std::filesystem::path &source, const std::filesystem::path
 {
     using namespace formlight;
     auto config = load_scene_config(source);
+    config.render.mode = RenderMode::Hybrid;
     config.render.extent = {48, 32};
     config.render.sampling = {4, std::numeric_limits<std::uint64_t>::max()};
     config.camera.auto_frame = false;

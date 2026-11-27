@@ -10,7 +10,7 @@ try
     {
         return 1;
     }
-    const auto scene = GltfScene::load_glb(argv[1], GltfContent::Materials);
+    const auto scene = GltfScene::load(argv[1], GltfContent::Materials);
     if (!scene)
     {
         throw std::runtime_error(scene.error());

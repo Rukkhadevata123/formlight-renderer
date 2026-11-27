@@ -101,6 +101,10 @@ if(BUILD_TESTING)
     target_link_libraries(texture_coordinates_test PRIVATE formlight_gltf)
     add_test(NAME texture_coordinates COMMAND texture_coordinates_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/DualUvPanel.glb")
 
+    add_test(NAME external_gltf COMMAND "${CMAKE_COMMAND}"
+        "-DRENDERER=$<TARGET_FILE:formlight-renderer>" "-DASSETS=${CMAKE_CURRENT_SOURCE_DIR}/assets"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/external_gltf.cmake")
+
     add_executable(texture_minification_test tests/texture_minification_test.cpp)
     target_link_libraries(texture_minification_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME texture_minification COMMAND texture_minification_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/mip-checker.toml")
@@ -124,11 +128,13 @@ if(BUILD_TESTING)
     add_executable(scene_config_test tests/scene_config_test.cpp)
     target_link_libraries(scene_config_test PRIVATE formlight_io formlight_gltf TBB::tbb)
     add_test(NAME scene_config_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/box-area-light.toml")
+    add_test(NAME external_scene_round_trip COMMAND scene_config_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/dual-uv-panel.toml")
 
     if(FORMLIGHT_BUILD_VIEWER)
         add_executable(viewer_navigation_test tests/viewer_navigation_test.cpp)
         target_link_libraries(viewer_navigation_test PRIVATE formlight_viewer_session)
-        add_test(NAME viewer_navigation COMMAND viewer_navigation_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
+        add_test(NAME viewer_navigation COMMAND viewer_navigation_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb"
+            "${CMAKE_CURRENT_SOURCE_DIR}/assets/DualUvPanel/DualUvPanel.gltf")
         set_tests_properties(viewer_navigation PROPERTIES TIMEOUT 15)
     endif()
 endif()

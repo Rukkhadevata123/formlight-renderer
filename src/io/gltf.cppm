@@ -53,8 +53,9 @@ export class GltfScene
     GltfScene(GltfScene &&) noexcept = default;
     GltfScene &operator=(GltfScene &&) noexcept = default;
 
-    [[nodiscard]] static std::expected<GltfScene, std::string> load_glb(const std::filesystem::path &path,
-                                                                        GltfContent content);
+    [[nodiscard]] static std::expected<GltfScene, std::string> load(const std::filesystem::path &path,
+                                                                    GltfContent content);
+    void check_output_path(const std::filesystem::path &path) const;
     [[nodiscard]] SurfaceMaterial surface_material(const Triangle &face, Barycentrics weights,
                                                    WeightGradients gradients = {}) const;
     [[nodiscard]] Vec3 shading_normal(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
@@ -84,6 +85,7 @@ export class GltfScene
 
   private:
     GltfScene() = default;
+    std::vector<std::filesystem::path> source_files_;
     [[nodiscard]] LinearColor sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights,
                                      WeightGradients gradients) const;
     [[nodiscard]] LinearColor sample_base_color(const GltfMaterial &material, const Triangle &face,

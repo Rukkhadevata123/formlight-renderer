@@ -92,6 +92,13 @@ export class ViewerSession
     void apply_settings();
     void set_display_settings(DisplaySettings display);
     [[nodiscard]] SceneConfig scene_snapshot() const;
+    void check_output_path(const std::filesystem::path &path) const
+    {
+        if (scene_)
+        {
+            scene_->preview.scene.check_output_path(path);
+        }
+    }
     // Consume input against the displayed view before publishing a replacement image.
     [[nodiscard]] const ColorImage *update(const ViewportInput &input, Clock::time_point now = Clock::now());
     [[nodiscard]] ImageExtent display_extent() const

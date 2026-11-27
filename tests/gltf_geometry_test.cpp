@@ -234,7 +234,7 @@ auto main(int argc, char **argv) -> int
         std::cerr << "Expected the BoxTextured.glb fixture path\n";
         return 1;
     }
-    auto scene = GltfScene::load_glb(argv[1], GltfContent::Materials);
+    auto scene = GltfScene::load(argv[1], GltfContent::Materials);
     if (!scene)
     {
         std::cerr << scene.error() << '\n';

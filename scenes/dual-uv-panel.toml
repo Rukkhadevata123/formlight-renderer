@@ -1,0 +1,16 @@
+[scene]
+asset = "../assets/DualUvPanel/DualUvPanel.gltf"
+
+[camera]
+auto_frame = false
+position = [0, 0, 3]
+target = [0, 0, 0]
+vertical_fov_degrees = 45
+
+[[lighting.lights]]
+type = "directional"
+toward_light = [0.3, 0.4, 1]
+
+[render]
+width = 256
+height = 256
