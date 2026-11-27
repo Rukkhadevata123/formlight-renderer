@@ -2,6 +2,12 @@
 asset = "../../assets/BoxTextured.glb"
 ground = true
 
+[camera]
+auto_frame = false
+position = [1.290865598350263, 0.93881134425473678, 1.7602712704776315]
+target = [0.0, 0.0, 0.0]
+vertical_fov_degrees = 45.0
+
 [[lighting.lights]]
 type = "directional"
 toward_light = [3, 3, 0.75]

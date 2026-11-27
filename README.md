@@ -17,6 +17,8 @@ Formlight Renderer 是一个用 C++23 编写的 CPU 渲染器。下图是光栅�
 | 方盒的灯光与阴影 | 在 [lighting](scenes/lighting/) 中，从[方向光硬阴影](scenes/lighting/box-directional.toml)或[矩形灯软阴影](scenes/lighting/box-area-light.toml)开始。 |
 | 材质、纹理与透明层 | 在 [materials](scenes/materials/) 中，用[材质球](scenes/materials/material-spheres.toml)比较金属度与粗糙度，用[交叠透明层](scenes/materials/blend-layers.toml)观察遮挡和混合。 |
 
+[方盒阴影对照](docs/box-shadows.md) 并排展示同机位的阴影图、阴影射线与矩形灯软阴影，并给出本影、半影、亮区的像素重放命令。
+
 [双灯方盒](scenes/lighting/box-two-lights.toml) 用暖色方向光和冷色点光源照亮同一块地面。运行 `formlight-renderer --scene scenes/lighting/box-two-lights.toml --pixel 320 240` 可查看两盏灯各自的线性 RGB 贡献和遮挡结果。将某盏灯的 `enabled` 设为 `false` 可以单独观察另一盏灯。
 
 场景文件用 `[lighting]` 保存全局环境光，每个 `[[lighting.lights]]` 定义一盏直接光源。迁移旧配置时，把方向光、点光源或矩形灯的 `[light]` 改为 `[[lighting.lights]]`，把 `ambient` 移到 `[lighting]`。纯环境光只需 `[lighting]` 和 `ambient`。省略整个照明配置会显示底色和自发光。

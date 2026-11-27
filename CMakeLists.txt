@@ -102,6 +102,10 @@ if(BUILD_TESTING)
     target_link_libraries(gltf_geometry_test PRIVATE formlight_gltf)
     add_test(NAME gltf_box_geometry COMMAND gltf_geometry_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb")
 
+    add_executable(box_penumbra_test tests/box_penumbra_test.cpp)
+    target_link_libraries(box_penumbra_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME box_penumbra COMMAND box_penumbra_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
+
     add_executable(triangle_modes_test tests/gltf/triangle_modes_test.cpp)
     target_link_libraries(triangle_modes_test PRIVATE formlight_gltf)
     add_test(NAME gltf_triangle_modes COMMAND triangle_modes_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/triangle-modes.gltf")
