@@ -44,9 +44,10 @@ export class PathIntegrator
   public:
     explicit PathIntegrator(const GltfScene &scene) : scene_(scene)
     {
-        if (scene.requires_transmission)
+        if (scene.requires_preview_optics)
         {
-            throw std::invalid_argument("Required glTF material transmission needs raster or hybrid mode");
+            throw std::invalid_argument(
+                "Required glTF material transmission, volume or IOR needs raster or hybrid mode");
         }
         surfaces_ = std::make_shared<SurfaceBvh>(
             scene.instances(), scene.spheres(), scene.solid_filter(),

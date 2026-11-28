@@ -46,7 +46,7 @@ void print_sample(const SampleDiagnostic &report)
         std::println("Surface: instance {}, primitive {}, material slot {}, depth {:.9g}",
                      std::to_underlying(id.instance), std::to_underlying(id.primitive), surface->material_index,
                      surface->hit.view_depth);
-        const auto &[base, emission, metallic, roughness, occlusion, transmission] = surface->material;
+        const auto &[base, emission, metallic, roughness, occlusion, transmission, ior, volume] = surface->material;
         if (const auto &n = surface->shading_normal)
         {
             std::println("World shading normal: ({}, {}, {})", n->x, n->y, n->z);
@@ -73,6 +73,15 @@ void print_sample(const SampleDiagnostic &report)
         std::println("Base linear RGB: ({}, {}, {})", base.r, base.g, base.b);
         std::println("Surface emission (linear RGB): ({}, {}, {})", emission.r, emission.g, emission.b);
         std::println("glTF transmission: {}", transmission);
+        if (transmission > 0 || ior != 1.5)
+        {
+            std::println("glTF IOR: {}  thickness (mesh units): {}", ior, volume.thickness);
+        }
+        if (const auto &r = surface->refraction)
+        {
+            std::println("Volume distance: {:.7g}  projected offset (pixels): ({:.5f}, {:.5f})", r->world_distance,
+                         r->offset.x, r->offset.y);
+        }
         if (const auto &through = surface->transmitted)
         {
             std::println("Transmitted background (linear RGB): ({}, {}, {})", through->x, through->y, through->z);

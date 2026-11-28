@@ -49,7 +49,7 @@ SurfacePass surface_pass(const GltfScene &scene, const RasterTriangle &piece)
     const auto &instance = scene.instance(id.instance);
     const auto &face = instance.triangles[std::to_underlying(id.primitive)];
     const auto &material = scene.material(face);
-    if (piece.back_face() && !material.double_sided)
+    if (piece.back_face() && !material.renders_back_faces())
     {
         return SurfacePass::Cull;
     }
@@ -158,8 +158,8 @@ struct LayerPixel
     LinearColor shaded{};
 };
 
-void composite_rough_layers(ColorImage &image, VisibilityBuffer visible, LayerRows &rows, int axis,
-                            std::stop_token stop, oneapi::tbb::task_group_context &tasks, auto shade)
+void composite_spatial_layers(ColorImage &image, VisibilityBuffer visible, LayerRows &rows, int axis,
+                              std::stop_token stop, oneapi::tbb::task_group_context &tasks, auto shade)
 {
     // Each pass contributes at most one fragment per pixel. Finish all reads before publishing this layer.
     std::vector<std::vector<LayerPixel>> passes;
@@ -197,7 +197,7 @@ void composite_rough_layers(ColorImage &image, VisibilityBuffer visible, LayerRo
         }
     }
     // The largest half-width is 1/48 of the shorter image dimension, capped at 16 output pixels.
-    const TransmissionBackdrop backdrop{image, depths, std::min(16.0 * axis, std::min(width, height) / 48.0)};
+    const TransmissionBackdrop backdrop{image, depths, std::min(16.0 * axis, std::min(width, height) / 48.0), axis};
     for (auto &pass : passes)
     {
         oneapi::tbb::parallel_for(
@@ -224,29 +224,42 @@ void composite_rough_layers(ColorImage &image, VisibilityBuffer visible, LayerRo
 }
 } // namespace
 
-LinearColor TransmissionBackdrop::filtered(PixelCoord pixel, double depth, double roughness) const
+LinearColor TransmissionBackdrop::filtered(PixelCoord source, ImagePoint center, double depth, double roughness) const
 {
     const auto [width, height] = image.extent();
+    if (!(center.x >= 0 && center.x < width && center.y >= 0 && center.y < height))
+    {
+        return image[source.y, source.x];
+    }
+    // Texel centers have integer coordinates here. At zero roughness the weights reduce to bilinear filtering.
+    const double cx = center.x - 0.5, cy = center.y - 0.5;
     const double radius = roughness * roughness * max_radius;
-    const int reach = static_cast<int>(std::ceil(radius));
+    const int x0 = static_cast<int>(std::max(0.0, std::floor(cx - radius)));
+    const int x1 = static_cast<int>(std::min(width - 1.0, std::ceil(cx + radius)));
+    const int y0 = static_cast<int>(std::max(0.0, std::floor(cy - radius)));
+    const int y1 = static_cast<int>(std::min(height - 1.0, std::ceil(cy + radius)));
     Vec3 sum{};
     double total{};
-    for (int y = std::max(0, pixel.y - reach); y <= std::min(height - 1, pixel.y + reach); ++y)
+    for (int y = y0; y <= y1; ++y)
     {
-        const double wy = std::min(1.0, 1 + radius - std::abs(y - pixel.y));
-        for (int x = std::max(0, pixel.x - reach); x <= std::min(width - 1, pixel.x + reach); ++x)
+        const double wy = std::min(1.0, 1 + radius - std::abs(y - cy));
+        for (int x = x0; x <= x1; ++x)
         {
-            if ((x != pixel.x || y != pixel.y) && depths[static_cast<std::size_t>(y) * width + x] <= depth)
+            if ((x != source.x || y != source.y) && depths[static_cast<std::size_t>(y) * width + x] <= depth)
             {
                 continue;
             }
             const auto color = image[y, x];
-            const double weight = wy * std::min(1.0, 1 + radius - std::abs(x - pixel.x));
+            const double weight = wy * std::min(1.0, 1 + radius - std::abs(x - cx));
             sum = sum + Vec3{color.r, color.g, color.b} * weight;
             total += weight;
         }
     }
-    const Vec3 mean = sum / total; // The center tap always has unit weight.
+    if (total <= 0)
+    {
+        return image[source.y, source.x];
+    }
+    const Vec3 mean = sum / total;
     return {static_cast<float>(mean.x), static_cast<float>(mean.y), static_cast<float>(mean.z), 1};
 }
 
@@ -321,15 +334,15 @@ ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::sto
                 image[y, x] = shade_hit(x, *hit, background);
             }
         }
-        if (!rough_transmission_ && !layers.empty())
+        if (!spatial_transmission_ && !layers.empty())
         {
             composite_layers({&image[y, 0], static_cast<std::size_t>(extent.width)}, layers[y], shade_hit);
         }
     };
     oneapi::tbb::parallel_for(0, extent.height, shade_row, frame_tasks);
-    if (rough_transmission_ && !layers.empty())
+    if (spatial_transmission_ && !layers.empty())
     {
-        composite_rough_layers(image, visible, layers, axis, stop, frame_tasks, shade_at);
+        composite_spatial_layers(image, visible, layers, axis, stop, frame_tasks, shade_at);
     }
     return image;
 }
@@ -347,7 +360,7 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
     const int count = axis * axis;
     PixelDiagnostic report{.pixel = pixel, .samples = {}, .color = {}};
     report.samples.reserve(count);
-    if (!path_ && rough_transmission_)
+    if (!path_ && spatial_transmission_)
     {
         for (int i = 0; i < count; ++i)
         {

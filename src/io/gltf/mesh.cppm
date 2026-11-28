@@ -132,6 +132,10 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
         {
             require("transmissionTexture", material.transmission->transmissionTexture);
         }
+        if (material.volume)
+        {
+            require("thicknessTexture", material.volume->thicknessTexture);
+        }
     }
 }
 

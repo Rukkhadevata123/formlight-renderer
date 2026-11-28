@@ -201,6 +201,27 @@ GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &te
             result.transmission_texture = textures.bind(*info, TextureUsage::Data);
         }
     }
+    if (!(std::isfinite(material.ior) && (material.ior == 0 || material.ior >= 1)))
+    {
+        throw std::runtime_error("ior must be zero or at least 1");
+    }
+    result.optical_ior = material.ior;
+    if (const auto &volume = material.volume)
+    {
+        const auto &c = volume->attenuationColor;
+        if (!(std::isfinite(volume->thicknessFactor) && volume->thicknessFactor >= 0 &&
+              volume->attenuationDistance > 0 &&
+              std::ranges::all_of(std::array{c[0], c[1], c[2]},
+                                  [](auto channel) { return channel >= 0 && channel <= 1; })))
+        {
+            throw std::runtime_error("Invalid glTF volume thickness or attenuation");
+        }
+        result.volume = {volume->thicknessFactor, volume->attenuationDistance, {c[0], c[1], c[2]}};
+        if (const auto &info = volume->thicknessTexture)
+        {
+            result.thickness_texture = textures.bind(*info, TextureUsage::Data);
+        }
+    }
     if (const auto &info = material.emissiveTexture)
     {
         result.emissive_texture = textures.bind(*info, TextureUsage::Color);
@@ -242,6 +263,7 @@ std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::pat
         }
         fastgltf::Parser parser{fastgltf::Extensions::KHR_materials_emissive_strength |
                                 fastgltf::Extensions::KHR_materials_transmission |
+                                fastgltf::Extensions::KHR_materials_volume | fastgltf::Extensions::KHR_materials_ior |
                                 fastgltf::Extensions::KHR_texture_transform};
         const auto model = std::filesystem::absolute(path);
         auto parsed = parser.loadGltf(file.get(), model.parent_path(), fastgltf::Options::GenerateMeshIndices);
@@ -267,8 +289,14 @@ std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::pat
             pending.push_back({root, fastgltf::math::nmat4x4{}});
         }
         GltfScene result;
-        result.requires_transmission =
-            std::ranges::contains(asset.extensionsRequired, fastgltf::extensions::KHR_materials_transmission);
+        result.requires_preview_optics =
+            std::ranges::any_of(asset.extensionsRequired,
+                                [](const auto &name)
+                                {
+                                    return name == fastgltf::extensions::KHR_materials_transmission ||
+                                           name == fastgltf::extensions::KHR_materials_volume ||
+                                           name == fastgltf::extensions::KHR_materials_ior;
+                                });
         result.source_files_.push_back(model);
         // Protect referenced files even when only another scene or material in this asset uses them.
         const auto remember_files = [&](const auto &entries)
@@ -649,7 +677,27 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
     {
         transmission *= sample(*binding, face, weights, gradients).r;
     }
-    return {color, emission, metallic, roughness, occlusion, transmission};
+    auto volume = mat.volume;
+    if (const auto &binding = mat.thickness_texture)
+    {
+        volume.thickness *= sample(*binding, face, weights, gradients).g;
+    }
+    return {color, emission, metallic, roughness, occlusion, transmission, mat.optical_ior, volume};
+}
+
+VolumeRay volume_ray(const SurfaceMaterial &material, const AffineTransform &transform, Vec3 to_eye, Vec3 normal)
+{
+    if (material.volume.thickness == 0 || material.ior == 0)
+    {
+        return {};
+    }
+    const double eta = 1 / material.ior;
+    const double cosine = std::clamp(dot(normal, to_eye), 0.0, 1.0);
+    const double refracted_cosine = std::sqrt(1 - eta * eta * (1 - cosine * cosine));
+    const Vec3 direction = (normal * cosine - to_eye) * eta - normal * refracted_cosine;
+    const Vec3 local = transform.to_local_vector(direction);
+    const double distance = material.volume.thickness / std::hypot(local.x, local.y, local.z);
+    return {direction * distance, distance};
 }
 
 Vec3 GltfScene::shading_normal(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
@@ -686,7 +734,7 @@ FaceCulling GltfScene::face_culling(CullFace single_sided) const &
     return [this, single_sided](SurfaceId id)
     {
         const auto &face = instance(id.instance).triangles[std::to_underlying(id.primitive)];
-        return material(face).double_sided ? CullFace::None : single_sided;
+        return material(face).renders_back_faces() ? CullFace::None : single_sided;
     };
 }
 
@@ -706,12 +754,13 @@ SurfaceFilter GltfScene::solid_filter() const &
     };
 }
 
-bool GltfScene::has_rough_transmission() const
+bool GltfScene::needs_transmission_backdrop() const
 {
     return std::ranges::any_of(materials_,
                                [](const auto &m)
                                {
-                                   return m && m->transmission_factor > 0 && m->roughness_factor > 0 &&
+                                   return m && m->transmission_factor > 0 &&
+                                          (m->roughness_factor > 0 || m->volume.thickness > 0) &&
                                           (m->metallic_factor < 1 || m->metallic_roughness_texture);
                                });
 }
@@ -740,7 +789,9 @@ ShadowTransmission GltfScene::shadow_transmission() const &
         }
         const auto surface = surface_material(face, p.weights, p.gradients);
         const Vec3 normal = shading_normal(mesh, face, p.weights, p.gradients, false);
-        const auto through = surface.thin_transmittance(std::abs(dot(normal, toward_light)));
+        const Vec3 entry_normal = dot(normal, toward_light) >= 0 ? normal : normal * -1;
+        const auto ray = volume_ray(surface, mesh.transform, toward_light, entry_normal);
+        const auto through = surface.transmittance(dot(entry_normal, toward_light), ray.world_distance);
         return clear + (through - clear) * surface.base_color.a;
     };
 }

@@ -73,12 +73,41 @@ void check_frosted_glass(const std::filesystem::path &asset)
         }
     }
 }
+void check_volume(const std::filesystem::path &asset)
+{
+    const auto scene = GltfScene::load(asset, GltfContent::Materials);
+    if (!scene)
+    {
+        throw std::runtime_error(scene.error());
+    }
+    const PinholeCamera camera{{{0, 0, 3}, {}, {0, 1, 0}, std::numbers::pi / 4}, {257, 193}};
+    const auto view = clip_to_bounds(camera, scene->bounds());
+    const PreviewRenderer renderer{*scene, PreviewLighting{}};
+    const auto frame = renderer.render(view);
+    const auto center = frame[96, 128];
+    // Mesh thickness 0.5, texture G = 128/255, Z scale 2, attenuation distance 0.5 and IOR 2.
+    constexpr double exponent = 2 * 128.0 / 255;
+    const Vec3 expected = Vec3{std::pow(0.25, exponent), std::pow(0.5, exponent), 1} * (8.0 / 9);
+    const auto error = abs_components(Vec3{center.r, center.g, center.b} - expected);
+    if (std::max({error.x, error.y, error.z}) > 1e-6)
+    {
+        throw std::runtime_error("Volume slab center disagrees with analytic Fresnel and Beer attenuation");
+    }
+    // The straight ray misses the white panel. Snell refraction moves the lookup 2.65 px left, onto white.
+    const auto edge = renderer.diagnose(view, {165, 96});
+    const auto &surface = edge.samples.at(0).surface;
+    if (!surface || !surface->refraction || std::abs(surface->refraction->offset.x + 2.65) > 0.01 ||
+        std::abs(edge.color.b - 8.0 / 9) > 1e-6 || edge.color.b != frame[96, 165].b)
+    {
+        throw std::runtime_error("Volume slab did not refract the background edge identically in the frame and pick");
+    }
+}
 } // namespace
 
 int main(int argc, char **argv)
 try
 {
-    if (argc != 4)
+    if (argc != 5)
     {
         return 1;
     }
@@ -144,6 +173,7 @@ try
     }
     check_thin_glass(argv[2]);
     check_frosted_glass(argv[3]);
+    check_volume(argv[4]);
     return 0;
 }
 catch (const std::exception &error)

@@ -108,7 +108,7 @@ $cli = ".\build\release\formlight-renderer.exe"
   - 每个贴图槽独立选择 `TEXCOORD_0` / `TEXCOORD_1`、采样器与 `KHR_texture_transform`（按缩放 → 旋转 → 平移顺序变换坐标）。
   - 底色与自发光按 sRGB 解码到线性空间；金属度、粗糙度、AO 与法线贴图保持线性读取（法线 Mipmap 降采样后自动重新单位化）。
   - 光栅片元用精确解析屏幕导数选择 Mip 层级；当前路径命中固定采样第 0 层。
-  - `OPAQUE` 和通过阈值的 `MASK` 参与主可见性。光栅与混合模式在最近的不透光表面之前逐像素排序，合成薄透射和 `BLEND` 层。`doubleSided` 同时作用于相机与投影面。
+  - `OPAQUE` 和通过阈值的 `MASK` 参与主可见性。光栅与混合模式在最近的不透光表面之前逐像素排序，合成透射和 `BLEND` 层。`doubleSided` 同时作用于相机与投影面。体积边界按正面入射计算一次烘焙厚度。
 
 ### 光滑薄玻璃
 
@@ -125,3 +125,13 @@ TransmissionTest 的三行球分别展示光滑透射、粗糙透射和金属度
 ![TransmissionTest 三行材质球透出的棋盘格与彩色投影](images/transmission-test.png)
 
 用[条纹夹具](../tests/fixtures/frosted-stripes.gltf)可单独检查模糊和遮挡。每片玻璃对直射光的染色由底色、金属度、透射率和入射角决定，孔洞让光通过，多片玻璃逐层衰减。方向光 PCF 对各纹素的 RGB 透过率求均值，点灯和矩形灯只查询到灯面样本为止。`blend_layers` 用已知底色核对重叠两片玻璃的投影，以及磨砂条纹的整图与拾取结果。
+
+### 棋兵的厚玻璃
+
+看球顶左上方的棋盘格边线。左图将厚度置零，边线笔直穿过球顶。右图恢复黑棋兵材质原有的厚度 0.22，边线向内弯折，金色底座的位置也随之偏移。青绿色来自玻璃底色。模型没有指定衰减距离，因此这组图里的颜色与体积吸收无关。
+
+![同一黑棋兵的两次光栅渲染，左为零厚度，右为模型原始厚度](images/chess-pawn-volume.png)
+
+通用预览打开 A Beautiful Game 后，拾取 (452, 370) 可读到 IOR 1.5 和网格厚度 0.22。要重拍上图，在同一预设中关闭主灯阴影，将分辨率设为 560×400，关闭自动取景，设置 `position = [0.0346763, 0.1693276, 0.0095718]`、`target = [-0.0313237, 0.0703276, 0.0935718]`、`vertical_fov_degrees = 23`。原始模型由 MaterialX Project 制作（© 2020 ASWF），Ed Mackey 于 2022 年转换为 glTF。对照图由 Formlight 渲染并拼接。[模型与署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ABeautifulGame#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
+要单独验证吸收，可运行 `ctest --preset release-local -R blend_layers --output-on-failure`。玻璃板夹具使用 IOR 2、线性 G 通道厚度贴图、非均匀缩放和有限衰减距离，分别核对正入射 RGB、白色背景边缘的横向位移以及整图与拾取的一致性。[夹具](../tests/fixtures/volume-slab.gltf) · [折射与吸收计算](rendering.md#1-表面的渲染方程与三种模式)

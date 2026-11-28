@@ -12,6 +12,12 @@
 | --- | --- | --- |
 | ![带 Cesium 标志的纹理方盒](docs/images/box-textured-base-color.png) | ![矩形灯在方盒下方投出软阴影](docs/images/box-shadow-area.png) | ![雾中的玻璃球、地球、运动球和千球群](docs/images/final-scene.png) |
 
+### 光栅材质展示
+
+![三行透明球在同一棋盘格背景前展示透射率、粗糙度与金属度](docs/images/transmission-test.png)
+
+从上到下对照光滑、粗糙和带金属度的材质。第一列的棋盘格在磨砂球后变模糊，最右列还能看到蓝色玻璃的开孔和彩色投影。模型为 Adobe 的 TransmissionTest（CC0）。[机位、灯光与材质说明](docs/scenes.md#磨砂玻璃与彩色投影)
+
 ## 交互预览窗口
 
 ![Viewer 左侧为渲染视口，右侧显示采样进度、相机和渲染设置](docs/images/viewer.png)

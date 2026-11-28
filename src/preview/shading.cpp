@@ -8,7 +8,7 @@ namespace formlight
 {
 PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting, RenderMode mode)
     : scene_(scene), solid_filter_(scene.solid_filter()), shadow_transmission_(scene.shadow_transmission()),
-      rough_transmission_(scene.has_rough_transmission())
+      spatial_transmission_(scene.needs_transmission_backdrop())
 {
     configure(mode, std::move(lighting));
 }
@@ -127,15 +127,32 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     {
         record->surface->shading_normal = normal;
     }
-    const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
+    const auto center = pixel_center(pixel.x, pixel.y);
+    const Vec3 to_eye = view.camera.ray_for_sample(center).direction * -1;
     if (transmitted_share > 0)
     {
-        if (backdrop && material.roughness > 0)
+        const auto ray = volume_ray(material, instance.transform, to_eye, normal);
+        if (backdrop && (material.roughness > 0 || ray.world_distance > 0))
         {
-            behind = backdrop->filtered(pixel, hit.view_depth, material.roughness);
+            auto sample = center;
+            if (ray.world_distance > 0)
+            {
+                const Vec3 entry = instance.transform.to_world_point(face.position_at(weights));
+                if (const auto exit = view.camera.project(entry + ray.offset))
+                {
+                    sample = exit->image;
+                }
+                if (record)
+                {
+                    const double axis = backdrop->samples_per_axis;
+                    record->surface->refraction = DiagnosticRefraction{
+                        ray.world_distance, {(sample.x - center.x) / axis, (sample.y - center.y) / axis}};
+                }
+            }
+            behind = backdrop->filtered(pixel, sample, hit.view_depth, material.roughness);
         }
-        const auto through =
-            component_product(material.thin_transmittance(dot(normal, to_eye)), {behind.r, behind.g, behind.b});
+        const auto through = component_product(material.transmittance(dot(normal, to_eye), ray.world_distance),
+                                               {behind.r, behind.g, behind.b});
         radiance = radiance + through;
         if (record)
         {

@@ -30,7 +30,8 @@ struct TransmissionBackdrop
     const ColorImage &image;
     std::span<const double> depths;
     double max_radius; // In sample-grid pixels.
-    [[nodiscard]] LinearColor filtered(PixelCoord pixel, double depth, double roughness) const;
+    int samples_per_axis;
+    [[nodiscard]] LinearColor filtered(PixelCoord source, ImagePoint center, double depth, double roughness) const;
 };
 
 LinearColor resolve_samples(int count, auto color_at)
@@ -101,6 +102,12 @@ export struct DiagnosticHit
     double view_depth;
     bool back_face;
 };
+export struct DiagnosticRefraction
+{
+    double world_distance;
+    ImagePoint offset; // Projected displacement in output pixels.
+};
+
 export struct DiagnosticSurface
 {
     DiagnosticHit hit;
@@ -110,6 +117,7 @@ export struct DiagnosticSurface
     std::optional<Vec3> shading_normal{};
     std::optional<double> metal_fuzz{};
     std::optional<Vec3> transmitted{}; // Tinted light from behind this surface, before alpha coverage.
+    std::optional<DiagnosticRefraction> refraction{};
 };
 
 export struct SampleDiagnostic
@@ -180,7 +188,7 @@ export class PreviewRenderer
     const GltfScene &scene_;
     SurfaceFilter solid_filter_;
     ShadowTransmission shadow_transmission_;
-    bool rough_transmission_;
+    bool spatial_transmission_;
     std::optional<PreviewLighting> lighting_;
     std::vector<std::shared_ptr<const DirectionalShadowMap>> shadow_maps_;
     std::shared_ptr<const TriangleBvh> blockers_;

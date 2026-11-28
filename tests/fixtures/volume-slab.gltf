@@ -1,0 +1,15 @@
+{
+  "asset": {"version":"2.0"},
+  "extensionsUsed": ["KHR_materials_transmission","KHR_materials_volume","KHR_materials_ior"],
+  "extensionsRequired": ["KHR_materials_transmission","KHR_materials_volume","KHR_materials_ior"],
+  "scene": 0,
+  "scenes": [{"nodes":[0,1]}],
+  "nodes": [{"mesh":0,"scale":[1,1,2]},{"mesh":1,"translation":[-0.385,0,-1]}],
+  "meshes": [{"primitives":[{"attributes":{"POSITION":0,"TEXCOORD_0":1},"indices":2,"material":0}]},{"primitives":[{"attributes":{"POSITION":0},"indices":2,"material":1}]}],
+  "materials": [{"name":"Absorbing slab","doubleSided":true,"pbrMetallicRoughness":{"metallicFactor":0,"roughnessFactor":0},"extensions":{"KHR_materials_transmission":{"transmissionFactor":1},"KHR_materials_volume":{"thicknessFactor":0.5,"thicknessTexture":{"index":0},"attenuationDistance":0.5,"attenuationColor":[0.25,0.5,1]},"KHR_materials_ior":{"ior":2}}},{"name":"White edge","emissiveFactor":[1,1,1],"pbrMetallicRoughness":{"baseColorFactor":[0,0,0,1]}}],
+  "textures": [{"source":0}],
+  "images": [{"uri":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP438AAAAQBAYDFKhhdAAAAAElFTkSuQmCC"}],
+  "buffers": [{"byteLength":552,"uri":"data:application/octet-stream;base64,AACAvwAAgL8AAAAAAACAPwAAgL8AAAAAAACAPwAAgD8AAAAAAACAvwAAgD8AAAAAAACAvwAAgD8AAIC+AACAPwAAgD8AAIC+AACAPwAAgL8AAIC+AACAvwAAgL8AAIC+AACAPwAAgL8AAAAAAACAPwAAgL8AAIC+AACAPwAAgD8AAIC+AACAPwAAgD8AAAAAAACAvwAAgL8AAIC+AACAvwAAgL8AAAAAAACAvwAAgD8AAAAAAACAvwAAgD8AAIC+AACAvwAAgD8AAAAAAACAPwAAgD8AAAAAAACAPwAAgD8AAIC+AACAvwAAgD8AAIC+AACAvwAAgL8AAIC+AACAPwAAgL8AAIC+AACAPwAAgL8AAAAAAACAvwAAgL8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAIAAAACAAMABAAFAAYABAAGAAcACAAJAAoACAAKAAsADAANAA4ADAAOAA8AEAARABIAEAASABMAFAAVABYAFAAWABcA"}],
+  "bufferViews": [{"buffer":0,"byteLength":288,"byteOffset":0},{"buffer":0,"byteOffset":288,"byteLength":192},{"buffer":0,"byteOffset":480,"byteLength":72}],
+  "accessors": [{"bufferView":0,"componentType":5126,"type":"VEC3","count":24,"min":[-1,-1,-0.25],"max":[1,1,0]},{"bufferView":1,"componentType":5126,"type":"VEC2","count":24},{"bufferView":2,"componentType":5123,"type":"SCALAR","count":36}]
+}

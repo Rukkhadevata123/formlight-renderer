@@ -48,6 +48,16 @@ export enum class AlphaMode
     Blend
 };
 
+export struct VolumeRay
+{
+    Vec3 offset{};
+    double world_distance{};
+};
+
+// Trace one baked thickness from the air-facing interface, preserving the world-space Snell direction.
+export [[nodiscard]] VolumeRay volume_ray(const SurfaceMaterial &material, const AffineTransform &transform,
+                                          Vec3 to_eye, Vec3 normal);
+
 export struct GltfMaterial
 {
     LinearColor base_color_factor{1, 1, 1, 1};
@@ -60,6 +70,9 @@ export struct GltfMaterial
     double occlusion_strength{1};
     double transmission_factor{};
     std::optional<TextureBinding> transmission_texture{};
+    double optical_ior{1.5};
+    MaterialVolume volume{};
+    std::optional<TextureBinding> thickness_texture{};
     LinearColor emission_multiplier{};
     std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};
@@ -70,6 +83,12 @@ export struct GltfMaterial
     double fuzz{};
     std::optional<std::size_t> marble_texture{};
     std::optional<std::size_t> checker_texture{};
+
+    [[nodiscard]] bool renders_back_faces() const noexcept
+    {
+        // A baked volume accounts for travel through its closed mesh at the entry face.
+        return double_sided && volume.thickness == 0;
+    }
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -77,7 +96,7 @@ export class GltfScene
 {
   public:
     Vec3 environment{}; // Constant incident radiance for path rays that leave the scene.
-    bool requires_transmission{};
+    bool requires_preview_optics{};
     std::vector<HomogeneousMedium> media{};
     GltfScene(GltfScene &&) noexcept = default;
     GltfScene &operator=(GltfScene &&) noexcept = default;
@@ -111,7 +130,7 @@ export class GltfScene
     SurfaceFilter solid_filter() const && = delete;
     [[nodiscard]] ShadowTransmission shadow_transmission() const &;
     ShadowTransmission shadow_transmission() const && = delete;
-    [[nodiscard]] bool has_rough_transmission() const;
+    [[nodiscard]] bool needs_transmission_backdrop() const;
     [[nodiscard]] FaceCulling face_culling(CullFace single_sided) const &;
     FaceCulling face_culling(CullFace) const && = delete;
     // Procedural meshes such as the preview floor are opaque and visible from either side.

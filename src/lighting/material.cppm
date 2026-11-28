@@ -6,14 +6,31 @@ import formlight.image;
 
 export namespace formlight
 {
-inline constexpr double dielectric_f0 = 0.04; // Normal-incidence reflectance at the default glTF IOR of 1.5.
-
 [[nodiscard]] inline double schlick_weight(double cosine) noexcept
 {
     const double grazing = 1 - std::clamp(cosine, 0.0, 1.0);
     const double g2 = grazing * grazing;
     return g2 * g2 * grazing;
 }
+
+// Thickness is measured along the transmission ray in mesh units; attenuation distance is in world units.
+struct MaterialVolume
+{
+    double thickness{};
+    double attenuation_distance{std::numeric_limits<double>::infinity()};
+    Vec3 attenuation_color{1, 1, 1};
+
+    [[nodiscard]] Vec3 attenuation(double world_distance) const noexcept
+    {
+        if (world_distance == 0 || std::isinf(attenuation_distance))
+        {
+            return {1, 1, 1};
+        }
+        const double exponent = world_distance / attenuation_distance;
+        return {std::pow(attenuation_color.x, exponent), std::pow(attenuation_color.y, exponent),
+                std::pow(attenuation_color.z, exponent)};
+    }
+};
 
 struct SurfaceMaterial
 {
@@ -22,11 +39,21 @@ struct SurfaceMaterial
     double metallic{1}, roughness{1};
     double occlusion{1};
     double transmission{};
+    double ior{1.5};
+    MaterialVolume volume{};
 
-    [[nodiscard]] Vec3 thin_transmittance(double cosine) const noexcept
+    [[nodiscard]] double dielectric_f0() const noexcept
     {
-        const double weight = transmission * (1 - metallic) * (1 - dielectric_f0) * (1 - schlick_weight(cosine));
-        return Vec3{base_color.r, base_color.g, base_color.b} * weight;
+        // glTF reserves IOR zero for the fully reflecting, infinite-IOR limit.
+        const double amplitude = (ior - 1) / (ior + 1);
+        return amplitude * amplitude;
+    }
+
+    [[nodiscard]] Vec3 transmittance(double cosine, double world_distance) const noexcept
+    {
+        const double weight = transmission * (1 - metallic) * (1 - dielectric_f0()) * (1 - schlick_weight(cosine));
+        return component_product({base_color.r, base_color.g, base_color.b}, volume.attenuation(world_distance)) *
+               weight;
     }
 
     [[nodiscard]] LinearColor outgoing_color(Vec3 reflected) const noexcept
@@ -55,7 +82,8 @@ MetallicRoughnessBrdf::MetallicRoughnessBrdf(const SurfaceMaterial &material, Ve
 {
     const auto &base = material.base_color;
     const Vec3 albedo{base.r, base.g, base.b};
-    constexpr Vec3 dielectric{dielectric_f0, dielectric_f0, dielectric_f0};
+    const double f0 = material.dielectric_f0();
+    const Vec3 dielectric{f0, f0, f0};
     f0_ = dielectric + (albedo - dielectric) * material.metallic;
     diffuse_ = albedo * ((1.0 - material.metallic) * diffuse_weight / std::numbers::pi);
 
