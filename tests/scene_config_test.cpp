@@ -112,7 +112,8 @@ void check_sphere_scene(const std::filesystem::path &destination)
                              .type = PathSurface::Metal,
                              .fuzz = 0.35,
                              .albedo_texture = texture,
-                             .marble = MarbleSettings{0.37, std::numeric_limits<std::uint64_t>::max()}}};
+                             .marble = MarbleSettings{0.37, std::numeric_limits<std::uint64_t>::max()},
+                             .checker = CheckerTexture{0.75, {1, 0.5, 0.25}, {0.125, 0.25, 0.5}}}};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     const auto &sphere = loaded.scene.spheres.at(0);
@@ -128,6 +129,11 @@ void check_sphere_scene(const std::filesystem::path &destination)
         loaded.camera.shutter.close != 0.75)
     {
         throw std::runtime_error("Sphere motion or shutter interval changed during TOML round trip");
+    }
+    if (!metal.checker || metal.checker->cell_size != 0.75 || metal.checker->even != Vec3{1, 0.5, 0.25} ||
+        metal.checker->odd != Vec3{0.125, 0.25, 0.5} || sphere.checker)
+    {
+        throw std::runtime_error("Checker settings changed during TOML round trip");
     }
     if (!metal.marble || metal.marble->scale != 0.37 || metal.marble->seed != std::numeric_limits<std::uint64_t>::max())
     {

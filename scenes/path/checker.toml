@@ -1,0 +1,30 @@
+[scene]
+environment = [0.24, 0.24, 0.24]
+
+[[scene.spheres]]
+center = [0, 0, 0]
+radius = 1.25
+checker = { cell_size = 0.5, even = [0.8, 0.72, 0.54], odd = [0.035, 0.22, 0.18] }
+
+[camera]
+auto_frame = false
+position = [3, 1.8, 4]
+target = [0, 0, 0]
+vertical_fov_degrees = 37
+
+[render]
+mode = "path"
+width = 321
+height = 241
+ssaa = 2
+path_samples = 1
+max_bounces = 1
+light_samples = 8
+seed = 7
+
+[[lighting.lights]]
+type = "rectangle"
+center = [2, 4, 3]
+width = 3
+height = 3
+power = 250

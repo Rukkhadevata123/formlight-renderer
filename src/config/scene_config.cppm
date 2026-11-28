@@ -2,6 +2,7 @@ export module formlight.scene_config;
 
 import std;
 export import formlight.camera;
+export import formlight.checker;
 export import formlight.specular;
 export import formlight.medium;
 export import formlight.lighting;
@@ -135,12 +136,17 @@ struct SphereSettings
     double fuzz{};
     std::filesystem::path albedo_texture{};
     std::optional<MarbleSettings> marble{};
+    std::optional<CheckerTexture> checker{};
 
     void validate_textures() const
     {
-        if (type == PathSurface::Dielectric && (!albedo_texture.empty() || marble))
+        if (type == PathSurface::Dielectric && (!albedo_texture.empty() || marble || checker))
         {
             throw std::invalid_argument("Dielectric spheres do not use an albedo texture");
+        }
+        if (checker)
+        {
+            checker->validate();
         }
         if (marble && !std::isfinite(marble->scale * (std::abs(shape.center.z) + shape.radius)))
         {
@@ -163,6 +169,7 @@ struct SphereSettings
             field("albedo", self.albedo);
             field("albedo_texture", self.albedo_texture);
             field("marble", self.marble);
+            field("checker", self.checker);
         }
         if (self.type == PathSurface::Metal)
         {

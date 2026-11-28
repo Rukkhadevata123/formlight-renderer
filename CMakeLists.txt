@@ -22,6 +22,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/path/emitter_sampling.cppm
         src/path/target_sampling.cppm
         src/path/medium.cppm
+        src/path/checker.cppm
         src/path/perlin.cppm
         src/path/specular.cppm
         src/image.cppm
@@ -232,6 +233,10 @@ if(BUILD_TESTING)
     add_executable(perlin_test tests/perlin_test.cpp)
     target_link_libraries(perlin_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME perlin_marble COMMAND perlin_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/marble.toml")
+
+    add_executable(checker_test tests/checker_test.cpp)
+    target_link_libraries(checker_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME checker_texture COMMAND checker_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/checker.toml")
 
     add_executable(many_balls_test tests/many_balls_test.cpp)
     target_link_libraries(many_balls_test PRIVATE formlight_gltf formlight_io)

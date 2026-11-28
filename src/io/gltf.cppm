@@ -67,6 +67,7 @@ export struct GltfMaterial
     double ior{1.5};
     double fuzz{};
     std::optional<std::size_t> marble_texture{};
+    std::optional<std::size_t> checker_texture{};
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -138,6 +139,7 @@ export class GltfScene
     std::vector<std::optional<std::size_t>> node_instance_slots_;
     std::vector<TextureImage> images_;
     std::vector<MarbleTexture> marble_textures_;
+    std::vector<CheckerTexture> checker_textures_;
     std::map<std::filesystem::path, std::size_t> sphere_image_slots_;
     std::vector<std::optional<GltfMaterial>> materials_;
 };

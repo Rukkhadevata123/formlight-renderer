@@ -112,6 +112,12 @@ build/release/formlight-renderer.exe --scene scenes/path/earth.toml --output bui
 build/release/formlight-renderer.exe --scene scenes/path/marble.toml --output build/release/marble.png
 ```
 
+[三维棋盘示例](scenes/path/checker.toml) 把解析球放进立方体网格，球面穿过两种颜色的格子时形成花纹。在 `[[scene.spheres]]` 中设置 `checker = { cell_size = 0.5, even = [0.8, 0.72, 0.54], odd = [0.035, 0.22, 0.18] }`。`cell_size` 是格子在世界坐标中的边长，`even` 和 `odd` 是线性 RGB。每个轴的格子编号取 `floor(坐标 / cell_size)`，三个编号之和的奇偶决定颜色。例如 X 从略小于零移到零，Y、Z 都为零时，颜色从 `odd` 切换到 `even`。棋盘色乘到材质底色上，球平移时格纹随球移动。
+
+```powershell
+build/release/formlight-renderer.exe --scene scenes/path/checker.toml --output build/release/checker.png
+```
+
 ### 自定义光栅 shader
 
 构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)

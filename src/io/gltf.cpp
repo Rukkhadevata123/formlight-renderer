@@ -354,6 +354,7 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     auto slots = sphere_image_slots_;
     std::vector<TextureImage> textures;
     std::vector<MarbleTexture> marbles;
+    std::vector<CheckerTexture> checkers;
     std::vector<GltfMaterial> materials;
     materials.reserve(additions.size());
     for (const auto &sphere : additions)
@@ -368,6 +369,11 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
             .path_surface = sphere.type,
             .ior = sphere.ior,
             .fuzz = sphere.fuzz});
+        if (sphere.checker)
+        {
+            material.checker_texture = checker_textures_.size() + checkers.size();
+            checkers.push_back(*sphere.checker);
+        }
         if (sphere.marble)
         {
             material.marble_texture = marble_textures_.size() + marbles.size();
@@ -392,9 +398,11 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     node_instance_slots_.reserve(node_instance_slots_.size() + additions.size());
     materials_.reserve(materials_.size() + additions.size());
     images_.reserve(images_.size() + textures.size());
+    checker_textures_.reserve(checker_textures_.size() + checkers.size());
     marble_textures_.reserve(marble_textures_.size() + marbles.size());
     images_.append_range(textures | std::views::as_rvalue);
     marble_textures_.append_range(marbles);
+    checker_textures_.append_range(checkers);
     sphere_image_slots_.swap(slots);
     for (std::size_t i = 0; i < additions.size(); ++i)
     {
@@ -516,11 +524,18 @@ SurfaceMaterial GltfScene::surface_material(const SphereInstance &sphere, Vec3 o
         color.g *= texel.g;
         color.b *= texel.b;
     }
+    // Both solid textures use the reference pose, so their patterns travel with a moving sphere.
+    const Vec3 point = sphere.shape.center + outward_normal * sphere.shape.radius;
     if (mat.marble_texture)
     {
-        // Sample the reference pose so the veins travel with a moving sphere.
-        const Vec3 point = sphere.shape.center + outward_normal * sphere.shape.radius;
         color = scale_rgb(color, marble_textures_[*mat.marble_texture].sample(point));
+    }
+    if (mat.checker_texture)
+    {
+        const Vec3 tint = checker_textures_[*mat.checker_texture].sample(point);
+        color.r *= static_cast<float>(tint.x);
+        color.g *= static_cast<float>(tint.y);
+        color.b *= static_cast<float>(tint.z);
     }
     return {color, {}, mat.metallic_factor, mat.roughness_factor};
 }
