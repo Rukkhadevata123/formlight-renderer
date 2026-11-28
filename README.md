@@ -51,6 +51,8 @@ build/release/formlight-renderer.exe --preset final_scene --path-samples 128 --b
 
 想让当前画面继续收敛，在 **Render** 中调高 `path_samples` 后点击 **Apply**。例如从 19 提到 35，进度会从 19 / 35 走到 27 / 35、35 / 35。渲染途中也可以提高目标，当前批次会先完成。同时修改种子、灯光或快门等渲染条件，或调低目标，会重新采样。
 
+点击 **Path samples** 旁的 **Cancel**，图像和计数会停在屏幕上最后一个完整批次。此时仍可调曝光、拾取像素。点击 **Resume** 或调高目标并点击 **Apply**，会从保留的样本数继续。移动相机后，viewer 会为新机位重新采样。
+
 Cornell 漫反射场景启用 `bounce_sampling = "light_mixture"`。在漫反射表面，各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。发光网格和额外采样目标均为空时使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
 
 Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：

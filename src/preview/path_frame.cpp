@@ -33,11 +33,9 @@ ColorImage PathFrame::render_batch(std::uint32_t count, std::stop_token stop)
     grid.path_sampling.samples = completed_ + count;
     const auto extent = grid.camera.extent();
     // Work on a private prefix. Failed tiles cannot advance any pixel of the published frame.
-    auto next = sums_;
-    if (next.empty())
-    {
-        next.resize(static_cast<std::size_t>(extent.width) * extent.height);
-    }
+    const auto size = static_cast<std::size_t>(extent.width) * extent.height;
+    auto next = sums_ ? std::make_shared<std::vector<RayRadianceSum>>(*sums_)
+                      : std::make_shared<std::vector<RayRadianceSum>>(size);
     const ImageExtent output{extent.width / ssaa_, extent.height / ssaa_};
     ColorImage image{output};
     const auto trace_tile = [&](const oneapi::tbb::blocked_range2d<int> &tile)
@@ -49,7 +47,7 @@ ColorImage PathFrame::render_batch(std::uint32_t count, std::stop_token stop)
                 const auto trace = [&](int i)
                 {
                     const PixelCoord pixel{x * ssaa_ + i % ssaa_, y * ssaa_ + i / ssaa_};
-                    auto &sum = next[static_cast<std::size_t>(pixel.y) * extent.width + pixel.x];
+                    auto &sum = (*next)[static_cast<std::size_t>(pixel.y) * extent.width + pixel.x];
                     return renderer_.trace_primary(grid, pixel, completed_, sum, stop);
                 };
                 image[y, x] = ssaa_ == 1 ? trace(0) : resolve_samples(ssaa_ * ssaa_, trace);
@@ -63,7 +61,7 @@ ColorImage PathFrame::render_batch(std::uint32_t count, std::stop_token stop)
     {
         throw std::runtime_error("Rendering cancelled");
     }
-    sums_.swap(next);
+    sums_ = std::move(next);
     completed_ += count;
     return image;
 }

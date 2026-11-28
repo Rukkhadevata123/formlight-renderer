@@ -20,11 +20,40 @@ bool can_extend_paths(const SceneConfig &current, const SceneConfig &draft)
 }
 } // namespace
 
+ViewerSession::~ViewerSession()
+{
+    // Signal both workers before either jthread joins. Their borrowed scene is destroyed last.
+    if (rendering_)
+    {
+        rendering_->cancel();
+    }
+    if (inspecting_)
+    {
+        inspecting_->cancel();
+    }
+}
+
+void ViewerSession::cancel_path_render()
+{
+    if (applied_.request.mode == RenderMode::Path && updating())
+    {
+        path_cancelled_ = true;
+        if (rendering_)
+        {
+            rendering_->cancel();
+        }
+    }
+}
+
 void ViewerSession::apply_settings()
 {
     if (can_extend_paths(applied_.config, draft_))
     {
         const auto target = draft_.render.path_samples;
+        if (target > applied_.config.render.path_samples)
+        {
+            resume_path_render();
+        }
         applied_.config.render.path_samples = target;
         applied_.request.path_sampling.samples = target;
         if (frame_ && frame_->request.revision == requested_)
@@ -40,6 +69,7 @@ void ViewerSession::apply_settings()
         scene_->resize(next.request.extent, !frame_ && next.config.camera.auto_frame);
     }
     applied_ = std::move(next);
+    path_cancelled_ = false;
     settings_revision_ = ++requested_;
     select(std::nullopt);
     if (rendering_)
@@ -80,14 +110,15 @@ void ViewerSession::schedule_render(Clock::time_point now)
         view.area_light_pattern = AreaLightPattern::Center;
     }
     auto previous = frame_ ? std::optional{frame_->result.renderer} : std::nullopt;
-    std::unique_ptr<PathFrame> accumulation;
+    std::optional<PathFrame> accumulation;
     const auto mode = applied_.request.mode;
     std::uint32_t batch{};
     if (mode == RenderMode::Path)
     {
         if (frame_ && frame_->request.revision == requested_ && frame_->request.quality == quality)
         {
-            accumulation = std::move(frame_->result.accumulation);
+            // Keep the displayed prefix available if the user cancels before this batch is published.
+            accumulation.emplace(*frame_->result.accumulation);
         }
         constexpr std::uint32_t samples_per_batch = 8;
         const auto completed = accumulation ? accumulation->completed_samples() : 0u;
@@ -111,7 +142,7 @@ void ViewerSession::schedule_render(Clock::time_point now)
             const auto start = Clock::now();
             if (mode == RenderMode::Path && !accumulation)
             {
-                accumulation = std::make_unique<PathFrame>(*previous, view);
+                accumulation.emplace(*previous, view);
             }
             auto image = accumulation ? accumulation->render_batch(batch, stop) : previous->render(view, stop);
             return TimedImage{std::move(image), Clock::now() - start, std::move(*previous), std::move(accumulation)};
@@ -159,7 +190,7 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
         // Raster navigation can present during a drag. A path prefix belongs to one exact camera pose.
         const bool raster_navigation =
             request.mode != RenderMode::Path && request.navigation && request.revision >= settings_revision_;
-        if (request.revision == requested_ || raster_navigation)
+        if (!rendering_->stop_requested() && (request.revision == requested_ || raster_navigation))
         {
             auto result = rendering_->take();
             // A half-size preview has about a quarter of the native pixel count.

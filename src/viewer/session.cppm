@@ -41,6 +41,10 @@ template <class T, class Request = std::uint64_t> class PreviewJob
     {
         worker_.request_stop();
     }
+    [[nodiscard]] bool stop_requested() const
+    {
+        return worker_.get_stop_token().stop_requested();
+    }
     const Request request;
 
   private:
@@ -82,6 +86,7 @@ export class ViewerSession
   public:
     using Clock = std::chrono::steady_clock;
     explicit ViewerSession(SceneConfig config);
+    ~ViewerSession();
     [[nodiscard]] const SceneConfig &applied_config() const
     {
         return applied_.config;
@@ -103,6 +108,15 @@ export class ViewerSession
         return draft_.lighting;
     }
     void apply_settings();
+    void cancel_path_render();
+    void resume_path_render()
+    {
+        path_cancelled_ = false;
+    }
+    [[nodiscard]] bool path_cancelled() const
+    {
+        return path_cancelled_;
+    }
     void set_display_settings(DisplaySettings display);
     [[nodiscard]] SceneConfig scene_snapshot() const;
     void check_output_path(const std::filesystem::path &path) const
@@ -128,8 +142,8 @@ export class ViewerSession
     }
     [[nodiscard]] bool updating() const
     {
-        return !frame_ || frame_->request.revision != requested_ || showing_preview() ||
-               frame_->request.view.path_sampling.samples < frame_->path_target;
+        return !path_cancelled_ && (!frame_ || frame_->request.revision != requested_ || showing_preview() ||
+                                    frame_->request.view.path_sampling.samples < frame_->path_target);
     }
     // Counts describe the image currently on screen, including its SSAA and navigation settings.
     [[nodiscard]] std::optional<PathProgress> path_progress() const
@@ -166,7 +180,7 @@ export class ViewerSession
         ColorImage image;
         Clock::duration elapsed;
         PreviewRenderer renderer;
-        std::unique_ptr<PathFrame> accumulation{};
+        std::optional<PathFrame> accumulation{};
     };
     struct Frame
     {
@@ -190,6 +204,7 @@ export class ViewerSession
     std::unique_ptr<ViewerScene> scene_;
     std::optional<Frame> frame_;
     bool redisplay_{};
+    bool path_cancelled_{};
     std::optional<PixelCoord> selection_;
     std::optional<PixelDiagnostic> report_;
     bool focus_pending_{};
@@ -314,6 +329,7 @@ void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
     if (changed)
     {
         scene_->preview.view = camera.view(scene_->preview.bounds);
+        path_cancelled_ = false;
         ++requested_;
         // Start with headroom for presentation. During a drag, only downgrade on sustained slow frames.
         if (now >= refine_after_)

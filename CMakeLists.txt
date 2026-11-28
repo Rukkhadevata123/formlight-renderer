@@ -81,10 +81,12 @@ if(FORMLIGHT_BUILD_VIEWER)
     target_sources(formlight_viewer_session PUBLIC FILE_SET CXX_MODULES FILES
         src/viewer/orbit_camera.cppm src/viewer/session.cppm src/viewer/document.cppm)
     target_link_libraries(formlight_viewer_session PUBLIC formlight_gltf)
-    add_executable(formlight-viewer src/viewer/main.cpp ${formlight_app_manifest})
-    target_sources(formlight-viewer PRIVATE FILE_SET CXX_MODULES FILES
+    add_library(formlight_viewer_window STATIC)
+    target_sources(formlight_viewer_window PUBLIC FILE_SET CXX_MODULES FILES
         src/viewer/appearance.cppm src/viewer/file_dialogs.cppm src/viewer/settings_panel.cppm src/viewer/window.cppm)
-    target_link_libraries(formlight-viewer PRIVATE formlight_viewer_session formlight_io SDL3::SDL3 imgui::imgui)
+    target_link_libraries(formlight_viewer_window PUBLIC formlight_viewer_session PRIVATE formlight_io SDL3::SDL3 imgui::imgui)
+    add_executable(formlight-viewer src/viewer/main.cpp ${formlight_app_manifest})
+    target_link_libraries(formlight-viewer PRIVATE formlight_viewer_window formlight_io)
     add_custom_target(formlight_viewer_fonts
         COMMAND "${CMAKE_COMMAND}" -E copy_directory_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/fonts" "$<TARGET_FILE_DIR:formlight-viewer>/fonts"
@@ -284,5 +286,9 @@ if(BUILD_TESTING)
         target_link_libraries(viewer_path_progress_test PRIVATE formlight_viewer_session)
         add_test(NAME viewer_path_progress COMMAND viewer_path_progress_test)
         set_tests_properties(viewer_path_progress PROPERTIES TIMEOUT 30)
+        add_executable(viewer_close_test tests/viewer_close_test.cpp)
+        target_link_libraries(viewer_close_test PRIVATE formlight_viewer_window formlight_io SDL3::SDL3)
+        add_test(NAME viewer_close_during_render COMMAND viewer_close_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
+        set_tests_properties(viewer_close_during_render PROPERTIES TIMEOUT 20 ENVIRONMENT "SDL_VIDEO_DRIVER=dummy;SDL_RENDER_DRIVER=software")
     endif()
 endif()

@@ -153,6 +153,33 @@ void show_report(const PixelDiagnostic &report)
     ImGui::Text("R   %.7g\nG   %.7g\nB   %.7g", report.color.r, report.color.g, report.color.b);
 }
 
+void draw_path_controls(ViewerSession &session)
+{
+    const auto &render = session.applied_config().render;
+    if (render.mode != RenderMode::Path)
+    {
+        return;
+    }
+    const auto progress = session.path_progress().value_or(PathProgress{0, render.path_samples});
+    ImGui::Text("Path samples   %u / %u", progress.completed, progress.target);
+    if (session.path_cancelled())
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Resume"))
+        {
+            session.resume_path_render();
+        }
+    }
+    else if (session.updating())
+    {
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Cancel"))
+        {
+            session.cancel_path_render();
+        }
+    }
+}
+
 struct ImageRect
 {
     ImVec2 lo, hi;
@@ -198,7 +225,7 @@ void draw_image(SDL_Texture *texture, ImageRect rect, std::optional<PixelCoord> 
 export class ViewerWindow
 {
   public:
-    explicit ViewerWindow(ViewerDocument &document);
+    explicit ViewerWindow(ViewerDocument document);
     ViewerWindow(const ViewerWindow &) = delete;
     ViewerWindow &operator=(const ViewerWindow &) = delete;
     [[nodiscard]] bool poll();
@@ -224,12 +251,14 @@ export class ViewerWindow
     std::int64_t max_texture_size_{};
     ViewerAppearance appearance_;
     SettingsPanel settings_;
-    ViewerDocument &document_;
     SceneFileDialogs files_;
     std::filesystem::path title_path_;
+    // Join the document's render workers before releasing textures, the window and SDL.
+    ViewerDocument document_;
 };
 
-ViewerWindow::ViewerWindow(ViewerDocument &document) : document_(document), title_path_(document.display_path())
+ViewerWindow::ViewerWindow(ViewerDocument document)
+    : title_path_(document.display_path()), document_(std::move(document))
 {
     const auto display = SDL_GetPrimaryDisplay();
     const float content_scale = SDL_GetDisplayContentScale(display);
@@ -242,7 +271,7 @@ ViewerWindow::ViewerWindow(ViewerDocument &document) : document_(document), titl
         width = std::min(width, usable.w);
         height = std::min(height, usable.h);
     }
-    window_.reset(SDL_CreateWindow(SceneFileDialogs::window_title(document).c_str(), width, height,
+    window_.reset(SDL_CreateWindow(SceneFileDialogs::window_title(document_).c_str(), width, height,
                                    SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY));
     require_sdl(window_ != nullptr, "SDL_CreateWindow");
     renderer_.reset(SDL_CreateRenderer(window_.get(), nullptr));
@@ -271,7 +300,10 @@ bool ViewerWindow::poll()
             open = false;
         }
     }
-    files_.update(document_);
+    if (open)
+    {
+        files_.update(document_);
+    }
     return open;
 }
 
@@ -391,7 +423,7 @@ void ViewerWindow::draw()
         title_path_ = document_.display_path();
         SDL_SetWindowTitle(window_.get(), SceneFileDialogs::window_title(document_).c_str());
     }
-    const auto &session = document_.session();
+    auto &session = document_.session();
     if (show_image)
     {
         // A newly published frame may have a different aspect ratio from the image just picked.
@@ -402,17 +434,15 @@ void ViewerWindow::draw()
         }
         else
         {
-            ImGui::GetWindowDrawList()->AddText(rect.lo, ImGui::GetColorU32(ImGuiCol_Text), "Rendering scene...");
+            const char *status = session.path_cancelled() ? "Path rendering cancelled" : "Rendering scene...";
+            ImGui::GetWindowDrawList()->AddText(rect.lo, ImGui::GetColorU32(ImGuiCol_Text), status);
         }
     }
     ImGui::EndChild();
     ImGui::SameLine();
     if (ImGui::BeginChild("Inspector"))
     {
-        if (const auto progress = session.path_progress())
-        {
-            ImGui::Text("Path samples   %u / %u", progress->completed, progress->target);
-        }
+        draw_path_controls(session);
         settings_.draw(document_, max_texture_size_);
         files_.draw(window_.get(), document_, texture_ != nullptr);
         ImGui::SeparatorText("Pixel inspector");

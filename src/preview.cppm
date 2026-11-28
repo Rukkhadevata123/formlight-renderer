@@ -173,7 +173,7 @@ export class PreviewRenderer
     std::optional<PathIntegrator> path_;
 };
 
-// Single-writer frame. Captures view and lighting; the borrowed scene must stay unchanged and outlive the frame.
+// Copies share completed samples and can advance independently. Keep the borrowed scene unchanged and alive.
 export class PathFrame
 {
   public:
@@ -190,7 +190,7 @@ export class PathFrame
     PreviewView grid_;
     int ssaa_;
     std::uint32_t completed_{};
-    std::vector<RayRadianceSum> sums_;
+    std::shared_ptr<const std::vector<RayRadianceSum>> sums_;
 };
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,

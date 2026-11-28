@@ -114,6 +114,60 @@ void check_sample_target_edits(ViewerSession &session, ViewerSession::Clock::tim
     apply_target(21);
     check_prefix(session, await_image(session, now), relit, view, 21);
 }
+
+void check_cancellation(SceneConfig config, const PreviewRenderer &offline, PreviewView view)
+{
+    config.render.path_samples = 11;
+    view.path_sampling.samples = 11;
+    ViewerSession session{std::move(config)};
+    const auto now = ViewerSession::Clock::now();
+    session.cancel_path_render();
+    if (!session.path_cancelled() || session.updating() || session.update({}, now) || session.path_progress())
+    {
+        throw std::runtime_error("Cancelling before the first batch should leave the viewport empty");
+    }
+    session.resume_path_render();
+    const auto &first = await_image(session, now);
+    check_prefix(session, first, offline, view, 8);
+
+    // The 9..11 batch is already scheduled and may even be ready. Freeze the displayed 8-sample image.
+    session.cancel_path_render();
+    session.set_display_settings({1});
+    constexpr PixelCoord pixel{16, 11};
+    if (session.update({.picked = pixel}, now) != &first || session.updating() || !session.path_cancelled())
+    {
+        throw std::runtime_error("Cancelled frame was replaced or exposure restarted sampling");
+    }
+    check_pick(session, now, first[pixel.y, pixel.x], 4 * 8);
+    if (session.path_progress()->completed != 8 || session.update({}, now))
+    {
+        throw std::runtime_error("A cancelled batch reached the viewport");
+    }
+
+    // A larger target resumes from 8. Publishing the discarded tail would incorrectly produce 11 here.
+    view.path_sampling.samples = 19;
+    session.render_settings().path_samples = 19;
+    session.apply_settings();
+    check_prefix(session, await_image(session, now), offline, view, 16);
+    session.cancel_path_render();
+    session.resume_path_render();
+    check_prefix(session, await_image(session, now), offline, view, 19);
+    session.cancel_path_render();
+    if (session.path_cancelled() || session.updating())
+    {
+        throw std::runtime_error("Cancelling a finished frame changed its state");
+    }
+
+    session.render_settings().path_samples = 27;
+    session.apply_settings();
+    session.cancel_path_render();
+    (void)session.update({.wheel = 1}, now);
+    (void)await_image(session, now);
+    if (session.path_cancelled() || session.path_progress()->completed != 8 || session.selection())
+    {
+        throw std::runtime_error("Navigation after cancellation did not start a fresh view");
+    }
+}
 } // namespace
 
 int main()
@@ -178,6 +232,7 @@ try
     const auto new_view = load_preview(prepare_render(session.scene_snapshot())).view;
     check_prefix(session, *moved, offline, new_view, 19);
     check_sample_target_edits(session, settled, *moved, offline, new_view);
+    check_cancellation(config, offline, preview.view);
     return 0;
 }
 catch (const std::exception &error)

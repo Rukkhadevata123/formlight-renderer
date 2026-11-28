@@ -9,8 +9,7 @@ using namespace formlight;
 
 void view_scene(const std::filesystem::path &path)
 {
-    ViewerDocument document{path, load_scene_config(path)};
-    ViewerWindow window{document};
+    ViewerWindow window{ViewerDocument{path, load_scene_config(path)}};
     while (window.poll())
     {
         window.draw();
