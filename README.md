@@ -41,6 +41,12 @@ CLI 和 viewer 都可以打开单文件 `.glb` 和多文件 `.gltf`。[双 UV �
 
 将 `max_bounces` 设为正数会从首命中继续追踪材质指定的反射或透射。每个相机样本平均 `path_samples` 条路径。默认的 `bounce_sampling = "cosine"` 按余弦加权半球分布采样，此时 Lambertian 权重化简为表面底色乘以非金属占比。固定 `seed` 可用 `--pixel` 重放同一组路径，报告中的 `Path bounces` 为它们带回的线性 RGB。
 
+离线输出路径图像时，`--path-samples` 指定每个 SSAA 子像素的总样本数，`--batch-size` 指定每批最多追加多少个样本，默认一次完成。下例把 128 个样本拆成六批 19 个和最后一批 14 个。在同一构建下，固定场景和种子，各子像素按相同编号顺序累加，拆批前后的线性图像逐像素相等。[分批累积回归](tests/path_frame_test.cpp)
+
+```powershell
+build/release/formlight-renderer.exe --preset final_scene --path-samples 128 --batch-size 19 --output build/release/final-scene-batches.png
+```
+
 Cornell 漫反射场景启用 `bounce_sampling = "light_mixture"`。在漫反射表面，各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。发光网格和额外采样目标均为空时使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
 
 Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：

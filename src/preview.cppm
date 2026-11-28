@@ -22,6 +22,19 @@ export struct PreviewView
     ShutterInterval shutter{};
 };
 
+PreviewView sample_grid_view(const PreviewView &view);
+
+LinearColor resolve_samples(int count, auto color_at)
+{
+    Vec3 sum{};
+    for (int i = 0; i < count; ++i)
+    {
+        const auto c = color_at(i);
+        sum = sum + Vec3{c.r, c.g, c.b};
+    }
+    return {static_cast<float>(sum.x / count), static_cast<float>(sum.y / count), static_cast<float>(sum.z / count), 1};
+}
+
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
 {
     const auto center = subject.center();
@@ -117,6 +130,8 @@ export struct PixelDiagnostic
     LinearColor color;
 };
 
+export class PathFrame;
+
 // Borrows a static scene. Camera changes and pixel inspections share the prepared shadow data.
 export class PreviewRenderer
 {
@@ -126,15 +141,19 @@ export class PreviewRenderer
     // Copies share immutable shadow data. Relighting one copy leaves in-flight frames and picks intact.
     void set_lighting(std::optional<PreviewLighting> lighting);
     void configure(RenderMode mode, std::optional<PreviewLighting> lighting);
-    [[nodiscard]] ColorImage render(const PreviewView &view, std::stop_token stop = {}) const;
+    [[nodiscard]] ColorImage render(const PreviewView &view, std::stop_token stop = {},
+                                    std::uint32_t path_batch_size = std::numeric_limits<std::uint32_t>::max()) const;
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
   private:
     [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop) const;
-    [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel, std::stop_token stop,
+    friend class PathFrame;
+    [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel, std::uint32_t first_sample,
+                                            RayRadianceSum &sum, std::stop_token stop,
                                             std::vector<SampleDiagnostic> *records = nullptr, int ssaa = 1) const;
     [[nodiscard]] LinearColor trace_camera_ray(const PreviewView &view, const Ray &ray, std::uint64_t path_key,
-                                               const PathSampling &sampling, std::stop_token stop,
+                                               const PathSampling &sampling, std::uint32_t first_sample,
+                                               RayRadianceSum &sum, std::stop_token stop,
                                                SampleDiagnostic *record) const;
     void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
                          SampleDiagnostic &report, std::stop_token stop) const;
@@ -152,6 +171,26 @@ export class PreviewRenderer
     std::vector<std::shared_ptr<const DirectionalShadowMap>> shadow_maps_;
     std::shared_ptr<const TriangleBvh> blockers_;
     std::optional<PathIntegrator> path_;
+};
+
+// Single-writer frame. Captures view and lighting; the borrowed scene must stay unchanged and outlive the frame.
+export class PathFrame
+{
+  public:
+    PathFrame(const PreviewRenderer &renderer, const PreviewView &view);
+    [[nodiscard]] std::uint32_t completed_samples() const noexcept
+    {
+        return completed_;
+    }
+    // Returns the mean of all completed samples. A failed or cancelled batch can be retried.
+    [[nodiscard]] ColorImage render_batch(std::uint32_t count, std::stop_token stop = {});
+
+  private:
+    PreviewRenderer renderer_;
+    PreviewView grid_;
+    int ssaa_;
+    std::uint32_t completed_{};
+    std::vector<RayRadianceSum> sums_;
 };
 
 export [[nodiscard]] ColorImage render_preview(const GltfScene &scene, const PreviewView &view,

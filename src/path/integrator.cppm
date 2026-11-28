@@ -19,6 +19,25 @@ export struct PathHit
     std::optional<Vec3> bounce_radiance{};
 };
 
+// For a fixed surface only the bounce term varies. A medium instead accumulates the full free-flight sample.
+export struct RayRadianceSum
+{
+    Vec3 rgb{};
+    double transparency{};
+
+    void add(LinearColor sample) noexcept
+    {
+        rgb = rgb + Vec3{sample.r, sample.g, sample.b};
+        transparency += 1.0 - sample.a;
+    }
+
+    [[nodiscard]] LinearColor mean(std::uint32_t count) const noexcept
+    {
+        return {static_cast<float>(rgb.x / count), static_cast<float>(rgb.y / count), static_cast<float>(rgb.z / count),
+                static_cast<float>(1.0 - transparency / count)};
+    }
+};
+
 // The scene must outlive the integrator. Closed dielectrics expose both interfaces to path rays.
 export class PathIntegrator
 {
@@ -72,10 +91,22 @@ export class PathIntegrator
                                        std::stop_token stop = {}, PathSampling sampling = {},
                                        std::optional<MediumHit> *medium_record = nullptr) const
     {
-        if (sampling.samples == 0)
+        RayRadianceSum sum;
+        return accumulate(ray, interval, sum, 0, sampling, pixel, pattern, stop, record, medium_record);
+    }
+
+    // Append [first, sampling.samples) to the sum for this same ray and return the mean over the full prefix.
+    [[nodiscard]] LinearColor accumulate(const Ray &ray, RayInterval interval, RayRadianceSum &prefix,
+                                         std::uint32_t first, PathSampling sampling, std::uint64_t pixel,
+                                         AreaLightPattern pattern, std::stop_token stop,
+                                         std::optional<PathHit> *record = nullptr,
+                                         std::optional<MediumHit> *medium_record = nullptr) const
+    {
+        if (first >= sampling.samples)
         {
-            throw std::invalid_argument("Path sample count must be positive");
+            throw std::invalid_argument("Path sample range must be nonempty");
         }
+        auto sum = prefix;
         const auto hit = surfaces_->intersect_surface(ray, interval);
         if (medium_record)
         {
@@ -83,19 +114,19 @@ export class PathIntegrator
         }
         if (scene_.media.empty())
         {
-            return surface_radiance(ray, hit, record, pixel, pattern, stop, sampling);
+            const auto color = surface_radiance(ray, hit, record, pixel, pattern, stop, sampling, first, sum.rgb);
+            prefix = sum;
+            return color;
         }
 
         if (hit)
         {
             interval.max = hit->t;
         }
-        // Each independent primary free flight owns one continuation. Diagnostics describe sample zero.
+        // Each independent primary free flight owns one continuation. Diagnostics describe the first new sample.
         const auto count = sampling.samples;
         sampling.samples = 1;
-        Vec3 sum{};
-        double transparency = 0;
-        for (std::uint32_t i = 0; i < count; ++i)
+        for (std::uint32_t i = first; i < count; ++i)
         {
             if (stop.stop_requested())
             {
@@ -104,35 +135,35 @@ export class PathIntegrator
             PathSampler rng{sampling.seed, pixel, i};
             if (const auto event = sample_free_flight(scene_.media, ray, interval, rng))
             {
-                if (i == 0 && medium_record)
+                if (i == first && medium_record)
                 {
                     *medium_record = event;
                 }
-                if (i == 0 && record)
+                if (i == first && record)
                 {
                     record->reset();
                 }
                 if (event->scattering_albedo != Vec3{})
                 {
-                    sum = sum + medium_direct_light(*event, ray, rng.next_bits(), pattern, stop);
-                    sum = sum + trace_bounces(*event, ray, rng, sampling, pattern, stop);
+                    sum.rgb = sum.rgb + medium_direct_light(*event, ray, rng.next_bits(), pattern, stop);
+                    sum.rgb = sum.rgb + trace_bounces(*event, ray, rng, sampling, pattern, stop);
                 }
                 continue;
             }
-            const auto color =
-                surface_radiance(ray, hit, i == 0 ? record : nullptr, rng.next_bits(), pattern, stop, sampling);
-            sum = sum + Vec3{color.r, color.g, color.b};
-            transparency += 1.0 - color.a;
+            Vec3 bounce_sum{};
+            const auto color = surface_radiance(ray, hit, i == first ? record : nullptr, rng.next_bits(), pattern, stop,
+                                                sampling, 0, bounce_sum);
+            sum.add(color);
         }
-        return {static_cast<float>(sum.x / count), static_cast<float>(sum.y / count), static_cast<float>(sum.z / count),
-                static_cast<float>(1.0 - transparency / count)};
+        prefix = sum;
+        return sum.mean(count);
     }
 
   private:
     [[nodiscard]] LinearColor surface_radiance(const Ray &ray, const std::optional<SurfaceHit> &hit,
                                                std::optional<PathHit> *record, std::uint64_t pixel,
-                                               AreaLightPattern pattern, std::stop_token stop,
-                                               PathSampling sampling) const
+                                               AreaLightPattern pattern, std::stop_token stop, PathSampling sampling,
+                                               std::uint32_t first_sample, Vec3 &sum) const
     {
         if (!hit)
         {
@@ -154,8 +185,7 @@ export class PathIntegrator
         {
             return surface.material.outgoing_color(direct);
         }
-        Vec3 sum{};
-        for (std::uint32_t i = 0; i < sampling.samples; ++i)
+        for (std::uint32_t i = first_sample; i < sampling.samples; ++i)
         {
             PathSampler sampler{sampling.seed, pixel, i};
             sum = sum + trace_bounces(surface, ray, sampler, sampling, pattern, stop);

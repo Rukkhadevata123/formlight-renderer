@@ -15,7 +15,8 @@ auto main(int argc, char **argv) -> int
             "       formlight-renderer --preset many_balls|final_scene (--output IMAGE.png | --pixel X Y) "
             "[--scene-seed N]\n"
             "                         [--mode raster|hybrid|path] [--ssaa 1|2] [--light-samples N] [--seed N]\n"
-            "                         [--path-samples N] [--max-bounces N] [--bounce-sampling cosine|light_mixture]\n"
+            "                         [--path-samples N] [--batch-size N] [--max-bounces N] [--bounce-sampling "
+            "cosine|light_mixture]\n"
             "                         [--defocus-angle DEGREES] [--focus-distance DISTANCE]\n"
             "MODEL can be a .gltf or .glb file. Pixel coordinates start at (0, 0) in the top-left corner.");
         return 0;
@@ -66,14 +67,15 @@ auto main(int argc, char **argv) -> int
                 print_pixel_report(diagnose_pixel(request, *pixel));
                 return 0;
             }
-            const auto &output = std::get<std::filesystem::path>(action);
+            const auto &[output, batch_size] = std::get<ImageOutput>(action);
             if (command != "--preset" && std::filesystem::exists(output) && std::filesystem::equivalent(input, output))
             {
                 throw std::invalid_argument("Output image would overwrite the input model or scene");
             }
             const auto preview = load_preview(request);
             preview.scene.check_output_path(output);
-            const auto image = PreviewRenderer{preview.scene, request.lighting, request.mode}.render(preview.view);
+            const PreviewRenderer renderer{preview.scene, request.lighting, request.mode};
+            const auto image = renderer.render(preview.view, {}, batch_size);
             write_png(output, image, config.display);
             std::println("Wrote {} ({} x {})", output.string(), request.extent.width, request.extent.height);
             return 0;

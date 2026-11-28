@@ -51,7 +51,8 @@ target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES F
 target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
-add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp src/preview/final_scene.cpp)
+add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp
+    src/preview/path_frame.cpp src/preview/final_scene.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/path/integrator.cppm src/preview.cppm)
 target_sources(formlight_gltf PRIVATE FILE_SET internal_modules TYPE CXX_MODULES FILES
     src/io/gltf/mesh.cppm src/io/gltf/resources.cppm src/io/gltf/tangents.cppm src/io/gltf/texture_transform.cppm)
@@ -210,6 +211,10 @@ if(BUILD_TESTING)
     add_executable(path_first_hit_test tests/path_first_hit_test.cpp)
     target_link_libraries(path_first_hit_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME path_first_hit COMMAND path_first_hit_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/materials/emissive-panels.toml")
+
+    add_executable(path_frame_test tests/path_frame_test.cpp)
+    target_link_libraries(path_frame_test PRIVATE formlight_gltf formlight_io TBB::tbb)
+    add_test(NAME path_frame_batches COMMAND path_frame_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/cornell-analytic.toml")
 
     add_executable(path_direct_light_test tests/path_direct_light_test.cpp)
     target_link_libraries(path_direct_light_test PRIVATE formlight_gltf formlight_io)

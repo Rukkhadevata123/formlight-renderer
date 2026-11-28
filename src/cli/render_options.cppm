@@ -18,12 +18,18 @@ template <class T> T numeric_option(std::string_view option, std::string_view va
     return result;
 }
 
-export using RenderAction = std::variant<std::filesystem::path, PixelCoord>;
+export struct ImageOutput
+{
+    std::filesystem::path path;
+    std::uint32_t batch_size{std::numeric_limits<std::uint32_t>::max()};
+};
+export using RenderAction = std::variant<ImageOutput, PixelCoord>;
 
 // Only explicitly supplied overrides modify the loaded scene.
 export RenderAction apply_render_options(SceneConfig &config, std::span<char *> args)
 {
     std::optional<RenderAction> action;
+    std::optional<std::uint32_t> batch_size;
     while (!args.empty())
     {
         const std::string_view option = args.front();
@@ -52,7 +58,7 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
             {
                 throw std::invalid_argument("Expected --output IMAGE.png");
             }
-            action = std::filesystem::path{value};
+            action = ImageOutput{std::filesystem::path{value}};
         }
         else if (option == "--mode")
         {
@@ -90,6 +96,10 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
         {
             config.render.path_samples = numeric_option<std::uint32_t>(option, value);
         }
+        else if (option == "--batch-size")
+        {
+            batch_size = numeric_option<std::uint32_t>(option, value);
+        }
         else if (option == "--max-bounces")
         {
             config.render.max_bounces = numeric_option<std::uint32_t>(option, value);
@@ -107,7 +117,16 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
     {
         throw std::invalid_argument("Expected --output IMAGE.png or --pixel X Y");
     }
-    return *action;
+    if (batch_size)
+    {
+        auto *image = std::get_if<ImageOutput>(&*action);
+        if (!image || config.render.mode != RenderMode::Path || *batch_size == 0)
+        {
+            throw std::invalid_argument("--batch-size requires a positive count, path mode and --output");
+        }
+        image->batch_size = *batch_size;
+    }
+    return std::move(*action);
 }
 
 export void print_pixel_report(const PixelDiagnostic &report);

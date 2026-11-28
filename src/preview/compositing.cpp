@@ -6,14 +6,9 @@ module;
 module formlight.preview;
 
 import std;
-import formlight.sampling;
 
 namespace formlight
 {
-namespace
-{
-constexpr LinearColor background{0.035f, 0.045f, 0.06f, 1.0f};
-
 PreviewView sample_grid_view(const PreviewView &view)
 {
     const auto extent = sample_grid_extent(view.camera.extent(), view.ssaa);
@@ -30,17 +25,9 @@ PreviewView sample_grid_view(const PreviewView &view)
             view.shutter};
 }
 
-LinearColor resolve_samples(std::integral auto count, auto color_at)
+namespace
 {
-    Vec3 sum{};
-    for (decltype(count) i = 0; i < count; ++i)
-    {
-        const auto c = color_at(i);
-        sum = sum + Vec3{c.r, c.g, c.b};
-    }
-    // All samples have already been composited onto the opaque background.
-    return {static_cast<float>(sum.x / count), static_cast<float>(sum.y / count), static_cast<float>(sum.z / count), 1};
-}
+constexpr LinearColor background{0.035f, 0.045f, 0.06f, 1.0f};
 
 struct BlendFragment
 {
@@ -145,8 +132,21 @@ void composite_layers(std::span<LinearColor> row, std::span<BlendFragment> fragm
 }
 } // namespace
 
-ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop) const
+ColorImage PreviewRenderer::render(const PreviewView &view, std::stop_token stop, std::uint32_t path_batch_size) const
 {
+    if (path_)
+    {
+        PathFrame frame{*this, view};
+        const auto target = view.path_sampling.samples;
+        for (;;)
+        {
+            auto image = frame.render_batch(std::min(path_batch_size, target - frame.completed_samples()), stop);
+            if (frame.completed_samples() == target)
+            {
+                return image;
+            }
+        }
+    }
     auto samples = render_sample_grid(sample_grid_view(view), stop);
     if (view.ssaa == 1)
     {
@@ -173,23 +173,6 @@ ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::sto
     const ImageExtent extent = view.camera.extent();
     // Only the render's stop token may interrupt the frame; a cancelled outer TBB task could skip rows.
     oneapi::tbb::task_group_context frame_tasks{oneapi::tbb::task_group_context::isolated};
-    if (path_)
-    {
-        ColorImage image{extent};
-        const auto trace_row = [&](int y)
-        {
-            if (stop.stop_requested())
-            {
-                throw std::runtime_error("Rendering cancelled");
-            }
-            for (int x = 0; x < extent.width; ++x)
-            {
-                image[y, x] = trace_primary(view, {x, y}, stop);
-            }
-        };
-        oneapi::tbb::parallel_for(0, extent.height, trace_row, frame_tasks);
-        return image;
-    }
     ColorImage image{extent, background};
     std::vector<std::optional<RasterHit>> pixels(static_cast<std::size_t>(extent.width) * extent.height);
     const VisibilityBuffer visible{pixels.data(), extent.height, extent.width};
@@ -239,7 +222,8 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
             const PixelCoord sample{pixel.x * axis + i % axis, pixel.y * axis + i / axis};
             if (path_)
             {
-                return trace_primary(grid, sample, stop, &report.samples, axis);
+                RayRadianceSum sum;
+                return trace_primary(grid, sample, 0, sum, stop, &report.samples, axis);
             }
             const auto center = pixel_center(sample.x, sample.y);
             auto &record = report.samples.emplace_back(SampleDiagnostic{
@@ -248,104 +232,6 @@ PixelDiagnostic PreviewRenderer::diagnose(const PreviewView &view, PixelCoord pi
             return record.color;
         });
     return report;
-}
-
-LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord pixel, std::stop_token stop,
-                                           std::vector<SampleDiagnostic> *records, int ssaa) const
-{
-    const auto center = pixel_center(pixel.x, pixel.y);
-    const Ray pinhole = view.camera.ray_for_sample(center);
-    const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
-    const bool lens_open = view.lens.radius() > 0;
-    const bool sample_time = view.shutter.open < view.shutter.close;
-    const bool sample_primary = lens_open || sample_time || !scene_.media.empty();
-    const auto count = sample_primary ? view.path_sampling.samples : 1u;
-    if (count == 0)
-    {
-        throw std::invalid_argument("Path sample count must be positive");
-    }
-    const auto trace = [&](std::uint32_t i)
-    {
-        if (stop.stop_requested())
-        {
-            throw std::runtime_error("Rendering cancelled");
-        }
-        Ray ray = pinhole;
-        auto path_key = pixel_index;
-        auto sampling = view.path_sampling;
-        ray.time = view.shutter.open;
-        if (sample_primary)
-        {
-            PathSampler camera_sampler{sampling.seed, pixel_index, i};
-            if (lens_open)
-            {
-                const double u = camera_sampler.uniform();
-                ray = view.camera.ray_from_lens(ray, view.lens, u, camera_sampler.uniform());
-            }
-            if (sample_time)
-            {
-                ray.time = std::lerp(view.shutter.open, view.shutter.close, camera_sampler.uniform());
-            }
-            // Each camera sample gets its own first hit, light samples and one continuation path.
-            path_key = camera_sampler.next_bits();
-            sampling.samples = 1;
-        }
-        SampleDiagnostic *record = nullptr;
-        if (records)
-        {
-            record = &records->emplace_back(SampleDiagnostic{.position = {center.x / ssaa, center.y / ssaa},
-                                                             .weight = 1.0 / (ssaa * ssaa) / count,
-                                                             .time = ray.time});
-            if (lens_open)
-            {
-                record->lens_origin = ray.origin;
-            }
-        }
-        const auto color = trace_camera_ray(view, ray, path_key, sampling, stop, record);
-        if (record)
-        {
-            record->color = color;
-        }
-        return color;
-    };
-    return count == 1 ? trace(0) : resolve_samples(count, trace);
-}
-
-LinearColor PreviewRenderer::trace_camera_ray(const PreviewView &view, const Ray &ray, std::uint64_t path_key,
-                                              const PathSampling &sampling, std::stop_token stop,
-                                              SampleDiagnostic *record) const
-{
-    const double depth_per_unit = view.camera.forward_component(ray.direction);
-    const double origin_depth = view.lens.radius() > 0 ? view.camera.to_view(ray.origin).depth : 0;
-    // The camera depth range includes both endpoints; ray queries have open intervals.
-    const RayInterval interval{std::nextafter((view.depth.near_depth - origin_depth) / depth_per_unit, 0.0),
-                               std::nextafter((view.depth.far_depth - origin_depth) / depth_per_unit,
-                                              std::numeric_limits<double>::infinity())};
-    std::optional<PathHit> first;
-    const auto color = path_->radiance(ray, interval, record ? &first : nullptr, path_key, view.area_light_pattern,
-                                       stop, sampling, record ? &record->medium : nullptr);
-    if (record && first)
-    {
-        const auto &hit = first->intersection;
-        const auto id = hit.surface.id;
-        const auto *sphere = std::get_if<SphereCoordinates>(&hit.surface.coordinates);
-        const auto material_index =
-            sphere ? scene_.spheres()[sphere->index].material_index
-                   : scene_.instance(id.instance).triangles[std::to_underlying(id.primitive)].material_index;
-        record->surface = DiagnosticSurface{{hit.surface, origin_depth + hit.t * depth_per_unit, first->back_face},
-                                            material_index,
-                                            first->material,
-                                            {},
-                                            first->shading_normal};
-        const auto &material = scene_.material(material_index);
-        if (material.path_surface == PathSurface::Metal)
-        {
-            record->surface->metal_fuzz = material.fuzz;
-        }
-        record->lights = std::move(first->lights);
-        record->bounce_radiance = first->bounce_radiance;
-    }
-    return color;
 }
 
 void PreviewRenderer::diagnose_sample(const PreviewView &view, PixelCoord pixel, std::span<const RasterTriangle> pieces,
