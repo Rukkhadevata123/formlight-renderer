@@ -7,6 +7,8 @@ export namespace formlight
 struct ImageExtent
 {
     int width, height;
+
+    bool operator==(const ImageExtent &) const = default;
 };
 
 // Integer image coordinates, measured right and down from the top-left pixel.

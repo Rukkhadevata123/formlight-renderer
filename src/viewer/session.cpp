@@ -5,6 +5,52 @@ import formlight.preview;
 
 namespace formlight
 {
+namespace
+{
+bool can_extend_paths(const SceneConfig &current, const SceneConfig &draft)
+{
+    if (current.render.mode != RenderMode::Path || draft.render.path_samples < current.render.path_samples)
+    {
+        return false;
+    }
+    // Scene assets belong to the session; navigation invalidates the camera revision independently of Apply.
+    auto render = current.render;
+    render.path_samples = draft.render.path_samples;
+    return render == draft.render && current.camera == draft.camera && current.lighting == draft.lighting;
+}
+} // namespace
+
+void ViewerSession::apply_settings()
+{
+    if (can_extend_paths(applied_.config, draft_))
+    {
+        const auto target = draft_.render.path_samples;
+        applied_.config.render.path_samples = target;
+        applied_.request.path_sampling.samples = target;
+        if (frame_ && frame_->request.revision == requested_)
+        {
+            frame_->path_target = target;
+        }
+        return;
+    }
+
+    AppliedSettings next{draft_};
+    if (scene_)
+    {
+        scene_->resize(next.request.extent, !frame_ && next.config.camera.auto_frame);
+    }
+    applied_ = std::move(next);
+    settings_revision_ = ++requested_;
+    select(std::nullopt);
+    if (rendering_)
+    {
+        rendering_->cancel();
+    }
+    refine_after_ = Clock::time_point::min();
+    gesture_quality_ = Quality::Full;
+    full_cost_ = light_center_cost_ = {};
+}
+
 void ViewerSession::schedule_render(Clock::time_point now)
 {
     if (rendering_ || !updating())
@@ -35,9 +81,9 @@ void ViewerSession::schedule_render(Clock::time_point now)
     }
     auto previous = frame_ ? std::optional{frame_->result.renderer} : std::nullopt;
     std::unique_ptr<PathFrame> accumulation;
-    std::uint32_t target{};
+    const auto mode = applied_.request.mode;
     std::uint32_t batch{};
-    if (applied_.request.mode == RenderMode::Path)
+    if (mode == RenderMode::Path)
     {
         if (frame_ && frame_->request.revision == requested_ && frame_->request.quality == quality)
         {
@@ -45,15 +91,14 @@ void ViewerSession::schedule_render(Clock::time_point now)
         }
         constexpr std::uint32_t samples_per_batch = 8;
         const auto completed = accumulation ? accumulation->completed_samples() : 0u;
-        target = view.path_sampling.samples;
-        batch = std::min(samples_per_batch, target - completed);
+        batch = std::min(samples_per_batch, view.path_sampling.samples - completed);
         // The published view also drives pixel inspection, which replays exactly this prefix.
         view.path_sampling.samples = completed + batch;
     }
     rendering_.emplace(
-        FrameRequest{requested_, quality, navigating, applied_.request.extent, view, target},
+        FrameRequest{requested_, quality, navigating, applied_.request.extent, view, mode},
         [previous = std::move(previous), accumulation = std::move(accumulation), batch, &scene = scene_->preview.scene,
-         lighting = applied_.request.lighting, mode = applied_.request.mode, view](std::stop_token stop) mutable
+         lighting = applied_.request.lighting, mode, view](std::stop_token stop) mutable
         {
             if (!previous)
             {
@@ -113,7 +158,7 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
         const auto &request = rendering_->request;
         // Raster navigation can present during a drag. A path prefix belongs to one exact camera pose.
         const bool raster_navigation =
-            request.path_target == 0 && request.navigation && request.revision >= settings_revision_;
+            request.mode != RenderMode::Path && request.navigation && request.revision >= settings_revision_;
         if (request.revision == requested_ || raster_navigation)
         {
             auto result = rendering_->take();
@@ -121,10 +166,12 @@ const ColorImage *ViewerSession::update(const ViewportInput &input, Clock::time_
             const auto estimate = request.quality == Quality::HalfResolution ? 4 * result.elapsed : result.elapsed;
             auto &cost = request.quality == Quality::Full ? full_cost_ : light_center_cost_;
             cost = cost == Clock::duration::zero() ? estimate : cost + (estimate - cost) / 4;
-            const bool next_batch = request.path_target != 0 && frame_ &&
+            const bool next_batch = request.mode == RenderMode::Path && frame_ &&
                                     request.revision == frame_->request.revision &&
                                     request.quality == frame_->request.quality;
-            frame_.emplace(request, std::move(result));
+            // The worker reports its original prefix. Apply may have raised the goal since it started.
+            const auto path_target = request.mode == RenderMode::Path ? applied_.request.path_sampling.samples : 0u;
+            frame_.emplace(request, std::move(result), path_target);
             if (!next_batch)
             {
                 select(std::nullopt);

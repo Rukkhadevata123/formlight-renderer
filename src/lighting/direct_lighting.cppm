@@ -13,6 +13,8 @@ export struct LightSampling
 {
     std::uint32_t samples{16};
     std::uint64_t seed{};
+
+    bool operator==(const LightSampling &) const = default;
 };
 
 export enum class AreaLightPattern

@@ -219,6 +219,8 @@ struct LensSettings
 {
     double focus_distance{1}, defocus_angle_degrees{};
 
+    bool operator==(const LensSettings &) const = default;
+
     void fields(this auto &self, auto &&field)
     {
         field("focus_distance", self.focus_distance);
@@ -229,6 +231,8 @@ struct LensSettings
 struct ShutterInterval
 {
     double open{}, close{};
+
+    bool operator==(const ShutterInterval &) const = default;
 
     void fields(this auto &self, auto &&field)
     {
@@ -244,6 +248,8 @@ struct CameraSettings
     Vec3 position{1.1, 0.8, 1.5}, target{}, up{0, 1, 0};
     LensSettings lens{};
     ShutterInterval shutter{};
+
+    bool operator==(const CameraSettings &) const = default;
 
     void fields(this auto &self, auto &&field)
     {
@@ -268,6 +274,8 @@ struct RenderSettings
     int ssaa{1}; // Samples per image axis.
     std::uint32_t path_samples{1}, max_bounces{};
     BounceSampling bounce_sampling{BounceSampling::Cosine};
+
+    bool operator==(const RenderSettings &) const = default;
 
     void fields(this auto &self, auto &&field)
     {
@@ -295,6 +303,8 @@ struct LightSettings
     double intensity{DirectionalLight::default_intensity};
     Vec3 center{3, 3, 0.75};
     double width{1.5}, height{1.5}, power{240};
+
+    bool operator==(const LightSettings &) const = default;
 
     void fields(this auto &self, auto &&field)
     {
@@ -330,6 +340,8 @@ struct LightingSettings
 {
     Vec3 ambient{};
     std::vector<LightSettings> lights{};
+
+    bool operator==(const LightingSettings &) const = default;
 
     void fields(this auto &self, auto &&field)
     {

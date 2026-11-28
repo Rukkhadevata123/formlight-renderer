@@ -67,6 +67,53 @@ void check_pick(ViewerSession &session, ViewerSession::Clock::time_point now, Li
         throw std::runtime_error("Pixel inspection did not replay the displayed path prefix");
     }
 }
+
+void check_sample_target_edits(ViewerSession &session, ViewerSession::Clock::time_point now, const ColorImage &original,
+                               const PreviewRenderer &offline, PreviewView view)
+{
+    const auto apply_target = [&](std::uint32_t target)
+    {
+        session.render_settings().path_samples = target;
+        session.apply_settings();
+        view.path_sampling.samples = target;
+        if (session.scene_snapshot().render.path_samples != target)
+        {
+            throw std::runtime_error("Scene snapshot lost the applied path sample target");
+        }
+    };
+
+    // Keep the displayed 19-sample image until its first additional batch is ready.
+    apply_target(35);
+    check_prefix(session, original, offline, view, 19);
+    check_prefix(session, await_image(session, now), offline, view, 27);
+    check_prefix(session, await_image(session, now), offline, view, 35);
+
+    // The short 36..38 batch is already scheduled when the second increase arrives.
+    apply_target(38);
+    (void)session.update({}, now);
+    apply_target(51);
+    check_prefix(session, await_image(session, now), offline, view, 38);
+    check_prefix(session, await_image(session, now), offline, view, 46);
+    check_prefix(session, await_image(session, now), offline, view, 51);
+
+    session.shutter_settings() = {0.5, 0.5};
+    view.shutter = session.shutter_settings();
+    apply_target(57);
+    check_prefix(session, await_image(session, now), offline, view, 8);
+
+    apply_target(5);
+    check_prefix(session, await_image(session, now), offline, view, 5);
+
+    session.light_settings().emplace().lights = {
+        {.type = LightKind::Rectangle, .center = {275, 553, 275}, .width = 200, .height = 200, .power = 100000}};
+    apply_target(13);
+    auto relit = offline;
+    relit.set_lighting(prepare_render(session.scene_snapshot()).lighting);
+    check_prefix(session, await_image(session, now), relit, view, 8);
+    check_prefix(session, await_image(session, now), relit, view, 13);
+    apply_target(21);
+    check_prefix(session, await_image(session, now), relit, view, 21);
+}
 } // namespace
 
 int main()
@@ -130,6 +177,7 @@ try
     }
     const auto new_view = load_preview(prepare_render(session.scene_snapshot())).view;
     check_prefix(session, *moved, offline, new_view, 19);
+    check_sample_target_edits(session, settled, *moved, offline, new_view);
     return 0;
 }
 catch (const std::exception &error)

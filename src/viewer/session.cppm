@@ -129,16 +129,16 @@ export class ViewerSession
     [[nodiscard]] bool updating() const
     {
         return !frame_ || frame_->request.revision != requested_ || showing_preview() ||
-               frame_->request.view.path_sampling.samples < frame_->request.path_target;
+               frame_->request.view.path_sampling.samples < frame_->path_target;
     }
     // Counts describe the image currently on screen, including its SSAA and navigation settings.
     [[nodiscard]] std::optional<PathProgress> path_progress() const
     {
-        if (!frame_ || frame_->request.path_target == 0)
+        if (!frame_ || frame_->path_target == 0)
         {
             return std::nullopt;
         }
-        return PathProgress{frame_->request.view.path_sampling.samples, frame_->request.path_target};
+        return PathProgress{frame_->request.view.path_sampling.samples, frame_->path_target};
     }
     [[nodiscard]] bool showing_preview() const
     {
@@ -159,7 +159,7 @@ export class ViewerSession
         bool navigation;
         ImageExtent full_extent;
         PreviewView view;
-        std::uint32_t path_target{}; // Zero for raster and hybrid frames.
+        RenderMode mode;
     };
     struct TimedImage
     {
@@ -172,6 +172,7 @@ export class ViewerSession
     {
         FrameRequest request;
         TimedImage result;
+        std::uint32_t path_target{}; // The displayed goal can increase while the next batch is running.
     };
     void select(std::optional<PixelCoord> pixel);
     void invalidate_report();
@@ -206,25 +207,6 @@ ViewerSession::ViewerSession(SceneConfig config)
     : draft_(std::move(config)), applied_{draft_},
       loading_(0, [request = applied_.request](std::stop_token) { return std::make_unique<ViewerScene>(request); })
 {
-}
-
-void ViewerSession::apply_settings()
-{
-    AppliedSettings next{draft_};
-    if (scene_)
-    {
-        scene_->resize(next.request.extent, !frame_ && next.config.camera.auto_frame);
-    }
-    applied_ = std::move(next);
-    settings_revision_ = ++requested_;
-    select(std::nullopt);
-    if (rendering_)
-    {
-        rendering_->cancel();
-    }
-    refine_after_ = Clock::time_point::min();
-    gesture_quality_ = Quality::Full;
-    full_cost_ = light_center_cost_ = {};
 }
 
 void ViewerSession::set_display_settings(DisplaySettings display)
@@ -343,7 +325,7 @@ void ViewerSession::navigate(const ViewportInput &input, Clock::time_point now)
             gesture_quality_ = std::max(gesture_quality_, navigation_quality(std::chrono::milliseconds{40}));
         }
         refine_after_ = now + std::chrono::milliseconds{120};
-        if (rendering_ && (!rendering_->request.navigation || rendering_->request.path_target != 0))
+        if (rendering_ && (!rendering_->request.navigation || rendering_->request.mode == RenderMode::Path))
         {
             rendering_->cancel();
         }
