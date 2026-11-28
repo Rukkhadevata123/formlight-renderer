@@ -33,7 +33,7 @@ void compare_replay(const PixelDiagnostic &path, const PixelDiagnostic &hybrid)
         if (!a.surface || !b.surface || a.surface->hit.surface.id != b.surface->hit.surface.id ||
             a.lights.size() != b.lights.size() || a.lights.empty())
         {
-            throw std::runtime_error("Primary rays and rasterization must select the same lit floor triangle");
+            throw std::runtime_error("Primary rays and rasterization must select the same lit triangle");
         }
         Vec3 sum = rgb(a.surface->material.emission);
         for (std::size_t i = 0; i < a.lights.size(); ++i)
@@ -125,16 +125,42 @@ void check_box(SceneConfig config)
                    "Empty emitter fallback", pixel);
     }
 }
+
+void check_room(SceneConfig config)
+{
+    const auto indirect = prepare_render(config);
+    config.render.max_bounces = 0;
+    const auto direct = prepare_render(config);
+    config.render.mode = RenderMode::Hybrid;
+    const auto hybrid = prepare_render(config);
+
+    // Both probes lie on the white back wall, close to opposite colored walls.
+    for (const int x : {48, 143})
+    {
+        const PixelCoord pixel{x, 89};
+        const auto baseline = diagnose_pixel(direct, pixel);
+        compare_replay(baseline, diagnose_pixel(hybrid, pixel));
+        const auto gray = baseline.color;
+        const Vec3 gain = rgb(diagnose_pixel(indirect, pixel).color) - rgb(gray);
+        const double tint = x < config.render.extent.width / 2 ? gain.x - gain.y : gain.y - gain.x;
+        if (!(gray.r > 0 && gray.r == gray.g && gray.g == gray.b && gain.z > 0 && tint > 0.025))
+        {
+            throw std::runtime_error(
+                std::format("Expected color bleeding on the neutral wall at ({}, {})", x, pixel.y));
+        }
+    }
+}
 } // namespace
 
 int main(int argc, char **argv)
 try
 {
-    if (argc != 2)
+    if (argc != 3)
     {
         return 1;
     }
     check_box(load_scene_config(argv[1]));
+    check_room(load_scene_config(argv[2]));
     return 0;
 }
 catch (const std::exception &error)

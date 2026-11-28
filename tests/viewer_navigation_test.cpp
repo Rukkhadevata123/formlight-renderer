@@ -1,3 +1,5 @@
+#include "viewer_wait.hpp"
+
 import std;
 import formlight.preview;
 import formlight.viewer.document;
@@ -7,6 +9,7 @@ import formlight.viewer.session;
 namespace
 {
 using namespace formlight;
+using test::await_frame;
 
 void check_pan_from_above()
 {
@@ -19,18 +22,6 @@ void check_pan_from_above()
         std::abs(pose.position.y - 4 / 1.15) > 1e-12 || std::abs(pose.up.z + 1) > 1e-12)
     {
         throw std::runtime_error("Pan or zoom changed the axes of the authored top view");
-    }
-}
-
-const ColorImage &await_frame(ViewerSession &session, ViewerSession::Clock::time_point now)
-{
-    while (true)
-    {
-        if (const auto *image = session.update({}, now))
-        {
-            return *image;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
 }
 
@@ -99,12 +90,7 @@ void check_frame_replacement(const std::filesystem::path &asset, const std::file
     const auto preview_color = navigation[center.y, center.x];
     const auto expected_samples = session.showing_preview() ? 1u : config.render.sampling.samples;
     (void)session.update({.picked = center}, now);
-    while (!session.report())
-    {
-        (void)session.update({}, now);
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-    const auto &pick = *session.report();
+    const auto &pick = test::await_report(session, now);
     const auto &sample = pick.samples.at(0);
     if (!sample.surface || sample.surface->hit.surface.id.instance != InstanceId{1} ||
         sample.lights.at(0).samples.size() != expected_samples || sample.lights.at(0).sampling_seed != 7 ||

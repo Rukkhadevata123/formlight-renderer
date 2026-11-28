@@ -220,7 +220,8 @@ if(BUILD_TESTING)
 
     add_executable(path_direct_light_test tests/path_direct_light_test.cpp)
     target_link_libraries(path_direct_light_test PRIVATE formlight_gltf formlight_io)
-    add_test(NAME path_direct_light COMMAND path_direct_light_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
+    add_test(NAME path_direct_light COMMAND path_direct_light_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/color-bleed-room.toml")
 
     add_executable(cornell_diffuse_test tests/cornell_diffuse_test.cpp)
     target_link_libraries(cornell_diffuse_test PRIVATE formlight_gltf formlight_io)

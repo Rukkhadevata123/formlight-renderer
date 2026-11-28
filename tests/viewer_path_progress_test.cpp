@@ -1,3 +1,5 @@
+#include "viewer_wait.hpp"
+
 import std;
 import formlight.preview;
 import formlight.viewer.session;
@@ -5,18 +7,7 @@ import formlight.viewer.session;
 namespace
 {
 using namespace formlight;
-
-const ColorImage &await_image(ViewerSession &session, ViewerSession::Clock::time_point now)
-{
-    for (;;)
-    {
-        if (const auto *image = session.update({}, now))
-        {
-            return *image;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-}
+using test::await_frame;
 
 void check_prefix(const ViewerSession &session, const ColorImage &actual, const PreviewRenderer &offline,
                   PreviewView view, std::uint32_t completed)
@@ -55,13 +46,9 @@ void check_pick(ViewerSession &session, ViewerSession::Clock::time_point now, Li
     {
         throw std::runtime_error("Lost the selected pixel");
     }
-    while (!session.report())
-    {
-        (void)session.update({}, now);
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-    const auto picked = session.report()->color;
-    if (session.report()->samples.size() != expected_rays ||
+    const auto &report = test::await_report(session, now);
+    const auto picked = report.color;
+    if (report.samples.size() != expected_rays ||
         std::tie(picked.r, picked.g, picked.b) != std::tie(displayed.r, displayed.g, displayed.b))
     {
         throw std::runtime_error("Pixel inspection did not replay the displayed path prefix");
@@ -85,34 +72,34 @@ void check_sample_target_edits(ViewerSession &session, ViewerSession::Clock::tim
     // Keep the displayed 19-sample image until its first additional batch is ready.
     apply_target(35);
     check_prefix(session, original, offline, view, 19);
-    check_prefix(session, await_image(session, now), offline, view, 27);
-    check_prefix(session, await_image(session, now), offline, view, 35);
+    check_prefix(session, await_frame(session, now), offline, view, 27);
+    check_prefix(session, await_frame(session, now), offline, view, 35);
 
     // The short 36..38 batch is already scheduled when the second increase arrives.
     apply_target(38);
     (void)session.update({}, now);
     apply_target(51);
-    check_prefix(session, await_image(session, now), offline, view, 38);
-    check_prefix(session, await_image(session, now), offline, view, 46);
-    check_prefix(session, await_image(session, now), offline, view, 51);
+    check_prefix(session, await_frame(session, now), offline, view, 38);
+    check_prefix(session, await_frame(session, now), offline, view, 46);
+    check_prefix(session, await_frame(session, now), offline, view, 51);
 
     session.shutter_settings() = {0.5, 0.5};
     view.shutter = session.shutter_settings();
     apply_target(57);
-    check_prefix(session, await_image(session, now), offline, view, 8);
+    check_prefix(session, await_frame(session, now), offline, view, 8);
 
     apply_target(5);
-    check_prefix(session, await_image(session, now), offline, view, 5);
+    check_prefix(session, await_frame(session, now), offline, view, 5);
 
     session.light_settings().emplace().lights = {
         {.type = LightKind::Rectangle, .center = {275, 553, 275}, .width = 200, .height = 200, .power = 100000}};
     apply_target(13);
     auto relit = offline;
     relit.set_lighting(prepare_render(session.scene_snapshot()).lighting);
-    check_prefix(session, await_image(session, now), relit, view, 8);
-    check_prefix(session, await_image(session, now), relit, view, 13);
+    check_prefix(session, await_frame(session, now), relit, view, 8);
+    check_prefix(session, await_frame(session, now), relit, view, 13);
     apply_target(21);
-    check_prefix(session, await_image(session, now), relit, view, 21);
+    check_prefix(session, await_frame(session, now), relit, view, 21);
 }
 
 void check_cancellation(SceneConfig config, const PreviewRenderer &offline, PreviewView view)
@@ -127,7 +114,7 @@ void check_cancellation(SceneConfig config, const PreviewRenderer &offline, Prev
         throw std::runtime_error("Cancelling before the first batch should leave the viewport empty");
     }
     session.resume_path_render();
-    const auto &first = await_image(session, now);
+    const auto &first = await_frame(session, now);
     check_prefix(session, first, offline, view, 8);
 
     // The 9..11 batch is already scheduled and may even be ready. Freeze the displayed 8-sample image.
@@ -148,10 +135,10 @@ void check_cancellation(SceneConfig config, const PreviewRenderer &offline, Prev
     view.path_sampling.samples = 19;
     session.render_settings().path_samples = 19;
     session.apply_settings();
-    check_prefix(session, await_image(session, now), offline, view, 16);
+    check_prefix(session, await_frame(session, now), offline, view, 16);
     session.cancel_path_render();
     session.resume_path_render();
-    check_prefix(session, await_image(session, now), offline, view, 19);
+    check_prefix(session, await_frame(session, now), offline, view, 19);
     session.cancel_path_render();
     if (session.path_cancelled() || session.updating())
     {
@@ -162,7 +149,7 @@ void check_cancellation(SceneConfig config, const PreviewRenderer &offline, Prev
     session.apply_settings();
     session.cancel_path_render();
     (void)session.update({.wheel = 1}, now);
-    (void)await_image(session, now);
+    (void)await_frame(session, now);
     if (session.path_cancelled() || session.path_progress()->completed != 8 || session.selection())
     {
         throw std::runtime_error("Navigation after cancellation did not start a fresh view");
@@ -183,23 +170,23 @@ try
     auto view = preview.view;
     ViewerSession session{config};
     const auto now = ViewerSession::Clock::now();
-    check_prefix(session, await_image(session, now), offline, view, 8);
+    check_prefix(session, await_frame(session, now), offline, view, 8);
 
     // Replace an in-flight prefix. A late result from the old seed must never reach the screen.
     view.path_sampling.seed = 23;
     session.render_settings().sampling.seed = view.path_sampling.seed;
     session.apply_settings();
-    check_prefix(session, await_image(session, now), offline, view, 8);
+    check_prefix(session, await_frame(session, now), offline, view, 8);
     session.set_display_settings({1});
     constexpr PixelCoord pixel{16, 11};
     const auto *second = session.update({.picked = pixel}, now);
     if (!second || session.path_progress()->completed == 8)
     {
         // Exposure may redisplay the current prefix before the next batch finishes.
-        second = &await_image(session, now);
+        second = &await_frame(session, now);
     }
     check_prefix(session, *second, offline, view, 16);
-    const auto &final = await_image(session, now);
+    const auto &final = await_frame(session, now);
     check_prefix(session, final, offline, view, 19);
     check_pick(session, now, final[pixel.y, pixel.x], 4 * 19);
 
@@ -210,7 +197,7 @@ try
         throw std::runtime_error("A superseded path navigation frame was published");
     }
     // Keep the navigation clock within the refinement delay to inspect the first batch at this pose.
-    const auto &partial = await_image(session, now);
+    const auto &partial = await_frame(session, now);
     if (session.path_progress()->completed != 8 || session.selection())
     {
         throw std::runtime_error("The new pose inherited samples or a selection");
@@ -223,7 +210,7 @@ try
     const ColorImage *moved = nullptr;
     while (session.updating())
     {
-        moved = &await_image(session, settled);
+        moved = &await_frame(session, settled);
     }
     if (!moved)
     {

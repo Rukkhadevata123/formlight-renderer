@@ -12,7 +12,7 @@ Formlight Renderer 是一个用 C++23 编写的 CPU 渲染器。下图是光栅�
 
 ### 无窗口构建
 
-在仓库根目录的 x64 Developer PowerShell 中运行以下命令。共享 preset `release` 从 `VCPKG_ROOT` 读取工具链。如果本机用 `release-local` 配置 vcpkg 路径和缓存，可在同一条配置命令中换用它。`FORMLIGHT_BUILD_VIEWER=OFF` 在独立构建目录中只安装核心依赖，SDL3 和 Dear ImGui 由可选的 viewer 引入。
+在仓库根目录的 PowerShell 中运行以下命令。共享 preset `release` 从 `VCPKG_ROOT` 读取工具链。如果本机用 `release-local` 配置 vcpkg 路径和缓存，可在同一条配置命令中换用它。`FORMLIGHT_BUILD_VIEWER=OFF` 在独立构建目录中只安装核心依赖，SDL3 和 Dear ImGui 由可选的 viewer 引入。
 
 ```powershell
 $headless = Join-Path $PWD 'build/headless'
@@ -159,6 +159,32 @@ build/release/formlight-renderer.exe --preset final_scene --scene-seed 42 --outp
 ```
 
 默认预览为 192×192，每像素 128 条路径，最多反弹 16 次，快门在 [0, 1] 均匀采样。顶灯由两个朝下的发光三角形组成，线性辐亮度为 (7, 7, 7)，漫反射路径使用 `light_mixture` 采样。提高 `--path-samples` 可降低玻璃和雾的噪点。内置地球材质从配置构建时的项目目录读取 `assets/earthmap.jpg`。自定义 TOML 可以提供自己的 `scene.spheres` 或 `scene.media` 列表来替换对应预设内容。[完整场景回归](tests/final_scene_test.cpp)
+
+### 同机位的直接光与间接光
+
+[色溢房间](scenes/lighting/color-bleed-room.toml)的左墙为红色，右墙为绿色，后墙与地板为中性灰。唯一光源是靠近天花板、向下照射的白色矩形灯。两种模式使用相同的针孔相机、黑色环境、零环境光、像素中心和 32 个灯面样本，种子为 7。两图均使用 Reinhard 和相同曝光。
+
+| `hybrid` · 直接光 | `path` · 直接光与三次反弹 |
+| --- | --- |
+| ![仅直接光，后墙和地板呈中性灰](docs/images/color-bleed-hybrid.png) | ![加入反弹后，后墙和地板两侧分别染上红色与绿色](docs/images/color-bleed-path.png) |
+
+下面两个像素都命中后墙。关闭反弹时，`hybrid` 和 `path` 在这两点的灯面位置、可见性和线性 RGB 一致。加入反弹后，左侧后墙收到的红光更多，右侧收到的绿光更多。
+
+| 后墙像素 (x, y) | 直接光（R = G = B） | 加入反弹后的线性 RGB |
+| --- | ---: | --- |
+| (48, 89)，靠红墙 | 0.21859 | (0.39447, 0.29197, 0.27657) |
+| (143, 89)，靠绿墙 | 0.22391 | (0.31329, 0.36560, 0.28244) |
+
+192×192 的直接光图中，36,807 个像素的线性 RGB 完全相同。其余 57 个像素都在侧墙与地板的共享边上，其中 30 个在红墙侧，27 个在绿墙侧。例如在 (23, 168)，光栅覆盖选中红墙，主射线选中地板，两者视深均为 3.84558。[逐样本对照](tests/path_direct_light_test.cpp)
+
+```powershell
+$scene = "scenes/lighting/color-bleed-room.toml"
+$cli = ".\build\release\formlight-renderer.exe"
+& $cli --scene $scene --mode hybrid --output build/release/color-bleed-hybrid.png
+& $cli --scene $scene --mode path --max-bounces 0 --output build/release/color-bleed-path-direct.png
+& $cli --scene $scene --mode path --max-bounces 3 --output build/release/color-bleed-path.png
+& $cli --scene $scene --pixel 48 89
+```
 
 ### 自定义光栅 shader
 
