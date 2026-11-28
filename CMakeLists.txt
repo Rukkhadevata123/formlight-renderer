@@ -14,7 +14,7 @@ find_package(tomlplusplus CONFIG REQUIRED)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES ON)
 
-add_library(formlight_renderer_core STATIC src/raster/clipping.cpp src/ray/bvh.cpp src/config/many_balls.cpp)
+add_library(formlight_renderer_core STATIC src/raster/clipping.cpp src/ray/bvh.cpp src/config/many_balls.cpp src/config/presets.cpp)
 target_sources(formlight_renderer_core PUBLIC
     FILE_SET CXX_MODULES FILES
         src/geometry.cppm
@@ -49,7 +49,7 @@ target_sources(formlight_io PRIVATE FILE_SET internal_modules TYPE CXX_MODULES F
 target_link_libraries(formlight_io PUBLIC formlight_renderer_core PRIVATE tomlplusplus::tomlplusplus)
 target_include_directories(formlight_io SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
 
-add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp)
+add_library(formlight_gltf STATIC src/io/gltf.cpp src/preview/shading.cpp src/preview/compositing.cpp src/preview/final_scene.cpp)
 target_sources(formlight_gltf PUBLIC FILE_SET CXX_MODULES FILES src/io/gltf.cppm src/path/integrator.cppm src/preview.cppm)
 target_sources(formlight_gltf PRIVATE FILE_SET internal_modules TYPE CXX_MODULES FILES
     src/io/gltf/mesh.cppm src/io/gltf/resources.cppm src/io/gltf/tangents.cppm src/io/gltf/texture_transform.cppm)
@@ -242,6 +242,11 @@ if(BUILD_TESTING)
     target_link_libraries(many_balls_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME many_balls COMMAND many_balls_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/many-balls.toml")
     add_test(NAME cli_many_balls COMMAND formlight-renderer --preset many_balls --scene-seed 42 --seed 7 --pixel 128 72)
+
+    add_executable(final_ground_test tests/final_ground_test.cpp)
+    target_link_libraries(final_ground_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME final_ground COMMAND final_ground_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/final-scene.toml")
+    add_test(NAME cli_final_scene COMMAND formlight-renderer --preset final_scene --scene-seed 43 --pixel 160 120)
 
     add_executable(cornell_caustic_test tests/cornell_caustic_test.cpp)
     target_link_libraries(cornell_caustic_test PRIVATE formlight_gltf formlight_io)

@@ -108,7 +108,8 @@ export class GltfScene
     [[nodiscard]] FaceCulling face_culling(CullFace single_sided) const &;
     FaceCulling face_culling(CullFace) const && = delete;
     // Procedural meshes such as the preview floor are opaque and visible from either side.
-    void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color);
+    void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color,
+                        std::vector<AffineTransform> transforms = {AffineTransform{}});
     void set_path_material(std::size_t gltf_index, PathSurface type, double ior, double fuzz = 0);
     void mark_sampling_target(std::uint32_t node_index);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &

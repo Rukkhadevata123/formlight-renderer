@@ -5,27 +5,6 @@ import formlight.sampling;
 
 namespace formlight
 {
-SceneConfig preset_config(ScenePreset preset)
-{
-    SceneConfig config;
-    config.scene.preset = preset;
-    if (preset == ScenePreset::ManyBalls)
-    {
-        config.camera = {.auto_frame = false,
-                         .vertical_fov_degrees = 20,
-                         .position = {13, 2, 3},
-                         .target = {},
-                         .lens = {.focus_distance = 10, .defocus_angle_degrees = 0.6}};
-        config.render.mode = RenderMode::Path;
-        config.render.extent = {256, 144};
-        config.render.path_samples = 32;
-        config.render.max_bounces = 8;
-        config.render.sampling.seed = 7;
-        config.scene.environment = {0.7, 0.8, 1};
-    }
-    return config;
-}
-
 void append_many_balls(std::vector<SphereSettings> &spheres, std::uint64_t seed, double max_fuzz)
 {
     constexpr int half_grid = 11, side = 2 * half_grid;

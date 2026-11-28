@@ -458,31 +458,36 @@ void GltfScene::mark_sampling_target(std::uint32_t node_index)
     instances_[*node_instance_slots_[node_index]].sampling_target = true;
 }
 
-void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color)
+void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color, std::vector<AffineTransform> transforms)
 {
-    if (materials_.empty() || mesh.empty())
+    if (materials_.empty() || mesh.empty() || transforms.empty())
     {
-        throw std::invalid_argument("Adding a solid mesh requires triangles and a scene with materials");
+        throw std::invalid_argument(
+            "Adding a solid mesh requires triangles, instance transforms and a scene with materials");
     }
-    if (!std::in_range<std::uint32_t>(node_instance_slots_.size()) || !std::in_range<std::uint32_t>(mesh.size() - 1))
+    if (!std::in_range<std::uint32_t>(node_instance_slots_.size() + transforms.size() - 1) ||
+        !std::in_range<std::uint32_t>(mesh.size() - 1))
     {
         throw std::length_error("Mesh exceeds the instance or primitive ID range");
     }
-    const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
     for (std::size_t i = 0; i < mesh.size(); ++i)
     {
         mesh[i].id = PrimitiveId{static_cast<std::uint32_t>(i)};
         mesh[i].material_index = materials_.size();
     }
-    // Reserve all four slots before publishing the new material, mesh and instance.
+    // Reserve all storage before publishing the mesh and its instances.
     materials_.reserve(materials_.size() + 1);
     meshes_.reserve(meshes_.size() + 1);
-    node_instance_slots_.reserve(node_instance_slots_.size() + 1);
-    instances_.reserve(instances_.size() + 1);
+    node_instance_slots_.reserve(node_instance_slots_.size() + transforms.size());
+    instances_.reserve(instances_.size() + transforms.size());
     materials_.emplace_back(GltfMaterial{.base_color_factor = color, .metallic_factor = 0, .double_sided = true});
     meshes_.push_back(std::move(mesh));
-    node_instance_slots_.push_back(instances_.size());
-    instances_.push_back({id, meshes_.back(), {}});
+    for (const auto &transform : transforms)
+    {
+        const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
+        node_instance_slots_.push_back(instances_.size());
+        instances_.push_back({id, meshes_.back(), transform});
+    }
 }
 
 LinearColor GltfScene::sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights,

@@ -175,6 +175,8 @@ export struct ScenePreview
     Bounds3 subject;
 };
 
+void add_final_scene_ground(GltfScene &scene, std::uint64_t scene_seed);
+
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 {
     auto scene = request.asset.empty() ? std::expected<GltfScene, std::string>{GltfScene::empty_scene()}
@@ -190,6 +192,10 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     for (const auto node : request.sampling_targets)
     {
         scene->mark_sampling_target(node);
+    }
+    if (request.final_scene_seed)
+    {
+        add_final_scene_ground(*scene, *request.final_scene_seed);
     }
     scene->add_spheres(request.spheres);
     scene->environment = request.environment;

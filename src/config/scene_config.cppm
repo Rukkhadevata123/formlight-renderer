@@ -20,7 +20,8 @@ enum class RenderMode
 enum class ScenePreset
 {
     None,
-    ManyBalls
+    ManyBalls,
+    FinalScene
 };
 
 enum class BounceSampling
@@ -49,7 +50,8 @@ constexpr auto &choices(RenderMode) noexcept
     return render_modes;
 }
 inline constexpr std::array scene_presets{NamedValue{"none", ScenePreset::None},
-                                          NamedValue{"many_balls", ScenePreset::ManyBalls}};
+                                          NamedValue{"many_balls", ScenePreset::ManyBalls},
+                                          NamedValue{"final_scene", ScenePreset::FinalScene}};
 constexpr auto &choices(ScenePreset) noexcept
 {
     return scene_presets;
@@ -205,6 +207,9 @@ struct SceneSettings
         if (self.preset != ScenePreset::None)
         {
             field("seed", self.seed);
+        }
+        if (self.preset == ScenePreset::ManyBalls)
+        {
             field("metal_fuzz_max", self.metal_fuzz_max);
         }
     }
@@ -418,6 +423,7 @@ struct RenderRequest
     ThinLens lens{};
     ShutterInterval shutter{};
     std::vector<HomogeneousMedium> media{};
+    std::optional<std::uint64_t> final_scene_seed{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -578,6 +584,10 @@ struct RenderRequest
     {
         validate_fuzz(scene.metal_fuzz_max);
         append_many_balls(request.spheres, scene.seed, scene.metal_fuzz_max);
+    }
+    else if (scene.preset == ScenePreset::FinalScene)
+    {
+        request.final_scene_seed = scene.seed;
     }
     if (!camera.auto_frame)
     {

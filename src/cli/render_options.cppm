@@ -80,7 +80,7 @@ export RenderAction apply_render_options(SceneConfig &config, std::span<char *> 
         }
         else if (option == "--scene-seed")
         {
-            if (config.scene.preset != ScenePreset::ManyBalls)
+            if (config.scene.preset == ScenePreset::None)
             {
                 throw std::invalid_argument("--scene-seed requires a generated scene");
             }
