@@ -6,6 +6,7 @@ export import formlight.sphere;
 export import formlight.texture;
 export import formlight.material;
 import formlight.specular;
+import formlight.perlin;
 import formlight.scene_config;
 
 namespace formlight
@@ -65,6 +66,7 @@ export struct GltfMaterial
     PathSurface path_surface{PathSurface::Diffuse};
     double ior{1.5};
     double fuzz{};
+    std::optional<std::size_t> marble_texture{};
 };
 
 // Instances borrow the local mesh storage owned by this scene.
@@ -135,6 +137,7 @@ export class GltfScene
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
     std::vector<TextureImage> images_;
+    std::vector<MarbleTexture> marble_textures_;
     std::map<std::filesystem::path, std::size_t> sphere_image_slots_;
     std::vector<std::optional<GltfMaterial>> materials_;
 };

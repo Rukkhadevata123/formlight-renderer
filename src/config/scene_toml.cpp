@@ -126,7 +126,8 @@ void read_group(const toml::table &table, ConfigGroup auto &group, std::string_v
             remaining.erase(key);
             const auto name = std::string(prefix) + std::string(key);
             using T = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<T, std::optional<LightingSettings>>)
+            if constexpr (std::same_as<T, std::optional<LightingSettings>> ||
+                          std::same_as<T, std::optional<MarbleSettings>>)
             {
                 if (!node->is_table())
                 {
@@ -187,7 +188,8 @@ toml::table write_group(const ConfigGroup auto &group, const Path &directory)
         [&](std::string_view key, const auto &value)
         {
             using T = std::remove_cvref_t<decltype(value)>;
-            if constexpr (std::same_as<T, std::optional<LightingSettings>>)
+            if constexpr (std::same_as<T, std::optional<LightingSettings>> ||
+                          std::same_as<T, std::optional<MarbleSettings>>)
             {
                 if (value)
                 {

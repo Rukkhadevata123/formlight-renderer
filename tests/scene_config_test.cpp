@@ -104,12 +104,15 @@ void check_sphere_scene(const std::filesystem::path &destination)
     const auto texture = destination.parent_path() / "sphere color.png";
     write_png(texture, ColorImage{{1, 1}, {1, 1, 1, 1}});
     config.scene.media = {{Sphere{{2, 0, 0}, 0.25, {0.1, 0, 0}}, 0.7, {0.2, 0.4, 0.9}}};
-    config.scene.spheres = {
-        {.shape = {{2, 0, 0}, 0.75, {0.1, 0, 0}},
-         .type = PathSurface::Dielectric,
-         .ior = 1.33,
-         .sampling_target = true},
-        {.shape = {{2, 0, 0}, 0.25}, .type = PathSurface::Metal, .fuzz = 0.35, .albedo_texture = texture}};
+    config.scene.spheres = {{.shape = {{2, 0, 0}, 0.75, {0.1, 0, 0}},
+                             .type = PathSurface::Dielectric,
+                             .ior = 1.33,
+                             .sampling_target = true},
+                            {.shape = {{2, 0, 0}, 0.25},
+                             .type = PathSurface::Metal,
+                             .fuzz = 0.35,
+                             .albedo_texture = texture,
+                             .marble = MarbleSettings{0.37, std::numeric_limits<std::uint64_t>::max()}}};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     const auto &sphere = loaded.scene.spheres.at(0);
@@ -125,6 +128,10 @@ void check_sphere_scene(const std::filesystem::path &destination)
         loaded.camera.shutter.close != 0.75)
     {
         throw std::runtime_error("Sphere motion or shutter interval changed during TOML round trip");
+    }
+    if (!metal.marble || metal.marble->scale != 0.37 || metal.marble->seed != std::numeric_limits<std::uint64_t>::max())
+    {
+        throw std::runtime_error("Marble settings changed during TOML round trip");
     }
     if (metal.type != PathSurface::Metal || metal.fuzz != 0.35 ||
         !std::filesystem::equivalent(metal.albedo_texture, texture))

@@ -104,6 +104,14 @@ build/release/formlight-renderer.exe --scene scenes/path/scattering-media.toml -
 build/release/formlight-renderer.exe --scene scenes/path/earth.toml --output build/release/earth.png
 ```
 
+[大理石球示例](scenes/path/marble.toml) 使用 `final_scene` 中球心为 (220, 280, 300)、半径为 80 的球。在 `[[scene.spheres]]` 中设置 `marble = { scale = 0.2, seed = 42 }` 即可复现石纹。`scale` 控制沿 Z 轴的条纹频率，`seed` 控制纹路形状。渲染种子只影响采样。球有运动时，材质仍在快门起点的球面坐标上求值，纹路会随球平移。
+
+程序纹理把七层三维 Perlin 噪声相加，每层频率翻倍、权重减半，最后取绝对值得到 `turbulence(p)`。线性反照率乘以 `0.5 * (1 + sin(scale * p.z + 10 * turbulence(p)))`。指定颜色或图像贴图时，石纹也会调制它们。[实现](src/path/perlin.cppm) · [数值回归](tests/perlin_test.cpp)
+
+```powershell
+build/release/formlight-renderer.exe --scene scenes/path/marble.toml --output build/release/marble.png
+```
+
 ### 自定义光栅 shader
 
 构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)

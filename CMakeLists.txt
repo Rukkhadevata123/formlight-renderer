@@ -22,6 +22,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/path/emitter_sampling.cppm
         src/path/target_sampling.cppm
         src/path/medium.cppm
+        src/path/perlin.cppm
         src/path/specular.cppm
         src/image.cppm
         src/texture.cppm
@@ -227,6 +228,10 @@ if(BUILD_TESTING)
     add_executable(sphere_texture_test tests/sphere_texture_test.cpp)
     target_link_libraries(sphere_texture_test PRIVATE formlight_gltf)
     add_test(NAME sphere_texture COMMAND sphere_texture_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sphere-uv.png")
+
+    add_executable(perlin_test tests/perlin_test.cpp)
+    target_link_libraries(perlin_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME perlin_marble COMMAND perlin_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/marble.toml")
 
     add_executable(many_balls_test tests/many_balls_test.cpp)
     target_link_libraries(many_balls_test PRIVATE formlight_gltf formlight_io)

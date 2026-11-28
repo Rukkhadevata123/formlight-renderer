@@ -113,6 +113,18 @@ struct PathMaterialSettings
     }
 };
 
+struct MarbleSettings
+{
+    double scale{0.2};
+    std::uint64_t seed{42};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("scale", self.scale);
+        field("seed", self.seed);
+    }
+};
+
 struct SphereSettings
 {
     Sphere shape;
@@ -122,6 +134,19 @@ struct SphereSettings
     bool sampling_target{};
     double fuzz{};
     std::filesystem::path albedo_texture{};
+    std::optional<MarbleSettings> marble{};
+
+    void validate_textures() const
+    {
+        if (type == PathSurface::Dielectric && (!albedo_texture.empty() || marble))
+        {
+            throw std::invalid_argument("Dielectric spheres do not use an albedo texture");
+        }
+        if (marble && !std::isfinite(marble->scale * (std::abs(shape.center.z) + shape.radius)))
+        {
+            throw std::invalid_argument("Marble scale must give a finite phase across the sphere");
+        }
+    }
 
     void fields(this auto &self, auto &&field)
     {
@@ -137,6 +162,7 @@ struct SphereSettings
         {
             field("albedo", self.albedo);
             field("albedo_texture", self.albedo_texture);
+            field("marble", self.marble);
         }
         if (self.type == PathSurface::Metal)
         {
@@ -466,10 +492,7 @@ struct RenderRequest
     for (const auto &sphere : scene.spheres)
     {
         (void)sphere.shape.bounds();
-        if (sphere.type == PathSurface::Dielectric && !sphere.albedo_texture.empty())
-        {
-            throw std::invalid_argument("Dielectric spheres do not use an albedo texture");
-        }
+        sphere.validate_textures();
         if (sphere.type == PathSurface::Metal)
         {
             validate_fuzz(sphere.fuzz);

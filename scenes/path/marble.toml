@@ -1,0 +1,30 @@
+[scene]
+environment = [0.24, 0.24, 0.24]
+
+[[scene.spheres]]
+center = [220, 280, 300]
+radius = 80
+marble = { scale = 0.2, seed = 42 }
+
+[camera]
+auto_frame = false
+position = [468, 396, 228]
+target = [220, 280, 300]
+vertical_fov_degrees = 41
+
+[render]
+mode = "path"
+width = 401
+height = 301
+ssaa = 2
+path_samples = 1
+max_bounces = 1
+light_samples = 8
+seed = 7
+
+[[lighting.lights]]
+type = "rectangle"
+center = [420, 528, 380]
+width = 160
+height = 160
+power = 800000

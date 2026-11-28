@@ -353,11 +353,13 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     }
     auto slots = sphere_image_slots_;
     std::vector<TextureImage> textures;
+    std::vector<MarbleTexture> marbles;
     std::vector<GltfMaterial> materials;
     materials.reserve(additions.size());
     for (const auto &sphere : additions)
     {
         (void)sphere.shape.bounds();
+        sphere.validate_textures();
         const auto a = sphere.albedo;
         auto &material = materials.emplace_back(GltfMaterial{
             .base_color_factor = {static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), 1},
@@ -366,6 +368,11 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
             .path_surface = sphere.type,
             .ior = sphere.ior,
             .fuzz = sphere.fuzz});
+        if (sphere.marble)
+        {
+            material.marble_texture = marble_textures_.size() + marbles.size();
+            marbles.push_back({PerlinNoise{sphere.marble->seed}, sphere.marble->scale});
+        }
         if (!sphere.albedo_texture.empty())
         {
             const auto path = std::filesystem::absolute(sphere.albedo_texture).lexically_normal();
@@ -385,7 +392,9 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     node_instance_slots_.reserve(node_instance_slots_.size() + additions.size());
     materials_.reserve(materials_.size() + additions.size());
     images_.reserve(images_.size() + textures.size());
+    marble_textures_.reserve(marble_textures_.size() + marbles.size());
     images_.append_range(textures | std::views::as_rvalue);
+    marble_textures_.append_range(marbles);
     sphere_image_slots_.swap(slots);
     for (std::size_t i = 0; i < additions.size(); ++i)
     {
@@ -506,6 +515,12 @@ SurfaceMaterial GltfScene::surface_material(const SphereInstance &sphere, Vec3 o
         color.r *= texel.r;
         color.g *= texel.g;
         color.b *= texel.b;
+    }
+    if (mat.marble_texture)
+    {
+        // Sample the reference pose so the veins travel with a moving sphere.
+        const Vec3 point = sphere.shape.center + outward_normal * sphere.shape.radius;
+        color = scale_rgb(color, marble_textures_[*mat.marble_texture].sample(point));
     }
     return {color, {}, mat.metallic_factor, mat.roughness_factor};
 }
