@@ -42,6 +42,36 @@ void check_sphere()
     }
 }
 
+void check_swept_sphere()
+{
+    const Sphere moving{{-3, 0, 5}, 1, {6, 2, 0}};
+    const std::array instances{SphereInstance{.shape = moving}};
+    const SurfaceBvh bvh{{}, instances};
+    const auto bounds = moving.bounds();
+    if (bounds.low != Vec3{-4, -1, 4} || bounds.high != Vec3{4, 3, 6})
+    {
+        throw std::runtime_error("Swept sphere bounds missed a motion endpoint");
+    }
+    for (const double time : {0.0, 0.5, 1.0})
+    {
+        const Vec3 center{-3 + 6 * time, 2 * time, 5};
+        const Ray ray{{center.x, center.y, 0}, {0, 0, 1}, time};
+        const auto hit = bvh.intersect_surface(ray, {0, 10}).value();
+        const auto normal = std::get<SphereCoordinates>(hit.surface.coordinates).outward_normal;
+        const SurfaceRayOrigin surface{moving, normal, time};
+        if (hit.t != 4 || surface.position() != ray.at(4) || bvh.occluded(ray, {0, 4}))
+        {
+            throw std::runtime_error("BVH depth, shadow interval or surface origin differs at sampled time");
+        }
+        const Ray outgoing = surface.along(normal);
+        const Ray inward = surface.to(center);
+        if (outgoing.time != time || inward.time != time || bvh.occluded(outgoing, {0, 10}) ||
+            !bvh.occluded(inward, {0, 3}))
+        {
+            throw std::runtime_error("Secondary ray missed the moving interface or lost its time");
+        }
+    }
+}
 void check_mixed_tree()
 {
     const Triangle sheet{
@@ -71,6 +101,7 @@ int main()
 try
 {
     check_sphere();
+    check_swept_sphere();
     check_mixed_tree();
     return 0;
 }

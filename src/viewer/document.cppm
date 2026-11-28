@@ -67,6 +67,7 @@ export class ViewerDocument
         {
             opening_->render_settings() = active_->applied_config().render;
             opening_->lens_settings() = active_->applied_config().camera.lens;
+            opening_->shutter_settings() = active_->applied_config().camera.shutter;
             opening_->light_settings() = active_->applied_config().lighting;
             opening_->apply_settings();
         }

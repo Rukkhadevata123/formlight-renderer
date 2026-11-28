@@ -9,11 +9,24 @@ struct Sphere
 {
     Vec3 center{};
     double radius{1};
+    Vec3 displacement{}; // From normalized time 0 to 1.
+
+    [[nodiscard]] Vec3 center_at(double time) const noexcept
+    {
+        return center + displacement * time;
+    }
 
     [[nodiscard]] Bounds3 bounds() const
     {
         const Vec3 extent{radius, radius, radius};
-        const Bounds3 box{center - extent, center + extent};
+        const Vec3 end = center_at(1);
+        if (!std::isfinite(end.x) || !std::isfinite(end.y) || !std::isfinite(end.z))
+        {
+            throw std::invalid_argument("Sphere motion requires a finite end position");
+        }
+        Bounds3 box{center - extent, center + extent};
+        box.include(end - extent);
+        box.include(end + extent);
         const double extent_radius = box.radius();
         if (!(radius > 0 && std::isfinite(radius) && extent_radius > 0 && std::isfinite(extent_radius)))
         {
@@ -46,7 +59,7 @@ struct SphereIntersection
         return std::nullopt;
     }
     const Vec3 direction = ray.direction / speed;
-    const Vec3 to_center = sphere.center - ray.origin;
+    const Vec3 to_center = sphere.center_at(ray.time) - ray.origin;
     const double projection = dot(to_center, direction);
     const Vec3 cross_distance = cross(to_center, direction);
     const double perpendicular = std::hypot(cross_distance.x, cross_distance.y, cross_distance.z);

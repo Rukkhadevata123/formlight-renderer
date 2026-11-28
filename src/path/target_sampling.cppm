@@ -27,28 +27,27 @@ struct DirectionCone
 
 struct TargetSphere
 {
-    Vec3 center;
-    double radius;
-    explicit TargetSphere(const Sphere &sphere) : center(sphere.center), radius(sphere.radius)
+    Sphere shape;
+    explicit TargetSphere(const Sphere &sphere) : shape(sphere)
     {
     }
 
-    explicit TargetSphere(const MeshInstance &instance)
-        : center(world_bounds(std::span{&instance, 1}).center()), radius(0)
+    explicit TargetSphere(const MeshInstance &instance) : shape{world_bounds(std::span{&instance, 1}).center(), 0}
     {
         for (const auto &face : instance.triangles)
         {
             for (const auto &vertex : face.vertices)
             {
-                const Vec3 d = instance.transform.to_world_point(vertex.position) - center;
-                radius = std::max(radius, std::hypot(d.x, d.y, d.z));
+                const Vec3 d = instance.transform.to_world_point(vertex.position) - shape.center;
+                shape.radius = std::max(shape.radius, std::hypot(d.x, d.y, d.z));
             }
         }
     }
 
-    DirectionCone cone(Vec3 origin) const
+    DirectionCone cone(Vec3 origin, double time) const
     {
-        const Vec3 delta = center - origin;
+        const double radius = shape.radius;
+        const Vec3 delta = shape.center_at(time) - origin;
         const double distance = std::hypot(delta.x, delta.y, delta.z);
         if (distance < radius)
         {
@@ -96,7 +95,7 @@ export class DirectionTargets
         return emitters_.empty() && spheres_.empty();
     }
 
-    [[nodiscard]] std::optional<Vec3> sample(Vec3 origin, PathSampler &rng) const
+    [[nodiscard]] std::optional<Vec3> sample(Vec3 origin, PathSampler &rng, double time = 0) const
     {
         if (spheres_.empty())
         {
@@ -106,7 +105,7 @@ export class DirectionTargets
         const auto index = count == 1 ? 0 : static_cast<std::size_t>(rng.uniform() * static_cast<double>(count));
         if (index < spheres_.size())
         {
-            return spheres_[index].cone(origin).sample(rng);
+            return spheres_[index].cone(origin, time).sample(rng);
         }
         return emitters_.sample(origin, rng);
     }
@@ -120,7 +119,7 @@ export class DirectionTargets
         }
         for (const auto &sphere : spheres_)
         {
-            pdf += sphere.cone(unit_ray.origin).density(unit_ray.direction);
+            pdf += sphere.cone(unit_ray.origin, unit_ray.time).density(unit_ray.direction);
         }
         return pdf / static_cast<double>(proposal_count());
     }

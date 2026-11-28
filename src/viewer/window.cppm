@@ -56,6 +56,10 @@ struct GuiShutdown
 
 void show_sample(const SampleDiagnostic &report)
 {
+    if (report.time)
+    {
+        ImGui::Text("Shutter time   %.6g", *report.time);
+    }
     if (const auto &origin = report.lens_origin)
     {
         ImGui::Text("Lens origin   %.6g  %.6g  %.6g", origin->x, origin->y, origin->z);

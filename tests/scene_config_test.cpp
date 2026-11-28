@@ -99,13 +99,21 @@ void check_sphere_scene(const std::filesystem::path &destination)
     SceneConfig config;
     config.render.mode = RenderMode::Path;
     config.render.extent = {1, 1};
-    config.scene.spheres = {
-        {.shape = {{2, 0, 0}, 0.75}, .type = PathSurface::Dielectric, .ior = 1.33, .sampling_target = true},
-        {.shape = {{2, 0, 0}, 0.25}, .type = PathSurface::Metal, .fuzz = 0.35}};
+    config.camera.shutter = {0.25, 0.75};
+    config.scene.spheres = {{.shape = {{2, 0, 0}, 0.75, {0.1, 0, 0}},
+                             .type = PathSurface::Dielectric,
+                             .ior = 1.33,
+                             .sampling_target = true},
+                            {.shape = {{2, 0, 0}, 0.25}, .type = PathSurface::Metal, .fuzz = 0.35}};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     const auto &sphere = loaded.scene.spheres.at(0);
     const auto &metal = loaded.scene.spheres.at(1);
+    if (sphere.shape.displacement != Vec3{0.1, 0, 0} || loaded.camera.shutter.open != 0.25 ||
+        loaded.camera.shutter.close != 0.75)
+    {
+        throw std::runtime_error("Sphere motion or shutter interval changed during TOML round trip");
+    }
     if (metal.type != PathSurface::Metal || metal.fuzz != 0.35)
     {
         throw std::runtime_error("Metal fuzz changed during TOML round trip");

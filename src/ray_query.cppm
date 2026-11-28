@@ -130,8 +130,8 @@ export class TriangleBvh : public SurfaceBvh
 export class SurfaceRayOrigin
 {
   public:
-    SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights);
-    SurfaceRayOrigin(const Sphere &sphere, Vec3 outward_normal);
+    SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights, double time = 0);
+    SurfaceRayOrigin(const Sphere &sphere, Vec3 outward_normal, double time = 0);
     [[nodiscard]] Vec3 position() const noexcept
     {
         return position_;
@@ -139,7 +139,7 @@ export class SurfaceRayOrigin
 
     [[nodiscard]] Ray along(Vec3 direction) const noexcept
     {
-        return {dot(normal_, direction) < 0 ? negative_ : positive_, direction};
+        return {dot(normal_, direction) < 0 ? negative_ : positive_, direction, time_};
     }
     [[nodiscard]] Vec3 geometric_normal() const noexcept
     {
@@ -150,16 +150,18 @@ export class SurfaceRayOrigin
     [[nodiscard]] Ray to(Vec3 endpoint) const noexcept
     {
         const Vec3 origin = along(endpoint - position_).origin;
-        return {origin, endpoint - origin};
+        return {origin, endpoint - origin, time_};
     }
 
   private:
+    double time_;
     Vec3 position_, normal_, positive_{}, negative_{};
     void offset_origins(Vec3 magnitudes);
 };
 
-SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights)
-    : position_(instance.transform.to_world_point(face.position_at(weights))),
+SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle &face, Barycentrics weights,
+                                   double time)
+    : time_(time), position_(instance.transform.to_world_point(face.position_at(weights))),
       normal_(instance.transform.to_world_normal(face.geometric_normal()))
 {
     const auto &[a, b, c] = face.vertices;
@@ -169,10 +171,10 @@ SurfaceRayOrigin::SurfaceRayOrigin(const MeshInstance &instance, const Triangle 
     offset_origins(instance.transform.world_point_magnitudes(local_magnitudes));
 }
 
-SurfaceRayOrigin::SurfaceRayOrigin(const Sphere &sphere, Vec3 outward_normal)
-    : position_(sphere.center + outward_normal * sphere.radius), normal_(outward_normal)
+SurfaceRayOrigin::SurfaceRayOrigin(const Sphere &sphere, Vec3 outward_normal, double time)
+    : time_(time), position_(sphere.center_at(time) + outward_normal * sphere.radius), normal_(outward_normal)
 {
-    offset_origins(abs_components(sphere.center) + abs_components(outward_normal) * sphere.radius);
+    offset_origins(abs_components(sphere.center_at(time)) + abs_components(outward_normal) * sphere.radius);
 }
 
 void SurfaceRayOrigin::offset_origins(Vec3 magnitudes)

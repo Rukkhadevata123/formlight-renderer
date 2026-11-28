@@ -99,6 +99,10 @@ if(BUILD_TESTING)
     target_link_libraries(thin_lens_test PRIVATE formlight_gltf)
     add_test(NAME thin_lens COMMAND thin_lens_test)
 
+    add_executable(motion_blur_test tests/motion_blur_test.cpp)
+    target_link_libraries(motion_blur_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME motion_blur COMMAND motion_blur_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/moving-sphere.toml")
+
     add_executable(triangle_visibility_test tests/triangle_visibility_test.cpp)
     target_link_libraries(triangle_visibility_test PRIVATE formlight_renderer_core)
     add_test(NAME triangle_visibility COMMAND triangle_visibility_test)

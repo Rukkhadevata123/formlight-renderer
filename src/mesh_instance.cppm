@@ -90,7 +90,7 @@ export class AffineTransform
     [[nodiscard]] Ray to_local_ray(const Ray &world) const noexcept
     {
         // Applying the inverse linear map without normalizing preserves world.at(t) for the same t.
-        return {to_local_point(world.origin), to_local_vector(world.direction)};
+        return {to_local_point(world.origin), to_local_vector(world.direction), world.time};
     }
 
     [[nodiscard]] Vec3 to_local_vector(Vec3 v) const noexcept

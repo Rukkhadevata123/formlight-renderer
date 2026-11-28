@@ -19,6 +19,7 @@ export struct PreviewView
     int ssaa{1};
     PathSampling path_sampling{};
     ThinLens lens{};
+    ShutterInterval shutter{};
 };
 
 export void add_preview_ground(GltfScene &scene, const Bounds3 &subject)
@@ -97,6 +98,7 @@ export struct SampleDiagnostic
     LinearColor color{};
     std::optional<Vec3> bounce_radiance{};
     std::optional<Vec3> lens_origin{};
+    std::optional<double> time{};
 
     // Selected surface's contribution to the final pixel, including opacity and the sample's share of the mean.
     [[nodiscard]] Vec3 sample_contribution(std::size_t light, std::size_t index) const
@@ -202,6 +204,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     view.ssaa = request.ssaa;
     view.path_sampling = request.path_sampling;
     view.lens = request.lens;
+    view.shutter = request.shutter;
     return {std::move(*scene), view, bounds, subject};
 }
 

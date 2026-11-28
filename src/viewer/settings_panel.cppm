@@ -194,9 +194,12 @@ export class SettingsPanel
         const bool show_lens =
             session.render_settings().mode == RenderMode::Path || session.lens_settings().defocus_angle_degrees != 0;
         const bool lens_changed = show_lens && edit_group("Lens", session.lens_settings(), edit);
+        const bool show_shutter =
+            session.render_settings().mode == RenderMode::Path || session.shutter_settings().close != 0;
+        const bool shutter_changed = show_shutter && edit_group("Shutter", session.shutter_settings(), edit);
         const bool light_changed = edit_lighting(session.light_settings(), edit);
         ImGui::PopItemFlag();
-        if (render_changed || lens_changed || light_changed)
+        if (render_changed || lens_changed || shutter_changed || light_changed)
         {
             dirty_ = true;
             error_.clear();

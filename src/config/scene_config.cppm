@@ -125,6 +125,7 @@ struct SphereSettings
     void fields(this auto &self, auto &&field)
     {
         field("center", self.shape.center);
+        field("displacement", self.shape.displacement);
         field("radius", self.shape.radius);
         field("type", self.type);
         if (self.type == PathSurface::Dielectric)
@@ -183,18 +184,31 @@ struct LensSettings
     }
 };
 
+struct ShutterInterval
+{
+    double open{}, close{};
+
+    void fields(this auto &self, auto &&field)
+    {
+        field("shutter_open", self.open);
+        field("shutter_close", self.close);
+    }
+};
+
 struct CameraSettings
 {
     bool auto_frame{true};
     double vertical_fov_degrees{45};
     Vec3 position{1.1, 0.8, 1.5}, target{}, up{0, 1, 0};
     LensSettings lens{};
+    ShutterInterval shutter{};
 
     void fields(this auto &self, auto &&field)
     {
         field("auto_frame", self.auto_frame);
         field("vertical_fov_degrees", self.vertical_fov_degrees);
         self.lens.fields(field);
+        self.shutter.fields(field);
         if (!self.auto_frame)
         {
             field("position", self.position);
@@ -365,6 +379,7 @@ struct RenderRequest
     std::vector<SphereSettings> spheres{};
     Vec3 environment{};
     ThinLens lens{};
+    ShutterInterval shutter{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -483,6 +498,15 @@ struct RenderRequest
     {
         throw std::invalid_argument("camera.vertical_fov_degrees must be between 0 and 180");
     }
+    const auto shutter = camera.shutter;
+    if (!(0 <= shutter.open && shutter.open <= shutter.close && shutter.close <= 1))
+    {
+        throw std::invalid_argument("Camera shutter requires 0 <= shutter_open <= shutter_close <= 1");
+    }
+    if (shutter.close > 0 && render.mode != RenderMode::Path)
+    {
+        throw std::invalid_argument("Camera shutter time requires path mode");
+    }
     RenderRequest request{scene.asset,
                           scene.ground,
                           render.extent,
@@ -496,7 +520,8 @@ struct RenderRequest
                           scene.sampling_targets,
                           scene.spheres,
                           scene.environment,
-                          ThinLens{camera.lens.focus_distance, camera.lens.defocus_angle_degrees}};
+                          ThinLens{camera.lens.focus_distance, camera.lens.defocus_angle_degrees},
+                          shutter};
     if (request.lens.radius() > 0 && render.mode != RenderMode::Path)
     {
         throw std::invalid_argument("Camera defocus requires path mode");

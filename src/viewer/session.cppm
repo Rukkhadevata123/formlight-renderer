@@ -89,6 +89,10 @@ export class ViewerSession
     {
         return draft_.camera.lens;
     }
+    [[nodiscard]] ShutterInterval &shutter_settings()
+    {
+        return draft_.camera.shutter;
+    }
     [[nodiscard]] std::optional<LightingSettings> &light_settings()
     {
         return draft_.lighting;
@@ -333,6 +337,7 @@ void ViewerSession::schedule_render(Clock::time_point now)
     view.ssaa = applied_.request.ssaa;
     view.path_sampling = applied_.request.path_sampling;
     view.lens = applied_.request.lens;
+    view.shutter = applied_.request.shutter;
     const bool navigating = frame_ && frame_->request.revision != requested_ && requested_ > settings_revision_;
     if (!navigating && now < refine_after_)
     {

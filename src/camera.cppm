@@ -186,6 +186,6 @@ Ray PinholeCamera::ray_from_lens(const Ray &pinhole, const ThinLens &lens, doubl
     const Vec3 offset = right_ * (r * std::cos(phi)) + up_ * (r * std::sin(phi));
     // Both rays meet where forward depth equals focus_distance, including off-axis pixels.
     const Vec3 direction = pinhole.direction / forward_component(pinhole.direction) - offset / lens.focus_distance();
-    return {pinhole.origin + offset, unit_vector(direction, "Invalid lens ray direction")};
+    return {pinhole.origin + offset, unit_vector(direction, "Invalid lens ray direction"), pinhole.time};
 }
 } // namespace formlight

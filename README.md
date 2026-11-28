@@ -76,6 +76,12 @@ build/release/formlight-renderer.exe --preset many_balls --focus-distance 10 --d
 
 在 viewer 的 **Lens** 面板修改这两项后点击 **Apply** 即可对照。光圈开启时，每个 SSAA 子样本使用 `path_samples` 条透镜射线；像素诊断可重放每条射线的光圈起点、命中和颜色。[光圈边缘回归](tests/thin_lens_test.cpp)
 
+[运动球示例](scenes/path/moving-sphere.toml) 中，`center` 是球在时间 0 的位置，`displacement` 是从时间 0 到 1 的世界坐标位移。`[camera]` 的 `shutter_open` 与 `shutter_close` 选取这段运动的曝光区间，默认都为 0。区间有宽度时，每条路径均匀抽取一次时间，反弹、阴影和方向采样都使用该时刻的几何。两端同设为 0.5 可观察正中间的静止画面。在 viewer 的 **Shutter** 面板可调整区间，CLI 的 `--pixel` 可重放样本。
+
+```powershell
+build/release/formlight-renderer.exe --scene scenes/path/moving-sphere.toml --output build/release/moving-sphere.png
+```
+
 ### 自定义光栅 shader
 
 构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)

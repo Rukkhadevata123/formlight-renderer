@@ -63,8 +63,9 @@ struct Vec3
 
 struct Ray
 {
-    Vec3 origin;
-    Vec3 direction;
+    Vec3 origin{};
+    Vec3 direction{};
+    double time{}; // Normalized scene time shared by all rays of a path.
 
     [[nodiscard]] constexpr Vec3 at(double t) const noexcept
     {

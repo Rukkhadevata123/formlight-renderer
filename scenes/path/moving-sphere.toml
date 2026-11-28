@@ -1,0 +1,23 @@
+[scene]
+environment = [1, 1, 1]
+
+[[scene.spheres]]
+center = [-2, 0, -5]
+displacement = [4, 0, 0]
+radius = 1
+albedo = [0, 0, 0]
+
+[camera]
+auto_frame = false
+position = [0, 0, 0]
+target = [0, 0, -5]
+vertical_fov_degrees = 36
+shutter_open = 0
+shutter_close = 1
+
+[render]
+mode = "path"
+width = 161
+height = 81
+path_samples = 128
+seed = 7

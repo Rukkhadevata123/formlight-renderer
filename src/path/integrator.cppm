@@ -131,7 +131,7 @@ export class PathIntegrator
             const auto n = point->outward_normal;
             const bool back = dot(n, ray.direction) > 0;
             return {{mat.base_color_factor, {}, mat.metallic_factor, mat.roughness_factor},
-                    SurfaceRayOrigin{sphere.shape, n},
+                    SurfaceRayOrigin{sphere.shape, n, ray.time},
                     back ? n * -1 : n,
                     back,
                     mat.path_surface,
@@ -149,7 +149,7 @@ export class PathIntegrator
             surface.emission = {};
         }
         return {surface,
-                SurfaceRayOrigin{instance, face, weights},
+                SurfaceRayOrigin{instance, face, weights, ray.time},
                 scene_.shading_normal(instance, face, weights, gradients, back),
                 back,
                 mat.path_surface,
@@ -232,12 +232,12 @@ export class PathIntegrator
         {
             return std::nullopt;
         }
-        const Vec3 origin = surface.origin.along(geometric).origin;
+        const Ray outward = surface.origin.along(geometric);
         const bool mixed = method == BounceSampling::LightMixture && !targets_->empty();
         Vec3 direction{};
         if (mixed && sampler.uniform() < 0.5)
         {
-            const auto sampled = targets_->sample(origin, sampler);
+            const auto sampled = targets_->sample(outward.origin, sampler, outward.time);
             if (!sampled)
             {
                 return std::nullopt;
@@ -255,7 +255,7 @@ export class PathIntegrator
         {
             return std::nullopt;
         }
-        const Ray ray{origin, direction};
+        const Ray ray{outward.origin, direction, outward.time};
         if (!mixed)
         {
             return Bounce{ray, diffuse};

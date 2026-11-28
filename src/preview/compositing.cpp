@@ -26,7 +26,8 @@ PreviewView sample_grid_view(const PreviewView &view)
             view.area_light_pattern,
             1,
             view.path_sampling,
-            view.lens};
+            view.lens,
+            view.shutter};
 }
 
 LinearColor resolve_samples(std::integral auto count, auto color_at)
@@ -256,7 +257,9 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
     const Ray pinhole = view.camera.ray_for_sample(center);
     const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
     const bool lens_open = view.lens.radius() > 0;
-    const auto count = lens_open ? view.path_sampling.samples : 1u;
+    const bool sample_time = view.shutter.open < view.shutter.close;
+    const bool sample_camera = lens_open || sample_time;
+    const auto count = sample_camera ? view.path_sampling.samples : 1u;
     if (count == 0)
     {
         throw std::invalid_argument("Path sample count must be positive");
@@ -270,12 +273,20 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
         Ray ray = pinhole;
         auto path_key = pixel_index;
         auto sampling = view.path_sampling;
-        if (lens_open)
+        ray.time = view.shutter.open;
+        if (sample_camera)
         {
             PathSampler camera_sampler{sampling.seed, pixel_index, i};
-            const double u = camera_sampler.uniform();
-            ray = view.camera.ray_from_lens(pinhole, view.lens, u, camera_sampler.uniform());
-            // Each lens point gets its own first hit, light samples and one continuation path.
+            if (lens_open)
+            {
+                const double u = camera_sampler.uniform();
+                ray = view.camera.ray_from_lens(ray, view.lens, u, camera_sampler.uniform());
+            }
+            if (sample_time)
+            {
+                ray.time = std::lerp(view.shutter.open, view.shutter.close, camera_sampler.uniform());
+            }
+            // Each camera sample gets its own first hit, light samples and one continuation path.
             path_key = camera_sampler.next_bits();
             sampling.samples = 1;
         }
@@ -283,7 +294,8 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
         if (records)
         {
             record = &records->emplace_back(SampleDiagnostic{.position = {center.x / ssaa, center.y / ssaa},
-                                                             .weight = 1.0 / (ssaa * ssaa) / count});
+                                                             .weight = 1.0 / (ssaa * ssaa) / count,
+                                                             .time = ray.time});
             if (lens_open)
             {
                 record->lens_origin = ray.origin;

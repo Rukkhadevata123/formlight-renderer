@@ -63,6 +63,27 @@ void check_emitter_pdf()
         throw std::runtime_error("An edge-on emitter has zero solid angle");
     }
 }
+void check_moving_target()
+{
+    const std::array spheres{SphereInstance{.shape = {{-3, 0, 5}, 1, {6, 0, 0}}, .sampling_target = true}};
+    const DirectionTargets targets{{}, [](const Triangle &) { return false; }, spheres};
+    PathSampler rng{7, 0, 0};
+    for (const double time : {0.0, 0.5, 1.0})
+    {
+        const double x = -3 + 6 * time;
+        const double sine_squared = 1 / (x * x + 25);
+        const double pdf = (1 + std::sqrt(1 - sine_squared)) / (2 * std::numbers::pi * sine_squared);
+        for (int i = 0; i < 128; ++i)
+        {
+            const Ray ray{{}, targets.sample({}, rng, time).value(), time};
+            if (!intersect_sphere(ray, spheres.front().shape, {0, 10}) || std::abs(targets.density(ray) - pdf) > 1e-10)
+            {
+                throw std::runtime_error("Proposal direction or PDF differs from the sphere at the sampled time");
+            }
+        }
+    }
+}
+
 void check_extra_target()
 {
     const std::array mesh{
@@ -110,6 +131,7 @@ try
 {
     check_emitter_pdf();
     check_extra_target();
+    check_moving_target();
     return 0;
 }
 catch (const std::exception &error)
