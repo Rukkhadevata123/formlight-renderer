@@ -22,11 +22,37 @@ $$
 | `hybrid` | 复用同一套光栅主可见性 | 着色期经 BVH 发射遮挡射线；矩形面光源对多个灯面采样点求平均 |
 | `path` | 相机射线经 `SurfaceBvh` 求最近表面（若有介质则先竞争自由程） | 叠加自发光与显式矩形灯直接项，再迭代追踪多跳反弹；逃逸时读环境辐亮度 |
 
-光栅与混合模式的光滑薄玻璃沿视线取得后方颜色。若材质透射系数为 $t$，金属度为 $m$，则透射贡献为 $t(1-m)(1-F_v)\,\mathrm{baseColor}\,L_{\mathrm{behind}}$，颜色在线性空间逐通道相乘。$F_v$ 使用着色法线与观察方向的夹角计算 Schlick 反射率，默认 IOR 为 1.5，正入射时反射率为 0.04。直接光的漫反射项乘以 $1-t$，镜面高光沿用原 BRDF。[挡风玻璃对照](scenes.md#光滑薄玻璃)
+### glTF 玻璃的透射与折射
 
-薄透射的屏幕空间近似在粗糙度 $r>0$ 时对后方线性颜色取局部均值。视口宽高为 $w,h$ 时，滤波半径为 $r^2\min(16,\min(w,h)/48)$ 个输出像素，SSAA 按子样本网格换算。每个像素的玻璃和透明片元从远到近处理，同一轮只读取上一轮完成的颜色与深度。滤波丢弃比当前玻璃更靠近相机的邻点，保留中心样本，并按有效面积归一化。视口外、完全被遮挡的背景，以及交叠轮廓处尚未合成的邻像素层均无法参与采样。[磨砂玻璃对照](scenes.md#磨砂玻璃与彩色投影)
+在 `raster` 与 `hybrid` 预览中，glTF 的 `KHR_materials_transmission`、`KHR_materials_ior` 与 `KHR_materials_volume` 按以下四个环节计算：
 
-对于厚玻璃，预览从入射面按 Snell 定律求世界空间单位折射方向 $s$。设节点变换的线性部分为 $M$，则沿此方向走过网格厚度 $h$ 所需的世界距离为 $d=h/\|M^{-1}s\|$。将估计的出射点 $x+ds$ 投影回背景，按粗糙度过滤，并逐通道乘以 $\mathrm{attenuationColor}^{d/\mathrm{attenuationDistance}}$。默认衰减距离为无穷大，此时颜色只受界面染色影响。采样点投到视口外或邻域被前景完全挡住时，回退到入射像素已有的背景。厚度图近似了在玻璃中的路程，当前预览只计算入射界面的一次偏折。直射阴影沿原灯光连线累计吸收。[棋兵对照](scenes.md#棋兵的厚玻璃) · [Khronos 体积规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_volume)
+- **表面覆盖与薄片透光**：`alphaMode` 控制几何覆盖与透明混合，而完全覆盖像素的表面（如车窗）同样可以透光。透射份额 $t$ 取 `transmissionFactor` 乘透射贴图的线性 R 通道（无贴图时只取因子）。对光滑薄片，着色器沿同一相机子样本读取背景 $L_{\mathrm{behind}}$，在保留表面镜面高光、将直接漫反射乘以 $1 - t$ 的同时，按线性空间逐通道叠加透射贡献：
+  $$
+  L_{\text{trans}} = t(1 - m)(1 - F_v)\, \mathrm{baseColor}\, L_{\mathrm{behind}}
+  $$
+  其中 $m$ 为金属度、$F_v$ 为视角对应的界面反射率。[十二球对照](scenes.md#磨砂玻璃与彩色投影) · [Khronos 透射规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_transmission)
+- **磨砂模糊与彩色阴影**：
+  - 当粗糙度 $r > 0$ 时，预览对已完成的背景层做局部空间滤波，输出像素半径为：
+    $$
+    R_{\text{blur}} = r^2 \min\!\left(16,\, \frac{\min(w, h)}{48}\right)
+    $$
+    （SSAA 按子样本网格换算）；玻璃与透明片元从远到近分轮合成，每轮读取上一轮完成的颜色与深度，自动排除被前景遮住的邻域像素。
+  - 直射光穿过玻璃时同样会被染色：方向光阴影图在每个纹素内累乘各层玻璃的 RGB 透过率，3×3 PCF 对 9 个结果取均值；混合模式沿灯光射线逐层累乘，遇不透明物体即归零。例如两层正入射薄片各自透过 $(0.48, 0.96, 0.24)$ 时，接收面入射光乘以 $(0.2304, 0.9216, 0.0576)$。[方向光阴影图](../src/raster/shadow_map.cppm) · [阴影射线](../src/lighting/direct_lighting.cppm)
+- **折射率（IOR）与体积厚度**：正入射反射率由折射率 $n$ 决定：
+  $$
+  F_0 = \left(\frac{n - 1}{n + 1}\right)^2
+  $$
+  其余入射角按 Schlick 近似求 $F_v$（CompareIor 左球 $n = 1.5$ 得 4%，右球 $n = 2.42$ 约 17.2%）。当材质带有网格厚度 $h$（`thicknessFactor` 乘厚度贴图线性 G 通道）时，预览按 Snell 定律求入射折射后的世界单位方向 $s$，沿该方向穿过节点线性变换 $M$ 后的世界路程为：
+  $$
+  d = \frac{h}{\lVert M^{-1} s \rVert}
+  $$
+  再将估计的出射点投回背景层采样，从而在非均匀缩放下也能得到正确的折射位移。[双球实拍](scenes.md#两个-gltf-标志球) · [Khronos IOR 规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_ior)
+- **体积传播吸收**：每个线性颜色通道的透射率再乘以 Beer-Lambert 衰减因子：
+  $$
+  T_{\text{vol}} = c^{d / D}
+  $$
+  其中 $c$ 为 `attenuationColor`、$D$ 为世界单位 `attenuationDistance`（省略时默认无穷大，衰减因子为 `1`，例如黑棋兵的青绿色来自界面底色而非吸收）。在回归夹具中（$n = 2$、$c = (0.25, 0.5, 1)$、$D = 0.5$，正入射世界路程约 `0.502`），计入界面反射后白色背景透出线性 RGB `(0.2210, 0.4432, 0.8889)`。[棋兵实拍](scenes.md#棋兵的厚玻璃) · [解析值回归](../tests/blend_layers_test.cpp) · [Khronos 体积规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_volume)
+- **近似边界**：光栅/混合预览仅做单次入射折射估算（采样点落到视口外或邻域被前景挡住时退回当前像素背景；交叠透明层只能读取上一轮已完成的背景；阴影沿原灯光直线累乘透过率）。若要观察真实的双界面折射、内部全反射与焦散，请使用 `path` 模式的实体玻璃场景。[Cornell 玻璃场景](../scenes/path/cornell-glass.toml)
 
 ### 直接光 BRDF 与路径漫反射续射的区分
 

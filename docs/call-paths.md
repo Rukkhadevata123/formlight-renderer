@@ -71,8 +71,13 @@ PreviewRenderer::render
 ```
 
 - **裁剪、覆盖与精确导数**：`clip_and_project` 在相机空间裁剪近远平面，并让每个裁剪新顶点保留原三角形的重心权重；`ScreenTriangle` 按像素中心与 top-left 规则测试覆盖；`RasterTriangle::interpolate` 用逆视深恢复透视校正权重与解析屏幕导数，因此多套 UV、Mipmap 与法线贴图都能直接从原始三角形重建。[裁剪](../src/raster/clipping.cpp) · [覆盖](../src/raster/coverage.cppm) · [插值与导数](../src/raster/raster.cppm)
-- **透明合成与拾取**。先着色最近的写深度表面，再从远到近合成玻璃与 `BLEND` 片元。光滑薄片直接读取同一子样本后方的颜色。粗糙或有厚度的玻璃经 `composite_spatial_layers` 分轮着色，每轮读完背景再发布颜色和深度。`volume_ray` 根据 IOR 和节点变换计算折射位移，`TransmissionBackdrop::filtered` 在投影位置读取先前的背景。拾取时重放相同采样网格，普通场景沿用单像素的 `diagnose_sample`。[帧合成与诊断](../src/preview/compositing.cpp) · [着色与光照](../src/preview/shading.cpp)
-- **矩形灯合流点**：在色溢房间里，`hybrid` 与 `path` 都会在 `AreaLighting::evaluate` 会合——经 `sample_area_light → integrate_rectangle_samples → evaluate_finite_light_sample` 逐个求值 Halton 灯面点。`SurfaceRayOrigin::to` 沿几何法线偏移起点并把灯面点放在射线参数 `t = 1` 处；整图渲染调用 `occluded`（遇阻即返回），像素诊断则改调 `intersect_surface` 以报告具体遮挡图元。[矩形灯与遮挡查询](../src/lighting/direct_lighting.cppm)
+- **透明合成与拾取**：先着色最近的不透光写深度表面，再从远到近合成玻璃与 `BLEND` 片元：
+  - 光滑薄玻璃直接读取同一子样本后方的线性颜色；
+  - 粗糙或有厚度的玻璃走 `composite_spatial_layers` 分轮着色，每轮读完上一轮背景后再发布新的颜色与深度，其中 `volume_ray` 按 IOR 与节点变换计算折射位移，`TransmissionBackdrop::filtered` 在投影位置做空间滤波采样；
+  - 拾取时重放完全相同的采样网格，普通场景沿用单像素的 `diagnose_sample`。[帧合成与诊断](../src/preview/compositing.cpp) · [着色与光照](../src/preview/shading.cpp)
+- **矩形灯与玻璃彩色阴影**：
+  - 在色溢房间中，`hybrid` 与 `path` 在 `AreaLighting::evaluate` 会合，经 `sample_area_light → integrate_rectangle_samples → evaluate_finite_light_sample` 逐个求值 Halton 灯面点；`SurfaceRayOrigin::to` 偏移起点并将灯面点落在参数 `t = 1` 处（整图调 `occluded`，诊断调 `intersect_surface` 报告遮挡图元）。
+  - 场景含透射材质时，混合模式的 `trace_shadow` 通过 `ordered_hits` 沿线段有序遍历交点，逐层调用 `GltfScene::shadow_transmission` 累乘 RGB 透过率；光栅模式的方向光阴影图也复用同一回调。[矩形灯与遮挡查询](../src/lighting/direct_lighting.cppm) · [阴影图](../src/raster/shadow_map.cppm)
 
 ### 独立入口：可编程自定义 Shader
 

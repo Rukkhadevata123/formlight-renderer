@@ -28,13 +28,15 @@ $cli = ".\build\release\formlight-renderer.exe"
 
 ## 2. 按观察目标选场景
 
-连续查看不同 GLB 时，在仓库根目录运行：
+如果要连续预览多个外部 glTF/GLB 模型，可直接用[通用模型预览](../scenes/lighting/model-preview.toml)启动交互窗口：
 
 ```powershell
 .\build\release\formlight-viewer.exe --scene scenes/lighting/model-preview.toml
 ```
 
-[通用模型预览](../scenes/lighting/model-preview.toml) 从镂空板开始，地面上的亮孔可以直接检查透明度阈值和投影。用 **Open Model...** 换入模型后，相机会自动取景。预设使用 800×600、2×2 SSAA 和 Reinhard 显示。两盏方向光从侧前方和背面照亮模型，主灯投射 3×3 PCF 阴影，环境光让背光处的底色与 AO 仍可辨认。点灯和矩形灯使用世界坐标，模型尺度相差很大时可单独调整灯位。要看矩形灯的软阴影，将模式切到 `hybrid`，打开矩形灯的 `shadows` 后点击 **Apply**；可把 `light_samples` 从 4 调到 16 观察半影。
+- 默认以镂空板起步（地面亮孔方便核对 alpha 阈值与投影），使用 `800×600`、`2×2 SSAA` 与 Reinhard 映射；通过 **Open Model...** 切换模型时会自动取景。
+- 灯组包含两盏方向光（侧前主灯开 3×3 PCF 阴影 + 背面补光）与适度环境光；点光源和矩形灯使用世界坐标，遇到尺度差异较大的模型可单独微调灯位。
+- 需要观察矩形灯软阴影时，切到 `hybrid` 模式、勾选矩形灯的 `shadows` 后点 **Apply**，并将 `light_samples` 从 `4` 提到 `16`。
 
 | 观察目标 | 场景配置 | 建议对照方式 |
 | --- | --- | --- |
@@ -110,28 +112,76 @@ $cli = ".\build\release\formlight-renderer.exe"
   - 光栅片元用精确解析屏幕导数选择 Mip 层级；当前路径命中固定采样第 0 层。
   - `OPAQUE` 和通过阈值的 `MASK` 参与主可见性。光栅与混合模式在最近的不透光表面之前逐像素排序，合成透射和 `BLEND` 层。`doubleSided` 同时作用于相机与投影面。体积边界按正面入射计算一次烘焙厚度。
 
+## 6. glTF 模型展示与透射验收
+
+### 六模型同机位验收
+
+首页六模型拼图均基于[通用模型预览](../scenes/lighting/model-preview.toml)（自动取景、地面、`800×600`、`2×2 SSAA`、种子 `7`、Reinhard；拼图仅对最终帧裁切、缩放并加标题）。将同一配置分别在接入透射前的 `8b1aaf9` 与完成厚玻璃后的 `97c592b` 上渲染，统计整幅 RGB8 发生变化的像素数：
+
+| 模型 | 变化像素 / 480,000 | 原画幅观察点 |
+| --- | ---: | --- |
+| **Car Concept** | `18,848` | 挡风玻璃 `(395, 275)` 由 RGB8 `(190, 189, 188)` 变为透出红色座椅的 `(114, 35, 29)`；雨刷 `(314, 306)` 两次均为 `(23, 22, 22)` |
+| **A Beautiful Game** | `2,707` | 黑兵球顶 `(452, 370)` 由 `(127, 150, 143)` 变为 `(35, 40, 28)`；仍拾取到球顶，4 个子样本向下折射偏移 `2.30～5.16` 像素读取背景 |
+| **其余四个模型**（Plant / Rusty Car / CCity / Damaged Helmet） | 每张 `0` | 逐像素完全复现（植物叶背漫透射与萤火虫动画留待下一阶段） |
+
+![同机位裁切，上排为概念车车窗，下排为棋兵，左列为接入透射前，右列为本次验收](images/gltf-glass-comparison.png)
+
+重放方法：用 Viewer 打开 `model-preview.toml`，经 **Open Model** 加载对应 GLB 并用 **Save Scene As** 保存为 `build/car.toml` 或 `build/chess.toml`，随后用 CLI 检查（CLI 输出线性 RGB，上表为 PNG 的 RGB8）。[模型来源与许可](../assets/README.md#gallery-image-credits)
+
+```powershell
+$cli = ".\build\release\formlight-renderer.exe"
+& $cli --scene build/car.toml --pixel 395 275
+& $cli --scene build/chess.toml --pixel 452 370
+& $cli --scene build/chess.toml --output build/chess.png
+```
+
 ### 光滑薄玻璃
 
-`raster` 和 `hybrid` 处理 `KHR_materials_transmission`。粗糙度为 0 时，玻璃沿同一相机子样本读取后方的线性颜色，计入底色、非金属份额和 Fresnel 透射，再加上表面照明与自发光。`path` 的玻璃使用路径材质设置，要求此 glTF 扩展的模型须使用光栅或混合模式。
+`raster` 与 `hybrid` 支持 `KHR_materials_transmission`（要求该扩展的模型需在这两种模式下预览；`path` 的玻璃仍由路径材质表单独指定）。当粗糙度为 `0` 时，玻璃沿同一相机子样本读取后方线性颜色，按底色、非金属份额与 Fresnel 透射叠加表面直接照明和自发光。
 
 ![同机位车窗对照，左图为基础材质，右图为光滑薄透射](images/car-concept-thin-transmission.png)
 
-用上面的通用模型预览打开 Car Concept，保持自动取景。拾取 (395, 275) 会选中挡风玻璃，**glTF transmission** 为 1，**Transmitted background** 显示座椅传入的线性 RGB。拾取 (314, 306) 的四个子样本均命中雨刷。图为 Formlight 两次实际渲染的相同裁切；模型和纹理由 Eric Chadwick 制作，© 2024 Darmstadt Graphics Group GmbH。[模型与标识署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+- 在通用预览自动取景下拾取 Car Concept 的 `(395, 275)`，会命中挡风玻璃，显示 **glTF transmission** 为 `1` 且 **Transmitted background** 给出座椅传入的线性 RGB；拾取 `(314, 306)` 的 4 个子样本全部命中雨刷。
+- 模型与纹理由 Eric Chadwick 制作，© 2024 Darmstadt Graphics Group GmbH。[模型与标识署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
 
 ### 磨砂玻璃与彩色投影
 
-TransmissionTest 的三行球分别展示光滑透射、粗糙透射和金属度变化。观察各行同一列的背景棋盘格，再观察蓝球镂空处与蓝色玻璃投在幕布上的阴影。下图使用模型内的 `render_camera` 机位和通用预览的灯组。模型由 Adobe 提供，采用 CC0 许可。[原始模型与测试说明](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TransmissionTest)
+**TransmissionTest** 的三行依次展示光滑透射、粗糙透射与带金属度的透射材质；四列从左到右依次为均匀透射、均匀透射 + 覆盖遮罩、透射贴图、透射贴图 + 覆盖遮罩。最右列开孔直接露出背景、蓝色材质继续透光，幕布上的彩色投影也能清晰区分两种区域（模型由 Adobe 提供，CC0 许可，[模型说明](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TransmissionTest)）。
 
 ![TransmissionTest 三行材质球透出的棋盘格与彩色投影](images/transmission-test.png)
 
-用[条纹夹具](../tests/fixtures/frosted-stripes.gltf)可单独检查模糊和遮挡。每片玻璃对直射光的染色由底色、金属度、透射率和入射角决定，孔洞让光通过，多片玻璃逐层衰减。方向光 PCF 对各纹素的 RGB 透过率求均值，点灯和矩形灯只查询到灯面样本为止。`blend_layers` 用已知底色核对重叠两片玻璃的投影，以及磨砂条纹的整图与拾取结果。
+- **重拍参数**：沿用通用预览灯组并设 `scene.ground = false`，将 `[camera]` 替换为以下参数以复现资产自带的 `render_camera`：
+  ```toml
+  [camera]
+  auto_frame = false
+  position = [-0.07675539702177048, 0.3394200801849365, 1.802846074104309]
+  target = [-0.11526571024334285, 0.19903196081899857, 0.813498748018537]
+  up = [-0.0054605596134611745, 0.990096548758427, -0.14028188175178194]
+  vertical_fov_degrees = 34.515876027228366
+  ```
+- **独立夹具验证**：[条纹夹具](../tests/fixtures/frosted-stripes.gltf) 单独验证磨砂滤波与彩色投影；`blend_layers` 回归核对双层重叠玻璃的投影衰减以及磨砂条纹的整图与拾取一致性。
+
+### 两个 glTF 标志球
+
+**CompareIor** 将两个共用透射贴图的球置于棋盘格前方：左球为默认 IOR `1.5` 与零厚度薄壳，棋盘格保持原尺度；右球指定厚度 `1` 与 IOR `2.42`，折射位移使棋盘格在球内明显放大。[模型与标志署名](../assets/README.md#gallery-image-credits)
+
+![CompareIor 的薄壳球与厚玻璃球，绿色标志后的棋盘格尺度不同](images/compare-ior.png)
+
+- **重拍与拾取**：沿用通用预览灯组与画幅，设 `scene.ground = false`、`camera.auto_frame = false`、`position = [0, 0, 3]`、`target = [0, 0, 0]`、`up = [0, 1, 0]`、`vertical_fov_degrees = 32`。拾取右球 `(580, 187)` 可读到透射率约 `0.996`、IOR `2.42`、网格厚度 `1`。
 
 ### 棋兵的厚玻璃
 
-看球顶左上方的棋盘格边线。左图将厚度置零，边线笔直穿过球顶。右图恢复黑棋兵材质原有的厚度 0.22，边线向内弯折，金色底座的位置也随之偏移。青绿色来自玻璃底色。模型没有指定衰减距离，因此这组图里的颜色与体积吸收无关。
+固定 IOR `1.5` 单独观察厚度影响：左图将厚度置零，球顶左上方的棋盘格边线笔直穿过；右图恢复黑棋兵材质原始厚度 `0.22`，边线向内弯折、金色底座随之偏移。青绿色来自界面底色（模型未设置衰减距离，不产生体积吸收）。
 
 ![同一黑棋兵的两次光栅渲染，左为零厚度，右为模型原始厚度](images/chess-pawn-volume.png)
 
-通用预览打开 A Beautiful Game 后，拾取 (452, 370) 可读到 IOR 1.5 和网格厚度 0.22。要重拍上图，在同一预设中关闭主灯阴影，将分辨率设为 560×400，关闭自动取景，设置 `position = [0.0346763, 0.1693276, 0.0095718]`、`target = [-0.0313237, 0.0703276, 0.0935718]`、`vertical_fov_degrees = 23`。原始模型由 MaterialX Project 制作（© 2020 ASWF），Ed Mackey 于 2022 年转换为 glTF。对照图由 Formlight 渲染并拼接。[模型与署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ABeautifulGame#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-
-要单独验证吸收，可运行 `ctest --preset release-local -R blend_layers --output-on-failure`。玻璃板夹具使用 IOR 2、线性 G 通道厚度贴图、非均匀缩放和有限衰减距离，分别核对正入射 RGB、白色背景边缘的横向位移以及整图与拾取的一致性。[夹具](../tests/fixtures/volume-slab.gltf) · [折射与吸收计算](rendering.md#1-表面的渲染方程与三种模式)
+- **拾取与重拍**：通用预览打开 A Beautiful Game 后拾取 `(452, 370)` 可读到 IOR `1.5`、网格厚度 `0.22`。重拍近景时关闭主灯阴影，将画幅设为 `560×400`，关闭自动取景，并配置：
+  ```toml
+  [camera]
+  auto_frame = false
+  position = [0.03467629620603227, 0.16932758928835392, 0.009571823175870894]
+  target = [-0.03132370379396773, 0.07032758928835392, 0.0935718231758709]
+  vertical_fov_degrees = 23
+  ```
+- **体积吸收回归**：运行 `ctest --preset release-local -R blend_layers --output-on-failure` 可单独验证[玻璃板夹具](../tests/fixtures/volume-slab.gltf)（IOR `2`、线性 G 通道厚度贴图、非均匀缩放与有限衰减距离）的正入射 RGB、背景横向位移及整图/拾取一致性。[折射与吸收公式](rendering.md#gltf-玻璃的透射与折射)
+- 原始模型由 MaterialX Project 制作（© 2020 ASWF），Ed Mackey 于 2022 年转换为 glTF。[模型与署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ABeautifulGame#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)

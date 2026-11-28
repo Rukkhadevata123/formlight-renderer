@@ -1,5 +1,20 @@
 # Assets
 
+## Gallery image credits
+
+Formlight rendered the images in the [model gallery](../README.md#模型预览). The six-model contact sheet and the before/after details use cropped and resized output. The pawn comparison also includes a render with the glass thickness set to zero.
+
+| Model | Credit and terms |
+| --- | --- |
+| Car Concept | Model and textures by Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The Khronos and 3D Commerce marks have separate terms. [Source and mark notices](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept#legal) |
+| A Beautiful Game | Original model by the MaterialX Project, © 2020 ASWF. glTF conversion © 2022 Ed Mackey. Both under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). [Source](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ABeautifulGame#legal) |
+| Diffuse Transmission Plant | Original asset by Rico Cilliers (2021), [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Materials and animation by Eric Chadwick, © 2024 Darmstadt Graphics Group GmbH, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). [Source](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DiffuseTransmissionPlant#legal) |
+| Old Rusty Car | Renafox, [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). [Source](https://sketchfab.com/3d-models/old-rusty-car-95baa20ebc5d4d2e869f0b549be838fe) |
+| CCity Building Set 1 | Neberkenezer, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). [Source](https://sketchfab.com/3d-models/ccity-building-set-1-a2d5c7bfcc2148fb8994864c43dfcc97) |
+| Damaged Helmet | glTF rebuild and conversion © 2018 ctxwing, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). Earlier model © 2016 theblueturtle\_, [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/). [Source](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/DamagedHelmet#legal) |
+| TransmissionTest | Adobe (2020), [CC0](https://creativecommons.org/publicdomain/zero/1.0/). [Source](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TransmissionTest#legal) |
+| CompareIor | Eric Chadwick and DGG (2024), [CC0](https://creativecommons.org/publicdomain/zero/1.0/). The glTF mark has separate terms. [Source and mark notice](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CompareIor#legal) |
+
 ## BoxTextured.glb
 
 Box Textured, © 2017 Cesium, distributed under [CC BY 4.0](licenses/CC-BY-4.0.txt). This is an unmodified copy from the [Khronos glTF Sample Assets collection](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/BoxTextured).
