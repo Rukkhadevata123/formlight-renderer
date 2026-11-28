@@ -70,5 +70,6 @@ void add_final_scene_geometry(GltfScene &scene, std::uint64_t scene_seed)
 {
     add_final_scene_ground(scene, scene_seed);
     add_sphere_cluster(scene, scene_seed);
+    scene.add_emissive_quad({123, 554, 147}, {300, 0, 0}, {0, 0, 265}, {7, 7, 7, 1});
 }
 } // namespace formlight

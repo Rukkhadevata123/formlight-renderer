@@ -496,6 +496,20 @@ void GltfScene::mark_sampling_target(std::uint32_t node_index)
 
 void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color, std::vector<AffineTransform> transforms)
 {
+    add_mesh(std::move(mesh), {.base_color_factor = color, .metallic_factor = 0, .double_sided = true},
+             std::move(transforms));
+}
+
+void GltfScene::add_emissive_quad(Vec3 origin, Vec3 u, Vec3 v, LinearColor emission)
+{
+    const TriangleVertex a{origin}, b{origin + u}, c{origin + u + v}, d{origin + v};
+    add_mesh({Triangle{.vertices = {a, b, c}}, Triangle{.vertices = {a, c, d}}},
+             {.base_color_factor = {0, 0, 0, 1}, .metallic_factor = 0, .emission_multiplier = emission},
+             {AffineTransform{}});
+}
+
+void GltfScene::add_mesh(std::vector<Triangle> mesh, GltfMaterial material, std::vector<AffineTransform> transforms)
+{
     if (materials_.empty() || mesh.empty() || transforms.empty())
     {
         throw std::invalid_argument(
@@ -516,7 +530,7 @@ void GltfScene::add_solid_mesh(std::vector<Triangle> mesh, LinearColor color, st
     meshes_.reserve(meshes_.size() + 1);
     node_instance_slots_.reserve(node_instance_slots_.size() + transforms.size());
     instances_.reserve(instances_.size() + transforms.size());
-    materials_.emplace_back(GltfMaterial{.base_color_factor = color, .metallic_factor = 0, .double_sided = true});
+    materials_.emplace_back(material);
     meshes_.push_back(std::move(mesh));
     for (const auto &transform : transforms)
     {

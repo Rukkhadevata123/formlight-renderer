@@ -111,6 +111,7 @@ export class GltfScene
     // Procedural meshes such as the preview floor are opaque and visible from either side.
     void add_solid_mesh(std::vector<Triangle> mesh, LinearColor color,
                         std::vector<AffineTransform> transforms = {AffineTransform{}});
+    void add_emissive_quad(Vec3 origin, Vec3 u, Vec3 v, LinearColor emission);
     void set_path_material(std::size_t gltf_index, PathSurface type, double ior, double fuzz = 0);
     void mark_sampling_target(std::uint32_t node_index);
     [[nodiscard]] const MeshInstance &instance(InstanceId id) const &
@@ -130,6 +131,7 @@ export class GltfScene
 
   private:
     GltfScene() = default;
+    void add_mesh(std::vector<Triangle> mesh, GltfMaterial material, std::vector<AffineTransform> transforms);
     void reserve_sphere_instances(std::size_t count);
     void append_sphere_instance(const Sphere &shape, std::size_t material_index, bool sampling_target);
     std::vector<std::filesystem::path> source_files_;

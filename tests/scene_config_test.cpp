@@ -156,6 +156,27 @@ void check_sphere_scene(const std::filesystem::path &destination)
         throw std::runtime_error("Automatic framing missed the sphere-only scene");
     }
 }
+void check_final_round_trip(const std::filesystem::path &destination)
+{
+    using namespace formlight;
+    auto config = preset_config(ScenePreset::FinalScene);
+    save_scene_config(destination, config);
+    auto loaded = load_scene_config(destination);
+    if (loaded.scene.spheres.size() != 6 || loaded.scene.media.size() != 2 ||
+        !std::filesystem::equivalent(loaded.scene.spheres[4].albedo_texture, config.scene.spheres[4].albedo_texture))
+    {
+        throw std::runtime_error("Saving the final preset duplicated subjects or lost the Earth image");
+    }
+    loaded.scene.spheres.clear();
+    loaded.scene.media.clear();
+    save_scene_config(destination, loaded);
+    const auto cleared = load_scene_config(destination);
+    if (!cleared.scene.spheres.empty() || !cleared.scene.media.empty())
+    {
+        throw std::runtime_error("Empty scene overrides restored preset spheres or fog");
+    }
+}
+
 void check_preset_round_trip(const std::filesystem::path &destination)
 {
     using namespace formlight;
@@ -197,6 +218,7 @@ auto main(int argc, char **argv) -> int
         round_trip(argv[1], saved, formlight::LightKind::Point);
         check_sphere_scene(saved);
         check_preset_round_trip(saved);
+        check_final_round_trip(saved);
     }
     catch (const std::exception &error)
     {

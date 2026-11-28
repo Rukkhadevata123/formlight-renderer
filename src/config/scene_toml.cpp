@@ -148,6 +148,7 @@ void read_group(const toml::table &table, ConfigGroup auto &group, std::string_v
                 {
                     throw std::invalid_argument(name + ": expected an array of tables");
                 }
+                value.clear();
                 for (const auto &entry : *entries)
                 {
                     const auto prefix = std::format("{}[{}].", name, value.size());
@@ -208,7 +209,15 @@ toml::table write_group(const ConfigGroup auto &group, const Path &directory)
                 {
                     entries.push_back(write_group(entry, directory));
                 }
-                if (!entries.empty() || std::same_as<T, std::vector<LightSettings>>)
+                bool write_empty = std::same_as<T, std::vector<LightSettings>>;
+                if constexpr (std::same_as<std::remove_cvref_t<decltype(group)>, SceneSettings>)
+                {
+                    // An explicit empty list overrides the final preset's built-in subjects.
+                    write_empty =
+                        group.preset == ScenePreset::FinalScene && (std::same_as<T, std::vector<SphereSettings>> ||
+                                                                    std::same_as<T, std::vector<HomogeneousMedium>>);
+                }
+                if (!entries.empty() || write_empty)
                 {
                     table.insert(key, std::move(entries));
                 }

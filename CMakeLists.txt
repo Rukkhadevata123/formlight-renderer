@@ -42,6 +42,8 @@ target_sources(formlight_renderer_core PUBLIC
         src/ray/sphere.cppm
 )
 target_compile_features(formlight_renderer_core PUBLIC cxx_std_23)
+set_source_files_properties(src/config/presets.cpp PROPERTIES
+    COMPILE_DEFINITIONS "FORMLIGHT_EARTH_TEXTURE=u8\"${CMAKE_CURRENT_SOURCE_DIR}/assets/earthmap.jpg\"")
 
 add_library(formlight_io STATIC src/io/image_codec.cpp src/config/scene_toml.cpp)
 target_sources(formlight_io PUBLIC FILE_SET CXX_MODULES FILES src/io/image_codec.cppm src/config/scene_toml.cppm)
@@ -249,6 +251,9 @@ if(BUILD_TESTING)
     add_executable(final_cluster_test tests/final_cluster_test.cpp)
     target_link_libraries(final_cluster_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME final_cluster COMMAND final_cluster_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/final-scene.toml")
+    add_executable(final_scene_test tests/final_scene_test.cpp)
+    target_link_libraries(final_scene_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME final_scene_composition COMMAND final_scene_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/final-scene.toml")
     add_test(NAME cli_final_scene COMMAND formlight-renderer --preset final_scene --scene-seed 43 --pixel 160 120)
 
     add_executable(cornell_caustic_test tests/cornell_caustic_test.cpp)

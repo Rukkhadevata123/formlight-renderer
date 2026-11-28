@@ -8,8 +8,13 @@ using namespace formlight;
 
 void check_ground(const ScenePreview &preview)
 {
-    const auto instances = preview.scene.instances();
-    if (instances.size() != 400 || preview.scene.mesh_count() != 1 || instances.front().triangles.size() != 12)
+    const auto all = preview.scene.instances();
+    if (all.size() < 400)
+    {
+        throw std::runtime_error("Ground grid is incomplete");
+    }
+    const auto instances = all.first(400);
+    if (instances.front().triangles.size() != 12)
     {
         throw std::runtime_error("Expected 400 instances sharing one closed cube mesh");
     }
