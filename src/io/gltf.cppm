@@ -109,6 +109,9 @@ export class GltfScene
     // Depth and shadow passes accept opaque and covered mask samples. The filter borrows the scene.
     [[nodiscard]] SurfaceFilter solid_filter() const &;
     SurfaceFilter solid_filter() const && = delete;
+    [[nodiscard]] ShadowTransmission shadow_transmission() const &;
+    ShadowTransmission shadow_transmission() const && = delete;
+    [[nodiscard]] bool has_rough_transmission() const;
     [[nodiscard]] FaceCulling face_culling(CullFace single_sided) const &;
     FaceCulling face_culling(CullFace) const && = delete;
     // Procedural meshes such as the preview floor are opaque and visible from either side.

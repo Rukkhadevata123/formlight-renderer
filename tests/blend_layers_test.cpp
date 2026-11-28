@@ -36,12 +36,49 @@ void check_thin_glass(const std::filesystem::path &asset)
         }
     }
 }
+void check_frosted_glass(const std::filesystem::path &asset)
+{
+    const auto scene = GltfScene::load(asset, GltfContent::Materials);
+    if (!scene)
+    {
+        throw std::runtime_error(scene.error());
+    }
+    const PinholeCamera camera{{{0, 0, 3}, {}, {0, 1, 0}, std::numbers::pi / 4}, {257, 193}};
+    const auto view = clip_to_bounds(camera, scene->bounds());
+    const PreviewRenderer frosted{*scene, PreviewLighting{}};
+    const auto frame = frosted.render(view);
+    for (const int x : {127, 128})
+    {
+        const auto replay = frosted.diagnose(view, {x, 96});
+        const auto g = frame[96, x].g; // Adjacent dark and bright stripes would give 0 and 0.96 through smooth glass.
+        if (!(0.25 < g && g < 0.75) || replay.color.g != g)
+        {
+            throw std::runtime_error("Frosted stripes did not mix neighboring radiance consistently");
+        }
+    }
+
+    // Both coplanar pane instances cover this receiver; the smaller pane's diagonal must count only once.
+    const PinholeCamera inside{{{0.75, 0, -0.2}, {0.75, 0, -0.5}, {0, 1, 0}, std::numbers::pi / 4}, {9, 9}};
+    for (const auto method : {ShadowMethod::Map, ShadowMethod::Ray})
+    {
+        const PreviewRenderer renderer{*scene, DirectionalLighting{DirectionalLight{{0, 0, 1}}, method, true}};
+        const auto report = renderer.diagnose(clip_to_bounds(inside, scene->bounds()), {4, 4});
+        const auto &sample = report.samples.at(0).lights.at(0).samples.at(0);
+        const Vec3 pane{0.48, 0.96, 0.24};
+        // At normal incidence the white, rough receiver's direct response is 0.96 diffuse + 0.01 specular.
+        const auto delta = abs_components(sample.direct - component_product(pane, pane) * 0.97);
+        if (sample.shadow.state != ShadowState::PartiallyVisible || std::max({delta.x, delta.y, delta.z}) > 1e-6)
+        {
+            throw std::runtime_error("The receiver did not receive the expected tinted directional light");
+        }
+    }
+}
 } // namespace
 
 int main(int argc, char **argv)
 try
 {
-    if (argc != 3)
+    if (argc != 4)
     {
         return 1;
     }
@@ -106,6 +143,7 @@ try
         check({0, 0.72, 0.15}, InstanceId{2}, 0, 0, 1);
     }
     check_thin_glass(argv[2]);
+    check_frosted_glass(argv[3]);
     return 0;
 }
 catch (const std::exception &error)

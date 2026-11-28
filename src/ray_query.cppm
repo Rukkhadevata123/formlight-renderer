@@ -70,6 +70,7 @@ export class SurfaceBvh
     [[nodiscard]] std::optional<SurfaceHit> intersect_surface(const Ray &ray, RayInterval interval,
                                                               RayQueryStats *stats = nullptr) const;
     [[nodiscard]] bool occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats = nullptr) const;
+    [[nodiscard]] std::vector<SurfaceHit> ordered_hits(const Ray &ray, RayInterval interval) const;
 
   private:
     struct Primitive
@@ -96,13 +97,15 @@ export class SurfaceBvh
     enum class Query
     {
         Closest,
-        Any
+        Any,
+        All
     };
     template <Query Kind>
     bool trace_leaf(const Node &node, const Ray &ray, RayInterval interval, RayQueryStats *stats,
-                    std::optional<SurfaceHit> &nearest) const;
+                    std::optional<SurfaceHit> &nearest, std::vector<SurfaceHit> *hits) const;
     template <Query Kind>
-    [[nodiscard]] std::optional<SurfaceHit> trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const;
+    [[nodiscard]] std::optional<SurfaceHit> trace(const Ray &ray, RayInterval interval, RayQueryStats *stats,
+                                                  std::vector<SurfaceHit> *hits = nullptr) const;
 };
 
 export class TriangleBvh : public SurfaceBvh

@@ -112,8 +112,16 @@ $cli = ".\build\release\formlight-renderer.exe"
 
 ### 光滑薄玻璃
 
-`raster` 和 `hybrid` 按光滑薄片近似 `KHR_materials_transmission`。沿同一相机子样本读取后方的线性颜色，计入玻璃的底色、非金属份额和 Fresnel 透射，再加上表面照明与自发光。粗糙透射目前也取清晰背景；阴影图与遮挡射线仍按原有覆盖规则判断遮挡。`path` 的玻璃使用路径材质设置，要求此 glTF 扩展的模型须使用光栅或混合模式。
+`raster` 和 `hybrid` 处理 `KHR_materials_transmission`。粗糙度为 0 时，玻璃沿同一相机子样本读取后方的线性颜色，计入底色、非金属份额和 Fresnel 透射，再加上表面照明与自发光。`path` 的玻璃使用路径材质设置，要求此 glTF 扩展的模型须使用光栅或混合模式。
 
 ![同机位车窗对照，左图为基础材质，右图为光滑薄透射](images/car-concept-thin-transmission.png)
 
 用上面的通用模型预览打开 Car Concept，保持自动取景。拾取 (395, 275) 会选中挡风玻璃，**glTF transmission** 为 1，**Transmitted background** 显示座椅传入的线性 RGB。拾取 (314, 306) 的四个子样本均命中雨刷。图为 Formlight 两次实际渲染的相同裁切；模型和纹理由 Eric Chadwick 制作，© 2024 Darmstadt Graphics Group GmbH。[模型与标识署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
+
+### 磨砂玻璃与彩色投影
+
+TransmissionTest 的三行球分别展示光滑透射、粗糙透射和金属度变化。观察各行同一列的背景棋盘格，再观察蓝球镂空处与蓝色玻璃投在幕布上的阴影。下图使用模型内的 `render_camera` 机位和通用预览的灯组。模型由 Adobe 提供，采用 CC0 许可。[原始模型与测试说明](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/TransmissionTest)
+
+![TransmissionTest 三行材质球透出的棋盘格与彩色投影](images/transmission-test.png)
+
+用[条纹夹具](../tests/fixtures/frosted-stripes.gltf)可单独检查模糊和遮挡。每片玻璃对直射光的染色由底色、金属度、透射率和入射角决定，孔洞让光通过，多片玻璃逐层衰减。方向光 PCF 对各纹素的 RGB 透过率求均值，点灯和矩形灯只查询到灯面样本为止。`blend_layers` 用已知底色核对重叠两片玻璃的投影，以及磨砂条纹的整图与拾取结果。

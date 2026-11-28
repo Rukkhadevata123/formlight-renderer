@@ -23,6 +23,12 @@ struct SurfaceMaterial
     double occlusion{1};
     double transmission{};
 
+    [[nodiscard]] Vec3 thin_transmittance(double cosine) const noexcept
+    {
+        const double weight = transmission * (1 - metallic) * (1 - dielectric_f0) * (1 - schlick_weight(cosine));
+        return Vec3{base_color.r, base_color.g, base_color.b} * weight;
+    }
+
     [[nodiscard]] LinearColor outgoing_color(Vec3 reflected) const noexcept
     {
         return {static_cast<float>(reflected.x + emission.r), static_cast<float>(reflected.y + emission.g),

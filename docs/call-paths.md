@@ -66,12 +66,12 @@ PreviewRenderer::render
    │  │  ├─ 方向光：raster 查 DirectionalShadowMap（含 PCF）；hybrid 查 TriangleBvh
    │  │  ├─ 点光源：距离衰减 + 射线遮挡
    │  │  └─ 矩形灯：AreaLighting::evaluate
-   │  └─ composite_layers（按像素从远到近线性混合透明层）
+   │  └─ composite_layers / composite_rough_layers（后者分轮读取已完成的背景层）
    └─ SSAA resolve（ssaa == 2 时 2×2 子像素在线性空间求平均）
 ```
 
 - **裁剪、覆盖与精确导数**：`clip_and_project` 在相机空间裁剪近远平面，并让每个裁剪新顶点保留原三角形的重心权重；`ScreenTriangle` 按像素中心与 top-left 规则测试覆盖；`RasterTriangle::interpolate` 用逆视深恢复透视校正权重与解析屏幕导数，因此多套 UV、Mipmap 与法线贴图都能直接从原始三角形重建。[裁剪](../src/raster/clipping.cpp) · [覆盖](../src/raster/coverage.cppm) · [插值与导数](../src/raster/raster.cppm)
-- **透明合成与诊断复现**：先着色最近的写深度表面，再从远到近处理可见的薄透射与 `BLEND` 片元。每层 `shade` 都能读取同一子样本后方已合成的线性颜色；薄玻璃按底色与 Fresnel 衰减透射光并保留镜面高光，最后应用本层的 alpha 覆盖。拾取在 `diagnose_sample` 中重放同一顺序，报告最前方被覆盖的表面及透过它的背景贡献。[帧合成与诊断](../src/preview/compositing.cpp) · [着色与光照](../src/preview/shading.cpp)
+- **透明合成与诊断复现。** 先着色最近的写深度表面，再从远到近合成薄玻璃与 `BLEND` 片元。光滑表面直接读取同一子样本后方的线性颜色。场景含粗糙透射材质时，`composite_rough_layers` 分轮着色，在一轮全部读完背景后再发布颜色和深度。粗糙场景的拾取重放完整采样网格以取得相同邻域，普通场景沿用单像素的 `diagnose_sample`。[帧合成与诊断](../src/preview/compositing.cpp) · [着色与光照](../src/preview/shading.cpp)
 - **矩形灯合流点**：在色溢房间里，`hybrid` 与 `path` 都会在 `AreaLighting::evaluate` 会合——经 `sample_area_light → integrate_rectangle_samples → evaluate_finite_light_sample` 逐个求值 Halton 灯面点。`SurfaceRayOrigin::to` 沿几何法线偏移起点并把灯面点放在射线参数 `t = 1` 处；整图渲染调用 `occluded`（遇阻即返回），像素诊断则改调 `intersect_surface` 以报告具体遮挡图元。[矩形灯与遮挡查询](../src/lighting/direct_lighting.cppm)
 
 ### 独立入口：可编程自定义 Shader

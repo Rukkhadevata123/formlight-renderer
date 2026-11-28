@@ -26,6 +26,8 @@ export struct TrianglePoint
 
 // An empty filter accepts all geometric hits.
 export using SurfaceFilter = std::function<bool(const TrianglePoint &)>;
+// Fraction of direct RGB radiance passing a triangle toward a unit light direction.
+export using ShadowTransmission = std::function<Vec3(const TrianglePoint &, Vec3)>;
 
 export enum class CullFace
 {

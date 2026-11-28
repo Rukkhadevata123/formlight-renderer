@@ -24,6 +24,15 @@ export struct PreviewView
 
 PreviewView sample_grid_view(const PreviewView &view);
 
+// Immutable color and depth from the previous back-to-front layer pass.
+struct TransmissionBackdrop
+{
+    const ColorImage &image;
+    std::span<const double> depths;
+    double max_radius; // In sample-grid pixels.
+    [[nodiscard]] LinearColor filtered(PixelCoord pixel, double depth, double roughness) const;
+};
+
 LinearColor resolve_samples(int count, auto color_at)
 {
     Vec3 sum{};
@@ -147,7 +156,8 @@ export class PreviewRenderer
     [[nodiscard]] PixelDiagnostic diagnose(const PreviewView &view, PixelCoord pixel, std::stop_token stop = {}) const;
 
   private:
-    [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop) const;
+    [[nodiscard]] ColorImage render_sample_grid(const PreviewView &grid, std::stop_token stop,
+                                                PixelDiagnostic *report = nullptr, int axis = 1) const;
     friend class PathFrame;
     [[nodiscard]] LinearColor trace_primary(const PreviewView &grid, PixelCoord pixel, std::uint32_t first_sample,
                                             RayRadianceSum &sum, std::stop_token stop,
@@ -159,7 +169,8 @@ export class PreviewRenderer
     void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
                          SampleDiagnostic &report, std::stop_token stop) const;
     [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view, LinearColor behind,
-                                    const std::stop_token &stop, SampleDiagnostic *record = nullptr) const;
+                                    const std::stop_token &stop, SampleDiagnostic *record = nullptr,
+                                    const TransmissionBackdrop *backdrop = nullptr) const;
     [[nodiscard]] Vec3 shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
                                    const Triangle &face, Barycentrics weights, std::uint64_t pixel,
                                    AreaLightPattern pattern, std::stop_token stop, DiagnosticLight *record) const;
@@ -168,6 +179,8 @@ export class PreviewRenderer
                                                   Barycentrics weights, bool identify_blocker) const;
     const GltfScene &scene_;
     SurfaceFilter solid_filter_;
+    ShadowTransmission shadow_transmission_;
+    bool rough_transmission_;
     std::optional<PreviewLighting> lighting_;
     std::vector<std::shared_ptr<const DirectionalShadowMap>> shadow_maps_;
     std::shared_ptr<const TriangleBvh> blockers_;

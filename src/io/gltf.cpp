@@ -705,4 +705,43 @@ SurfaceFilter GltfScene::solid_filter() const &
                 sample_base_color(mat, face, point.weights, point.gradients).a >= mat.alpha_cutoff);
     };
 }
+
+bool GltfScene::has_rough_transmission() const
+{
+    return std::ranges::any_of(materials_,
+                               [](const auto &m)
+                               {
+                                   return m && m->transmission_factor > 0 && m->roughness_factor > 0 &&
+                                          (m->metallic_factor < 1 || m->metallic_roughness_texture);
+                               });
+}
+
+ShadowTransmission GltfScene::shadow_transmission() const &
+{
+    if (std::ranges::none_of(materials_, [](const auto &m) { return m && m->transmission_factor > 0; }))
+    {
+        return {};
+    }
+    return [this](const TrianglePoint &p, Vec3 toward_light) -> Vec3
+    {
+        const auto &mesh = instance(p.id.instance);
+        const auto &face = mesh.triangles[std::to_underlying(p.id.primitive)];
+        const auto &mat = material(face);
+        constexpr Vec3 clear{1, 1, 1};
+        if (mat.transmission_factor == 0)
+        {
+            if (mat.alpha_mode == AlphaMode::Blend ||
+                (mat.alpha_mode == AlphaMode::Mask &&
+                 sample_base_color(mat, face, p.weights, p.gradients).a < mat.alpha_cutoff))
+            {
+                return clear;
+            }
+            return {};
+        }
+        const auto surface = surface_material(face, p.weights, p.gradients);
+        const Vec3 normal = shading_normal(mesh, face, p.weights, p.gradients, false);
+        const auto through = surface.thin_transmittance(std::abs(dot(normal, toward_light)));
+        return clear + (through - clear) * surface.base_color.a;
+    };
+}
 } // namespace formlight

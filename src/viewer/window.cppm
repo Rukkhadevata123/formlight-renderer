@@ -125,9 +125,10 @@ void show_sample(const SampleDiagnostic &report)
     {
         ImGui::Text("Light %zu direct RGB   %.3g  %.3g  %.3g", light.scene_index, light.direct.x, light.direct.y,
                     light.direct.z);
-        if (light.kind == LightKind::Directional && light.samples.front().shadow.state == ShadowState::PartiallyVisible)
+        if (light.samples.size() == 1 && light.samples.front().shadow.state == ShadowState::PartiallyVisible)
         {
-            ImGui::Text("Shadow map visibility   %.3f", light.samples.front().shadow.visibility);
+            const auto through = light.samples.front().shadow.transmittance;
+            ImGui::Text("Shadow transmission RGB   %.3f  %.3f  %.3f", through.x, through.y, through.z);
             continue;
         }
         const auto blocked = std::ranges::count_if(light.samples, [](const LightSample &sample)

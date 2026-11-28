@@ -36,7 +36,22 @@ export struct ShadowResult
 {
     ShadowState state{ShadowState::ZeroWeight};
     std::optional<SurfaceId> blocker{};
-    double visibility{state == ShadowState::Blocked || state == ShadowState::ZeroWeight ? 0.0 : 1.0};
+    double visibility{state == ShadowState::Blocked || state == ShadowState::ZeroWeight ? 0.0
+                                                                                        : 1.0}; // Brightest channel.
+    Vec3 transmittance{visibility, visibility, visibility};
+
+    static ShadowResult from_transmittance(Vec3 rgb, std::optional<SurfaceId> blocker = {})
+    {
+        if (rgb == Vec3{})
+        {
+            return {ShadowState::Blocked, blocker};
+        }
+        if (rgb == Vec3{1, 1, 1})
+        {
+            return {ShadowState::Visible};
+        }
+        return {ShadowState::PartiallyVisible, {}, std::max({rgb.x, rgb.y, rgb.z}), rgb};
+    }
 };
 
 export struct LightSample
@@ -76,15 +91,51 @@ export [[nodiscard]] LightSample evaluate_light_sample(const MetallicRoughnessBr
         return {position, {}, {}};
     }
     const ShadowResult shadow = visibility();
-    return {position, shadow.visibility == 0 ? Vec3{} : direct * shadow.visibility, shadow};
+    return {position, shadow.visibility == 0 ? Vec3{} : component_product(direct, shadow.transmittance), shadow};
 }
 
 export [[nodiscard]] ShadowResult trace_shadow(const SurfaceBvh &blockers, const Ray &ray, RayInterval interval,
-                                               bool identify_blocker)
+                                               bool identify_blocker, const ShadowTransmission &transmission = {})
 {
     if (blockers.empty())
     {
         return {ShadowState::Disabled};
+    }
+    if (transmission)
+    {
+        const Vec3 toward_light = unit_vector(ray.direction, "Invalid shadow direction");
+        Vec3 passed{1, 1, 1};
+        std::optional<std::pair<double, InstanceId>> last_edge;
+        for (const auto &hit : blockers.ordered_hits(ray, interval))
+        {
+            Vec3 through{};
+            if (const auto *triangle = std::get_if<TriangleCoordinates>(&hit.surface.coordinates))
+            {
+                through = transmission(hit.surface.triangle(), toward_light);
+                if (through == Vec3{1, 1, 1})
+                {
+                    continue;
+                }
+                // A ray on a shared edge can hit both triangles of the same sheet.
+                const auto [a, b, c] = triangle->weights;
+                if (through != Vec3{} && std::min({a, b, c}) <= 8 * std::numeric_limits<double>::epsilon())
+                {
+                    const std::pair edge{hit.t, hit.surface.id.instance};
+                    if (last_edge == edge)
+                    {
+                        continue;
+                    }
+                    last_edge = edge;
+                }
+            }
+            passed = component_product(passed, through);
+            if (passed == Vec3{})
+            {
+                return ShadowResult::from_transmittance(passed, identify_blocker ? std::optional{hit.surface.id}
+                                                                                 : std::nullopt);
+            }
+        }
+        return ShadowResult::from_transmittance(passed);
     }
     if (identify_blocker)
     {
@@ -99,11 +150,12 @@ export [[nodiscard]] ShadowResult trace_shadow(const SurfaceBvh &blockers, const
 
 export [[nodiscard]] LightSample evaluate_finite_light_sample(const MetallicRoughnessBrdf &brdf, IncidentLight incident,
                                                               const SurfaceRayOrigin &receiver, Vec3 endpoint,
-                                                              const SurfaceBvh *blockers, bool identify_blocker)
+                                                              const SurfaceBvh *blockers, bool identify_blocker,
+                                                              const ShadowTransmission &transmission = {})
 {
     const auto visibility = [&]
     {
-        return blockers ? trace_shadow(*blockers, receiver.to(endpoint), {0, 1}, identify_blocker)
+        return blockers ? trace_shadow(*blockers, receiver.to(endpoint), {0, 1}, identify_blocker, transmission)
                         : ShadowResult{ShadowState::Disabled};
     };
     return evaluate_light_sample(brdf, incident, endpoint, visibility);
@@ -163,12 +215,14 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
                                             AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
                                             std::vector<LightSample> *record = nullptr,
                                             const std::stop_token &stop = {},
-                                            std::span<const HomogeneousMedium> media = {})
+                                            std::span<const HomogeneousMedium> media = {},
+                                            const ShadowTransmission &transmission = {})
 {
     const auto evaluate = [&](Vec3 sample)
     {
         const auto incident = light.incident(receiver.position(), sample);
-        auto evaluated = evaluate_finite_light_sample(brdf, incident, receiver, sample, blockers, record != nullptr);
+        auto evaluated =
+            evaluate_finite_light_sample(brdf, incident, receiver, sample, blockers, record != nullptr, transmission);
         if (!media.empty() && evaluated.direct != Vec3{})
         {
             evaluated.direct = evaluated.direct * medium_transmittance(media, receiver.to(sample), {0, 1});
@@ -191,7 +245,8 @@ export struct AreaLighting
     [[nodiscard]] Vec3 evaluate(const SurfaceRayOrigin &receiver, const MetallicRoughnessBrdf &brdf,
                                 std::uint64_t pixel, const SurfaceBvh *blockers, AreaLightPattern pattern,
                                 DiagnosticLight *record, std::stop_token stop,
-                                std::span<const HomogeneousMedium> media = {}) const
+                                std::span<const HomogeneousMedium> media = {},
+                                const ShadowTransmission &transmission = {}) const
     {
         if (record)
         {
@@ -199,7 +254,7 @@ export struct AreaLighting
             record->sampling_seed = sampling.seed;
         }
         return sample_area_light(light, receiver, brdf, sampling, pixel, shadows ? blockers : nullptr, pattern,
-                                 record ? &record->samples : nullptr, stop, media);
+                                 record ? &record->samples : nullptr, stop, media, transmission);
     }
 };
 } // namespace formlight

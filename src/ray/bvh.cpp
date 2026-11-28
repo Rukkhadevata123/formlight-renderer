@@ -151,11 +151,15 @@ std::size_t SurfaceBvh::build(std::span<BuildPrimitive> primitives)
 
 template <SurfaceBvh::Query Kind>
 bool SurfaceBvh::trace_leaf(const Node &node, const Ray &ray, RayInterval interval, RayQueryStats *stats,
-                            std::optional<SurfaceHit> &nearest) const
+                            std::optional<SurfaceHit> &nearest, std::vector<SurfaceHit> *hits) const
 {
     const auto record = [&](SurfacePoint point, double t)
     {
-        if (Kind == Query::Any || !nearest || std::tie(t, point.id) < std::tie(nearest->t, nearest->surface.id))
+        if constexpr (Kind == Query::All)
+        {
+            hits->emplace_back(std::move(point), t);
+        }
+        else if (Kind == Query::Any || !nearest || std::tie(t, point.id) < std::tie(nearest->t, nearest->surface.id))
         {
             nearest.emplace(std::move(point), t);
         }
@@ -202,7 +206,8 @@ bool SurfaceBvh::trace_leaf(const Node &node, const Ray &ray, RayInterval interv
 }
 
 template <SurfaceBvh::Query Kind>
-std::optional<SurfaceHit> SurfaceBvh::trace(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
+std::optional<SurfaceHit> SurfaceBvh::trace(const Ray &ray, RayInterval interval, RayQueryStats *stats,
+                                            std::vector<SurfaceHit> *hits) const
 {
     if (stats)
     {
@@ -219,7 +224,7 @@ std::optional<SurfaceHit> SurfaceBvh::trace(const Ray &ray, RayInterval interval
         const auto &node = nodes_[index];
         if (node.count > 0)
         {
-            return trace_leaf<Kind>(node, ray, interval, stats, nearest);
+            return trace_leaf<Kind>(node, ray, interval, stats, nearest, hits);
         }
 
         std::size_t first = index + 1, second = node.first_primitive_or_right_child;
@@ -255,5 +260,13 @@ std::optional<SurfaceHit> SurfaceBvh::intersect_surface(const Ray &ray, RayInter
 bool SurfaceBvh::occluded(const Ray &ray, RayInterval interval, RayQueryStats *stats) const
 {
     return trace<Query::Any>(ray, interval, stats).has_value();
+}
+
+std::vector<SurfaceHit> SurfaceBvh::ordered_hits(const Ray &ray, RayInterval interval) const
+{
+    std::vector<SurfaceHit> hits;
+    (void)trace<Query::All>(ray, interval, nullptr, &hits);
+    std::ranges::sort(hits, {}, [](const SurfaceHit &hit) { return std::pair{hit.t, hit.surface.id}; });
+    return hits;
 }
 } // namespace formlight

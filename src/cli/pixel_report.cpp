@@ -21,7 +21,8 @@ std::string describe_shadow(const ShadowResult &shadow)
     case ShadowState::Visible:
         return "visible";
     case ShadowState::PartiallyVisible:
-        return std::format("shadow map visibility {:.6g}", shadow.visibility);
+        return std::format("partial shadow, transmitted RGB ({:.6g}, {:.6g}, {:.6g})", shadow.transmittance.x,
+                           shadow.transmittance.y, shadow.transmittance.z);
     case ShadowState::Disabled:
         return "shadows off";
     case ShadowState::ZeroWeight:

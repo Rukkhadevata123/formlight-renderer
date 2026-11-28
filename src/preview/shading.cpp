@@ -7,7 +7,8 @@ import formlight.shadow_map;
 namespace formlight
 {
 PreviewRenderer::PreviewRenderer(const GltfScene &scene, std::optional<PreviewLighting> lighting, RenderMode mode)
-    : scene_(scene), solid_filter_(scene.solid_filter())
+    : scene_(scene), solid_filter_(scene.solid_filter()), shadow_transmission_(scene.shadow_transmission()),
+      rough_transmission_(scene.has_rough_transmission())
 {
     configure(mode, std::move(lighting));
 }
@@ -49,6 +50,8 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
     std::vector<std::shared_ptr<const DirectionalShadowMap>> maps;
     if (lighting)
     {
+        // Optical casters evaluate their own alpha coverage when walking shadow hits.
+        const auto shadow_filter = shadow_transmission_ ? SurfaceFilter{} : solid_filter_;
         maps.resize(lighting->direct.size());
         for (std::size_t i = 0; i < maps.size(); ++i)
         {
@@ -60,7 +63,7 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
                                (point && point->shadows)))
             {
                 // Shadow rays travel toward the light, so their front face is the light's back face.
-                blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), solid_filter_,
+                blockers_ = std::make_shared<TriangleBvh>(scene_.instances(), shadow_filter,
                                                           scene_.face_culling(CullFace::Front));
             }
             if (directional && directional->shadows == ShadowMethod::Map)
@@ -73,8 +76,9 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
                 }
                 else
                 {
-                    maps[i] = std::make_shared<DirectionalShadowMap>(
-                        scene_.instances(), directional->light, solid_filter_, scene_.face_culling(CullFace::Back));
+                    maps[i] = std::make_shared<DirectionalShadowMap>(scene_.instances(), directional->light,
+                                                                     shadow_filter, scene_.face_culling(CullFace::Back),
+                                                                     shadow_transmission_);
                 }
             }
         }
@@ -84,7 +88,8 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
 }
 
 LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view, LinearColor behind,
-                                   const std::stop_token &stop, SampleDiagnostic *record) const
+                                   const std::stop_token &stop, SampleDiagnostic *record,
+                                   const TransmissionBackdrop *backdrop) const
 {
     const auto &[id, weights, gradients] = hit.surface;
     const auto &instance = scene_.instance(id.instance);
@@ -125,10 +130,12 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
     if (transmitted_share > 0)
     {
-        // A smooth thin sheet transmits along the same camera ray after Fresnel reflection.
-        const double transmittance =
-            transmitted_share * (1 - dielectric_f0) * (1 - schlick_weight(dot(normal, to_eye)));
-        const auto through = component_product(albedo, {behind.r, behind.g, behind.b}) * transmittance;
+        if (backdrop && material.roughness > 0)
+        {
+            behind = backdrop->filtered(pixel, hit.view_depth, material.roughness);
+        }
+        const auto through =
+            component_product(material.thin_transmittance(dot(normal, to_eye)), {behind.r, behind.g, behind.b});
         radiance = radiance + through;
         if (record)
         {
@@ -170,7 +177,7 @@ Vec3 PreviewRenderer::shade_light(std::size_t index, const MetallicRoughnessBrdf
     if (const auto *area = std::get_if<AreaLighting>(&light))
     {
         return area->evaluate(SurfaceRayOrigin{instance, face, weights}, brdf, pixel, blockers_.get(), pattern, record,
-                              stop);
+                              stop, {}, shadow_transmission_);
     }
 
     LightSample sample;
@@ -181,7 +188,7 @@ Vec3 PreviewRenderer::shade_light(std::size_t index, const MetallicRoughnessBrdf
         const SurfaceRayOrigin receiver{instance, face, weights};
         sample = evaluate_finite_light_sample(brdf, point->light.incident(receiver.position()), receiver,
                                               point->light.position(), point->shadows ? blockers_.get() : nullptr,
-                                              record != nullptr);
+                                              record != nullptr, shadow_transmission_);
     }
     else
     {
@@ -210,17 +217,13 @@ ShadowResult PreviewRenderer::directional_shadow(const DirectionalLighting &ligh
     {
         const Vec3 world = instance.transform.to_world_point(face.position_at(weights));
         const Vec3 geometric_normal = instance.transform.to_world_normal(face.geometric_normal());
-        const double visibility = map->visibility(world, geometric_normal, light.pcf);
-        if (visibility == 0 || visibility == 1)
-        {
-            return {visibility == 0 ? ShadowState::Blocked : ShadowState::Visible};
-        }
-        return {.state = ShadowState::PartiallyVisible, .visibility = visibility};
+        return ShadowResult::from_transmittance(map->transmittance(world, geometric_normal, light.pcf));
     }
     if (light.shadows == ShadowMethod::Ray)
     {
         const Ray ray = SurfaceRayOrigin{instance, face, weights}.along(light.light.toward_light());
-        return trace_shadow(*blockers_, ray, {0, std::numeric_limits<double>::infinity()}, identify_blocker);
+        return trace_shadow(*blockers_, ray, {0, std::numeric_limits<double>::infinity()}, identify_blocker,
+                            shadow_transmission_);
     }
     return {ShadowState::Disabled};
 }

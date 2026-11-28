@@ -13,7 +13,9 @@ export class DirectionalShadowMap
 {
   public:
     DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
-                         const SurfaceFilter &accept = {}, const FaceCulling &culling = {});
+                         const SurfaceFilter &accept = {}, const FaceCulling &culling = {},
+                         const ShadowTransmission &transmission = {});
+    [[nodiscard]] Vec3 transmittance(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept;
     [[nodiscard]] double visibility(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept;
 
   private:
@@ -21,6 +23,13 @@ export class DirectionalShadowMap
     Vec3 origin_{}, right_{}, down_{}, forward_{};
     double texel_size_{}, depth_epsilon_{};
     std::vector<double> depths_;
+    struct GlassSample
+    {
+        int texel;
+        double depth;
+        Vec3 through;
+    };
+    std::vector<GlassSample> glass_;
 
     [[nodiscard]] Vec3 project(Vec3 world) const noexcept
     {
@@ -28,11 +37,13 @@ export class DirectionalShadowMap
         return {resolution * 0.5 + dot(offset, right_) / texel_size_,
                 resolution * 0.5 + dot(offset, down_) / texel_size_, dot(offset, forward_)};
     }
-    void rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, const SurfaceFilter &accept);
+    void rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, const SurfaceFilter &accept,
+                   const ShadowTransmission &transmission);
 };
 
 DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instances, const DirectionalLight &light,
-                                           const SurfaceFilter &accept, const FaceCulling &culling)
+                                           const SurfaceFilter &accept, const FaceCulling &culling,
+                                           const ShadowTransmission &transmission)
     : depths_(resolution * resolution, std::numeric_limits<double>::infinity())
 {
     const auto bounds = world_bounds(instances);
@@ -58,12 +69,14 @@ DirectionalShadowMap::DirectionalShadowMap(std::span<const MeshInstance> instanc
                 continue;
             }
             const auto &[a, b, c] = triangle.vertices;
-            rasterize(light_point(a), light_point(b), light_point(c), id, accept);
+            rasterize(light_point(a), light_point(b), light_point(c), id, accept, transmission);
         }
     }
+    std::ranges::sort(glass_, {}, &GlassSample::texel);
 }
 
-void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, const SurfaceFilter &accept)
+void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, const SurfaceFilter &accept,
+                                     const ShadowTransmission &transmission)
 {
     const ScreenTriangle coverage{{a.x, a.y}, {b.x, b.y}, {c.x, c.y}};
     const Vec3 plane = cross(b - a, c - a);
@@ -83,23 +96,38 @@ void DirectionalShadowMap::rasterize(Vec3 a, Vec3 b, Vec3 c, SurfaceId source, c
     const auto write_depth = [&](int x, int y, const auto &edges)
     {
         const double depth = (edges[0] * a.z + edges[1] * b.z + edges[2] * c.z) / area + bias;
-        auto &nearest = depths_[y * resolution + x];
+        const int texel = y * resolution + x;
+        auto &nearest = depths_[texel];
+        if (depth >= nearest)
+        {
+            return;
+        }
         // In the orthographic light view the screen weights are already the surface weights.
-        if (depth < nearest &&
-            (!accept || accept({source, {edges[0] / area, edges[1] / area, edges[2] / area}, gradients})))
+        const TrianglePoint point{source, {edges[0] / area, edges[1] / area, edges[2] / area}, gradients};
+        if (accept && !accept(point))
+        {
+            return;
+        }
+        const Vec3 through = transmission ? transmission(point, forward_ * -1) : Vec3{};
+        if (through == Vec3{})
         {
             nearest = depth;
+        }
+        else if (through != Vec3{1, 1, 1})
+        {
+            glass_.push_back({texel, depth, through});
         }
     };
     coverage.for_each_sample({resolution, resolution}, write_depth);
 }
 
-double DirectionalShadowMap::visibility(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept
+Vec3 DirectionalShadowMap::transmittance(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept
 {
+    constexpr Vec3 clear{1, 1, 1};
     const auto p = project(world);
     if (!(p.x >= 0 && p.x < resolution && p.y >= 0 && p.y < resolution))
     {
-        return 1.0;
+        return clear;
     }
     const int x = static_cast<int>(p.x), y = static_cast<int>(p.y);
     // The receiver's geometric plane gives the depth change for one texel along each axis.
@@ -110,30 +138,49 @@ double DirectionalShadowMap::visibility(Vec3 world, Vec3 geometric_normal, bool 
         dz_dx = -dot(geometric_normal, right_) / nz * texel_size_;
         dz_dy = -dot(geometric_normal, down_) / nz * texel_size_;
     }
-    const auto lit = [&](int column, int row)
+    const auto lit = [&](int column, int row) -> Vec3
     {
         if (column < 0 || column >= resolution || row < 0 || row >= resolution)
         {
-            return true;
+            return clear;
         }
         const auto center = pixel_center(column, row);
         const double offset = (center.x - p.x) * dz_dx + (center.y - p.y) * dz_dy;
         // At silhouettes the plane extension can lie behind a different surface.
         const double receiver_depth = p.z + std::min(0.0, offset);
-        return receiver_depth <= depths_[row * resolution + column] + depth_epsilon_;
+        const int texel = row * resolution + column;
+        if (receiver_depth > depths_[texel] + depth_epsilon_)
+        {
+            return {};
+        }
+        Vec3 passed = clear;
+        for (const auto &sample : std::ranges::equal_range(glass_, texel, {}, &GlassSample::texel))
+        {
+            if (receiver_depth > sample.depth + depth_epsilon_)
+            {
+                passed = component_product(passed, sample.through);
+            }
+        }
+        return passed;
     };
     if (!pcf)
     {
-        return lit(x, y) ? 1.0 : 0.0;
+        return lit(x, y);
     }
-    int visible = 0;
+    Vec3 visible{};
     for (int row = y - 1; row <= y + 1; ++row)
     {
         for (int column = x - 1; column <= x + 1; ++column)
         {
-            visible += lit(column, row);
+            visible = visible + lit(column, row);
         }
     }
     return visible / 9.0;
+}
+
+double DirectionalShadowMap::visibility(Vec3 world, Vec3 geometric_normal, bool pcf) const noexcept
+{
+    const auto rgb = transmittance(world, geometric_normal, pcf);
+    return std::max({rgb.x, rgb.y, rgb.z});
 }
 } // namespace formlight
