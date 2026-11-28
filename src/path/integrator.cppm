@@ -187,7 +187,7 @@ export class PathIntegrator
             const auto &mat = scene_.material(sphere.material_index);
             const auto n = point->outward_normal;
             const bool back = dot(n, ray.direction) > 0;
-            return {{mat.base_color_factor, {}, mat.metallic_factor, mat.roughness_factor},
+            return {scene_.surface_material(sphere, n),
                     SurfaceRayOrigin{sphere.shape, n, ray.time},
                     back ? n * -1 : n,
                     back,

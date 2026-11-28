@@ -297,10 +297,18 @@ SceneConfig load_scene_config(const Path &path)
 void save_scene_config(const Path &path, const SceneConfig &config)
 {
     (void)prepare_render(config);
-    if (std::filesystem::exists(path) && std::filesystem::exists(config.scene.asset) &&
-        std::filesystem::equivalent(path, config.scene.asset))
+    if (std::filesystem::exists(path))
     {
-        throw std::invalid_argument("Scene configuration and model refer to the same file");
+        const auto matches_output = [&](const Path &source)
+        { return !source.empty() && std::filesystem::exists(source) && std::filesystem::equivalent(path, source); };
+        if (matches_output(config.scene.asset))
+        {
+            throw std::invalid_argument("Scene configuration and model refer to the same file");
+        }
+        if (std::ranges::any_of(config.scene.spheres, matches_output, &SphereSettings::albedo_texture))
+        {
+            throw std::invalid_argument("Scene configuration and sphere texture refer to the same file");
+        }
     }
     const auto table = write_group(config, std::filesystem::absolute(path).parent_path());
     replace_output_file(path, [&](std::ostream &file) { file << table << '\n'; });

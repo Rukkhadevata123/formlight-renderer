@@ -16,6 +16,22 @@ export std::string path_text(const Path &path)
     return {text.begin(), text.end()};
 }
 
+export std::vector<std::byte> read_resource_bytes(const Path &path)
+{
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    const std::streamoff length = file.tellg();
+    if (length < 0 || !std::in_range<std::size_t>(length))
+    {
+        throw std::runtime_error(std::format("Cannot open or size external resource: {}", path_text(path)));
+    }
+    std::vector<std::byte> bytes(static_cast<std::size_t>(length));
+    if (!file.seekg(0) || !file.read(reinterpret_cast<char *>(bytes.data()), length))
+    {
+        throw std::runtime_error(std::format("Cannot read external resource: {}", path_text(path)));
+    }
+    return bytes;
+}
+
 export struct ModelResources
 {
     fastgltf::Asset &asset;
@@ -54,18 +70,7 @@ export struct ModelResources
         {
             return it->second;
         }
-        std::ifstream file(path, std::ios::binary | std::ios::ate);
-        const std::streamoff length = file.tellg();
-        if (length < 0 || !std::in_range<std::size_t>(length))
-        {
-            throw std::runtime_error(std::format("Cannot open or size external resource: {}", path_text(path)));
-        }
-        std::vector<std::byte> bytes(static_cast<std::size_t>(length));
-        if (!file.seekg(0) || !file.read(reinterpret_cast<char *>(bytes.data()), length))
-        {
-            throw std::runtime_error(std::format("Cannot read external resource: {}", path_text(path)));
-        }
-        return files.emplace(path, std::move(bytes)).first->second;
+        return files.emplace(path, read_resource_bytes(path)).first->second;
     }
 };
 

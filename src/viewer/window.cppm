@@ -70,7 +70,8 @@ void show_sample(const SampleDiagnostic &report)
         ImGui::Text("Instance %u", std::to_underlying(id.instance));
         if (const auto *sphere = std::get_if<SphereCoordinates>(&surface->hit.surface.coordinates))
         {
-            ImGui::Text("Analytic sphere %zu", sphere->index);
+            const auto uv = sphere_uv(sphere->outward_normal);
+            ImGui::Text("Analytic sphere %zu    UV %.6g  %.6g", sphere->index, uv.u, uv.v);
         }
         else
         {

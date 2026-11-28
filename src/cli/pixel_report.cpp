@@ -65,7 +65,9 @@ void print_sample(const SampleDiagnostic &report)
         }
         else
         {
-            std::println("Analytic sphere {}", std::get<SphereCoordinates>(surface->hit.surface.coordinates).index);
+            const auto &point = std::get<SphereCoordinates>(surface->hit.surface.coordinates);
+            const auto uv = sphere_uv(point.outward_normal);
+            std::println("Analytic sphere {}, UV ({:.9g}, {:.9g})", point.index, uv.u, uv.v);
         }
         std::println("Base linear RGB: ({}, {}, {})", base.r, base.g, base.b);
         std::println("Surface emission (linear RGB): ({}, {}, {})", emission.r, emission.g, emission.b);

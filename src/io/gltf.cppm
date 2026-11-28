@@ -92,6 +92,7 @@ export class GltfScene
     {
         return materials_.at(slot).value();
     }
+    [[nodiscard]] SurfaceMaterial surface_material(const SphereInstance &sphere, Vec3 outward_normal) const;
     void add_spheres(std::span<const SphereSettings> spheres);
     [[nodiscard]] std::span<const SphereInstance> spheres() const & noexcept
     {
@@ -134,6 +135,7 @@ export class GltfScene
     std::vector<MeshInstance> instances_;
     std::vector<std::optional<std::size_t>> node_instance_slots_;
     std::vector<TextureImage> images_;
+    std::map<std::filesystem::path, std::size_t> sphere_image_slots_;
     std::vector<std::optional<GltfMaterial>> materials_;
 };
 } // namespace formlight

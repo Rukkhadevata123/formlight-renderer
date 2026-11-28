@@ -48,6 +48,10 @@ An open Cornell-style room with red and green side walls, a rotated white block,
 
 The same room with a closed, smooth-shaded icosphere in front of the block. The sphere has its own glTF material (index 4). The [glass scene](../scenes/path/cornell-glass.toml) assigns the dielectric and its refractive index. The mesh and embedded buffers were created for Formlight under the [project license](../LICENSE).
 
+## earthmap.jpg
+
+The Earth scene uses the same JPEG as the Rust reference renderer. Its SHA-256 matches the file supplied with *Ray Tracing: The Next Week*. [Upstream image](https://raytracing.github.io/images/earthmap.jpg) · [Book example](https://raytracing.github.io/books/RayTracingTheNextWeek.html#imagetexturemapping/renderingtheimagetexture)
+
 ## Viewer font
 
 The viewer uses the bundled Noto Sans SC Regular 2.004 for both Chinese and English. This static OpenType font is distributed under the SIL Open Font License 1.1. [Upstream font](https://github.com/notofonts/noto-cjk/blob/Sans2.004/Sans/SubsetOTF/SC/NotoSansSC-Regular.otf) · [Font license](fonts/OFL.txt)

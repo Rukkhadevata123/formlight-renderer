@@ -224,6 +224,10 @@ if(BUILD_TESTING)
     target_link_libraries(sphere_query_test PRIVATE formlight_renderer_core)
     add_test(NAME sphere_query COMMAND sphere_query_test)
 
+    add_executable(sphere_texture_test tests/sphere_texture_test.cpp)
+    target_link_libraries(sphere_texture_test PRIVATE formlight_gltf)
+    add_test(NAME sphere_texture COMMAND sphere_texture_test "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/sphere-uv.png")
+
     add_executable(many_balls_test tests/many_balls_test.cpp)
     target_link_libraries(many_balls_test PRIVATE formlight_gltf formlight_io)
     add_test(NAME many_balls COMMAND many_balls_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/many-balls.toml")

@@ -121,6 +121,7 @@ struct SphereSettings
     double ior{1.5};
     bool sampling_target{};
     double fuzz{};
+    std::filesystem::path albedo_texture{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -135,6 +136,7 @@ struct SphereSettings
         else
         {
             field("albedo", self.albedo);
+            field("albedo_texture", self.albedo_texture);
         }
         if (self.type == PathSurface::Metal)
         {
@@ -464,6 +466,10 @@ struct RenderRequest
     for (const auto &sphere : scene.spheres)
     {
         (void)sphere.shape.bounds();
+        if (sphere.type == PathSurface::Dielectric && !sphere.albedo_texture.empty())
+        {
+            throw std::invalid_argument("Dielectric spheres do not use an albedo texture");
+        }
         if (sphere.type == PathSurface::Metal)
         {
             validate_fuzz(sphere.fuzz);

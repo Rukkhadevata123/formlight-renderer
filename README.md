@@ -96,6 +96,14 @@ build/release/formlight-renderer.exe --scene scenes/path/absorbing-sphere.toml -
 build/release/formlight-renderer.exe --scene scenes/path/scattering-media.toml --output build/release/scattering-media.png
 ```
 
+[地球贴图示例](scenes/path/earth.toml) 取出 `final_scene` 中半径为 100 的漫反射地球。可在 `[[scene.spheres]]` 的 `albedo_texture` 中填写 PNG 或 JPEG 的路径，路径相对于 TOML 所在目录。纹理按 sRGB 解码，在线性 RGB 中双线性过滤，再乘以 `albedo`。同一张图可由多个球共用。
+
+球面经度在 −X 方向接合，沿 U 循环采样。北极对应图像首行，南极对应末行，V 在两端钳制。CLI 的 `--pixel` 和 viewer 拾取都可查看命中点的 UV。Rust 参考实现采用最近邻采样，并将图像字节直接除以 255；比较材质时要考虑两种采样方式和颜色空间的差异。
+
+```powershell
+build/release/formlight-renderer.exe --scene scenes/path/earth.toml --output build/release/earth.png
+```
+
 ### 自定义光栅 shader
 
 构建后运行 `build/release/custom_shader.exe build/release/custom-shader.png`，可看到近面裁剪后的渐变三角形，中间的条纹透出背景。[示例源码](examples/custom_shader.cpp)

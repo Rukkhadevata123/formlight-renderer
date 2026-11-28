@@ -3,6 +3,7 @@
 import std;
 import formlight.scene_toml;
 import formlight.preview;
+import formlight.image_codec;
 
 namespace
 {
@@ -100,12 +101,15 @@ void check_sphere_scene(const std::filesystem::path &destination)
     config.render.mode = RenderMode::Path;
     config.render.extent = {1, 1};
     config.camera.shutter = {0.25, 0.75};
+    const auto texture = destination.parent_path() / "sphere color.png";
+    write_png(texture, ColorImage{{1, 1}, {1, 1, 1, 1}});
     config.scene.media = {{Sphere{{2, 0, 0}, 0.25, {0.1, 0, 0}}, 0.7, {0.2, 0.4, 0.9}}};
-    config.scene.spheres = {{.shape = {{2, 0, 0}, 0.75, {0.1, 0, 0}},
-                             .type = PathSurface::Dielectric,
-                             .ior = 1.33,
-                             .sampling_target = true},
-                            {.shape = {{2, 0, 0}, 0.25}, .type = PathSurface::Metal, .fuzz = 0.35}};
+    config.scene.spheres = {
+        {.shape = {{2, 0, 0}, 0.75, {0.1, 0, 0}},
+         .type = PathSurface::Dielectric,
+         .ior = 1.33,
+         .sampling_target = true},
+        {.shape = {{2, 0, 0}, 0.25}, .type = PathSurface::Metal, .fuzz = 0.35, .albedo_texture = texture}};
     save_scene_config(destination, config);
     const auto loaded = load_scene_config(destination);
     const auto &sphere = loaded.scene.spheres.at(0);
@@ -122,9 +126,10 @@ void check_sphere_scene(const std::filesystem::path &destination)
     {
         throw std::runtime_error("Sphere motion or shutter interval changed during TOML round trip");
     }
-    if (metal.type != PathSurface::Metal || metal.fuzz != 0.35)
+    if (metal.type != PathSurface::Metal || metal.fuzz != 0.35 ||
+        !std::filesystem::equivalent(metal.albedo_texture, texture))
     {
-        throw std::runtime_error("Metal fuzz changed during TOML round trip");
+        throw std::runtime_error("Metal fuzz or albedo texture changed during TOML round trip");
     }
     if (!loaded.scene.asset.empty() || sphere.shape.center != Vec3{2, 0, 0} || sphere.shape.radius != 0.75 ||
         sphere.type != PathSurface::Dielectric || sphere.ior != 1.33 || !sphere.sampling_target)
@@ -185,6 +190,7 @@ auto main(int argc, char **argv) -> int
         std::cerr << error.what() << '\n';
         status = 1;
     }
+    std::filesystem::remove(scratch / "sphere color.png");
     std::filesystem::remove(saved);
     std::filesystem::remove(scratch);
     return status;

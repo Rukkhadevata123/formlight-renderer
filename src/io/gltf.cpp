@@ -31,6 +31,18 @@ AffineTransform instance_transform(const fastgltf::math::nmat4x4 &world)
     return {Basis3{column(0), column(1), column(2)}, column(3)};
 }
 
+ColorImage decode_external_image(const Path &path, std::span<const std::byte> bytes, RgbEncoding encoding)
+{
+    try
+    {
+        return decode_image(bytes, encoding);
+    }
+    catch (const std::runtime_error &error)
+    {
+        throw std::runtime_error(std::format("{}: {}", path_text(path), error.what()));
+    }
+}
+
 ColorImage read_image(ModelResources &resources, std::size_t index, RgbEncoding encoding)
 {
     const auto &asset = resources.asset;
@@ -48,15 +60,7 @@ ColorImage read_image(ModelResources &resources, std::size_t index, RgbEncoding 
     if (const auto *uri = std::get_if<fastgltf::sources::URI>(&source))
     {
         const auto path = resources.require_path(*uri);
-        const auto bytes = resources.read(path);
-        try
-        {
-            return decode_image(bytes, encoding);
-        }
-        catch (const std::runtime_error &error)
-        {
-            throw std::runtime_error(std::format("{}: {}", path_text(path), error.what()));
-        }
+        return decode_external_image(path, resources.read(path), encoding);
     }
     return decode_image(loaded_bytes(source), encoding);
 }
@@ -319,13 +323,15 @@ void GltfScene::check_output_path(const std::filesystem::path &path) const
     {
         return;
     }
-    for (const auto &source : source_files_)
+    const auto check_source = [&](const Path &source)
     {
         if (std::filesystem::exists(source) && std::filesystem::equivalent(path, source))
         {
             throw std::invalid_argument(std::format("Output would overwrite a model resource: {}", path_text(source)));
         }
-    }
+    };
+    std::ranges::for_each(source_files_, check_source);
+    std::ranges::for_each(sphere_image_slots_ | std::views::keys, check_source);
 }
 
 GltfScene GltfScene::empty_scene()
@@ -345,24 +351,47 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     {
         throw std::length_error("Sphere exceeds the instance ID range");
     }
+    auto slots = sphere_image_slots_;
+    std::vector<TextureImage> textures;
+    std::vector<GltfMaterial> materials;
+    materials.reserve(additions.size());
     for (const auto &sphere : additions)
     {
         (void)sphere.shape.bounds();
-    }
-    spheres_.reserve(spheres_.size() + additions.size());
-    node_instance_slots_.reserve(node_instance_slots_.size() + additions.size());
-    materials_.reserve(materials_.size() + additions.size());
-    for (const auto &sphere : additions)
-    {
-        const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
         const auto a = sphere.albedo;
-        materials_.emplace_back(GltfMaterial{
+        auto &material = materials.emplace_back(GltfMaterial{
             .base_color_factor = {static_cast<float>(a.x), static_cast<float>(a.y), static_cast<float>(a.z), 1},
             .metallic_factor = 0,
             .roughness_factor = sphere.type == PathSurface::Diffuse ? 1.0 : 0.0,
             .path_surface = sphere.type,
             .ior = sphere.ior,
             .fuzz = sphere.fuzz});
+        if (!sphere.albedo_texture.empty())
+        {
+            const auto path = std::filesystem::absolute(sphere.albedo_texture).lexically_normal();
+            const auto [slot, inserted] = slots.try_emplace(path, images_.size() + textures.size());
+            if (inserted)
+            {
+                auto image = decode_external_image(path, read_resource_bytes(path), RgbEncoding::Srgb);
+                textures.emplace_back(std::move(image), TextureUsage::Color);
+            }
+            material.base_color_texture =
+                TextureBinding{slot->second, {.u = WrapMode::Repeat, .v = WrapMode::ClampToEdge}};
+        }
+    }
+
+    // Publish only after every image was decoded, so a failed batch can be retried on the same scene.
+    spheres_.reserve(spheres_.size() + additions.size());
+    node_instance_slots_.reserve(node_instance_slots_.size() + additions.size());
+    materials_.reserve(materials_.size() + additions.size());
+    images_.reserve(images_.size() + textures.size());
+    images_.append_range(textures | std::views::as_rvalue);
+    sphere_image_slots_.swap(slots);
+    for (std::size_t i = 0; i < additions.size(); ++i)
+    {
+        const auto &sphere = additions[i];
+        const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
+        materials_.emplace_back(materials[i]);
         spheres_.push_back({id, sphere.shape, materials_.size() - 1, sphere.sampling_target});
         node_instance_slots_.push_back(std::nullopt);
     }
@@ -465,6 +494,20 @@ LinearColor GltfScene::sample_base_color(const GltfMaterial &material, const Tri
         color = {color.r * texel.r, color.g * texel.g, color.b * texel.b, color.a * texel.a};
     }
     return color;
+}
+
+SurfaceMaterial GltfScene::surface_material(const SphereInstance &sphere, Vec3 outward_normal) const
+{
+    const auto &mat = material(sphere.material_index);
+    auto color = mat.base_color_factor;
+    if (const auto &binding = mat.base_color_texture)
+    {
+        const auto texel = images_[binding->image].sample(sphere_uv(outward_normal), binding->sampler);
+        color.r *= texel.r;
+        color.g *= texel.g;
+        color.b *= texel.b;
+    }
+    return {color, {}, mat.metallic_factor, mat.roughness_factor};
 }
 
 SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics weights, WeightGradients gradients) const

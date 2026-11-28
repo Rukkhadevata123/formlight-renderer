@@ -1,0 +1,30 @@
+[scene]
+environment = [0.24, 0.24, 0.24]
+
+[[scene.spheres]]
+center = [400, 200, 400]
+radius = 100
+albedo_texture = "../../assets/earthmap.jpg"
+
+[camera]
+auto_frame = false
+position = [710, 345, 310]
+target = [400, 200, 400]
+vertical_fov_degrees = 41
+
+[render]
+mode = "path"
+width = 281
+height = 201
+ssaa = 2
+path_samples = 1
+max_bounces = 1
+light_samples = 8
+seed = 7
+
+[[lighting.lights]]
+type = "rectangle"
+center = [650, 510, 500]
+width = 200
+height = 200
+power = 1250000

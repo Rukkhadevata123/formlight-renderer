@@ -36,6 +36,15 @@ struct Sphere
     }
 };
 
+// Longitude wraps at -X. V increases from the north pole to match top-to-bottom image rows.
+[[nodiscard]] inline TexCoord sphere_uv(Vec3 outward_normal) noexcept
+{
+    const auto [x, y, z] = outward_normal;
+    const double horizontal = std::hypot(x, z);
+    const double u = horizontal == 0 ? 0.5 : 0.5 + std::atan2(-z, x) / (2 * std::numbers::pi);
+    return {u == 1 ? 0 : u, std::atan2(horizontal, y) / std::numbers::pi};
+}
+
 struct SphereInstance
 {
     InstanceId id{};
