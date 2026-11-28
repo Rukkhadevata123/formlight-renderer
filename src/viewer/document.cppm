@@ -6,7 +6,7 @@ import formlight.viewer.session;
 
 namespace formlight
 {
-// Each session owns its assets and all workers borrowing them. Publish a replacement with its first full image.
+// Each session owns its assets and all workers borrowing them. Swap scenes when the first image is ready.
 export class ViewerDocument
 {
   public:

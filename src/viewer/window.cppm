@@ -213,6 +213,7 @@ export class ViewerWindow
     };
     Drag drag_{};
     [[nodiscard]] ViewportInput read_input(ImageRect rect, ImageExtent extent);
+    void update_image(const ViewportInput &input);
     void upload(const ColorImage &image, const DisplaySettings &display);
     SdlVideo video_;
     std::unique_ptr<SDL_Window, decltype(&SDL_DestroyWindow)> window_{nullptr, SDL_DestroyWindow};
@@ -342,10 +343,19 @@ ViewportInput ViewerWindow::read_input(ImageRect rect, ImageExtent extent)
     return input;
 }
 
+void ViewerWindow::update_image(const ViewportInput &input)
+{
+    if (const auto *image = document_.update(input))
+    {
+        upload(*image, document_.session().applied_config().display);
+    }
+}
+
 void ViewerWindow::draw()
 {
     if ((SDL_GetWindowFlags(window_.get()) & SDL_WINDOW_MINIMIZED) != 0)
     {
+        update_image({});
         SDL_Delay(16);
         return;
     }
@@ -375,10 +385,7 @@ void ViewerWindow::draw()
                                ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
         input = read_input(rect, {texture_->w, texture_->h});
     }
-    if (const auto *image = document_.update(input))
-    {
-        upload(*image, document_.session().applied_config().display);
-    }
+    update_image(input);
     if (title_path_ != document_.display_path())
     {
         title_path_ = document_.display_path();
@@ -402,6 +409,10 @@ void ViewerWindow::draw()
     ImGui::SameLine();
     if (ImGui::BeginChild("Inspector"))
     {
+        if (const auto progress = session.path_progress())
+        {
+            ImGui::Text("Path samples   %u / %u", progress->completed, progress->target);
+        }
         settings_.draw(document_, max_texture_size_);
         files_.draw(window_.get(), document_, texture_ != nullptr);
         ImGui::SeparatorText("Pixel inspector");

@@ -77,7 +77,7 @@ target_link_libraries(custom_shader PRIVATE formlight_renderer_core formlight_io
 if(FORMLIGHT_BUILD_VIEWER)
     find_package(SDL3 CONFIG REQUIRED)
     find_package(imgui CONFIG REQUIRED)
-    add_library(formlight_viewer_session STATIC)
+    add_library(formlight_viewer_session STATIC src/viewer/session.cpp)
     target_sources(formlight_viewer_session PUBLIC FILE_SET CXX_MODULES FILES
         src/viewer/orbit_camera.cppm src/viewer/session.cppm src/viewer/document.cppm)
     target_link_libraries(formlight_viewer_session PUBLIC formlight_gltf)
@@ -280,5 +280,9 @@ if(BUILD_TESTING)
         add_test(NAME viewer_navigation COMMAND viewer_navigation_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BoxTextured.glb"
             "${CMAKE_CURRENT_SOURCE_DIR}/assets/DualUvPanel/DualUvPanel.gltf")
         set_tests_properties(viewer_navigation PROPERTIES TIMEOUT 15)
+        add_executable(viewer_path_progress_test tests/viewer_path_progress_test.cpp)
+        target_link_libraries(viewer_path_progress_test PRIVATE formlight_viewer_session)
+        add_test(NAME viewer_path_progress COMMAND viewer_path_progress_test)
+        set_tests_properties(viewer_path_progress PROPERTIES TIMEOUT 30)
     endif()
 endif()
