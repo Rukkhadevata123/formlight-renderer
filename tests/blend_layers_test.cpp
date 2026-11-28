@@ -4,10 +4,44 @@ import formlight.ray_query;
 
 using namespace formlight;
 
+namespace
+{
+void check_thin_glass(const std::filesystem::path &asset)
+{
+    const auto scene = GltfScene::load(asset, GltfContent::Materials);
+    if (!scene)
+    {
+        throw std::runtime_error(scene.error());
+    }
+    const PinholeCamera camera{{{0, 0, 3}, {}, {0, 1, 0}, std::numbers::pi / 4}, {33, 33}};
+    const auto view = clip_to_bounds(camera, scene->bounds());
+    const Vec3 toward_light{0.28, 0, 0.96};
+    const DirectionalLighting light{DirectionalLight{toward_light}, ShadowMethod::None};
+    // A smooth dielectric reflects 4% at normal incidence. Its direct highlight survives full transmission.
+    const MetallicRoughnessBrdf black_dielectric{{{0, 0, 0}, {}, 0, 0}, {0, 0, 1}, {0, 0, 1}};
+    const auto highlight = black_dielectric.evaluate_times_cosine(toward_light) * std::numbers::pi;
+    const auto expected = Vec3{0.5 * 0.2, 0.4, 0.25 * 0.8} * 0.96 + highlight;
+    for (const auto mode : {RenderMode::Raster, RenderMode::Hybrid})
+    {
+        const PreviewRenderer renderer{*scene, light, mode};
+        const auto color = renderer.render(view)[16, 16];
+        const auto report = renderer.diagnose(view, {16, 16});
+        const auto &surface = report.samples.at(0).surface;
+        const auto delta = abs_components(Vec3{color.r, color.g, color.b} - expected);
+        if (std::max({delta.x, delta.y, delta.z}) > 1e-6 || !surface ||
+            surface->hit.surface.id.instance != InstanceId{0} ||
+            std::tie(color.r, color.g, color.b) != std::tie(report.color.r, report.color.g, report.color.b))
+        {
+            throw std::runtime_error("Thin glass lost the tinted background, highlight or front surface pick");
+        }
+    }
+}
+} // namespace
+
 int main(int argc, char **argv)
 try
 {
-    if (argc != 2)
+    if (argc != 3)
     {
         return 1;
     }
@@ -71,6 +105,7 @@ try
         check({0.7, 0.72, 0.15}, InstanceId{1}, 0, 0.5, 0.5);
         check({0, 0.72, 0.15}, InstanceId{2}, 0, 0, 1);
     }
+    check_thin_glass(argv[2]);
     return 0;
 }
 catch (const std::exception &error)

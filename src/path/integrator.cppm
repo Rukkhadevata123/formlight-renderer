@@ -42,27 +42,30 @@ export struct RayRadianceSum
 export class PathIntegrator
 {
   public:
-    explicit PathIntegrator(const GltfScene &scene)
-        : scene_(scene),
-          surfaces_(std::make_shared<SurfaceBvh>(
-              scene.instances(), scene.spheres(), scene.solid_filter(),
-              [&scene](SurfaceId id)
-              {
-                  const auto &face = scene.instance(id.instance).triangles[std::to_underlying(id.primitive)];
-                  const auto &mat = scene.material(face);
-                  return mat.double_sided || mat.path_surface == PathSurface::Dielectric ? CullFace::None
-                                                                                         : CullFace::Back;
-              })),
-          targets_(std::make_shared<DirectionTargets>(
-              scene.instances(),
-              [&scene](const Triangle &face)
-              {
-                  const auto &material = scene.material(face);
-                  const auto &e = material.emission_multiplier;
-                  return material.alpha_mode != AlphaMode::Blend && (e.r > 0 || e.g > 0 || e.b > 0);
-              },
-              scene.spheres()))
+    explicit PathIntegrator(const GltfScene &scene) : scene_(scene)
     {
+        if (scene.requires_transmission)
+        {
+            throw std::invalid_argument("Required glTF material transmission needs raster or hybrid mode");
+        }
+        surfaces_ = std::make_shared<SurfaceBvh>(
+            scene.instances(), scene.spheres(), scene.solid_filter(),
+            [&scene](SurfaceId id)
+            {
+                const auto &face = scene.instance(id.instance).triangles[std::to_underlying(id.primitive)];
+                const auto &mat = scene.material(face);
+                return mat.double_sided || mat.path_surface == PathSurface::Dielectric ? CullFace::None
+                                                                                       : CullFace::Back;
+            });
+        targets_ = std::make_shared<DirectionTargets>(
+            scene.instances(),
+            [&scene](const Triangle &face)
+            {
+                const auto &material = scene.material(face);
+                const auto &e = material.emission_multiplier;
+                return material.alpha_mode != AlphaMode::Blend && (e.r > 0 || e.g > 0 || e.b > 0);
+            },
+            scene.spheres());
     }
 
     void set_lighting(std::span<const ActiveLight> lights)

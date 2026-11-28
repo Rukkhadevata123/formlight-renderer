@@ -77,6 +77,7 @@ export class GltfScene
 {
   public:
     Vec3 environment{}; // Constant incident radiance for path rays that leave the scene.
+    bool requires_transmission{};
     std::vector<HomogeneousMedium> media{};
     GltfScene(GltfScene &&) noexcept = default;
     GltfScene &operator=(GltfScene &&) noexcept = default;

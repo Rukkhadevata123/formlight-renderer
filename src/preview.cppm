@@ -100,6 +100,7 @@ export struct DiagnosticSurface
     Vec3 ambient;
     std::optional<Vec3> shading_normal{};
     std::optional<double> metal_fuzz{};
+    std::optional<Vec3> transmitted{}; // Tinted light from behind this surface, before alpha coverage.
 };
 
 export struct SampleDiagnostic
@@ -157,7 +158,7 @@ export class PreviewRenderer
                                                SampleDiagnostic *record) const;
     void diagnose_sample(const PreviewView &grid, PixelCoord sample, std::span<const RasterTriangle> pieces,
                          SampleDiagnostic &report, std::stop_token stop) const;
-    [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
+    [[nodiscard]] LinearColor shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view, LinearColor behind,
                                     const std::stop_token &stop, SampleDiagnostic *record = nullptr) const;
     [[nodiscard]] Vec3 shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,
                                    const Triangle &face, Barycentrics weights, std::uint64_t pixel,

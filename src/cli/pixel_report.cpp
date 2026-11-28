@@ -72,6 +72,10 @@ void print_sample(const SampleDiagnostic &report)
         std::println("Base linear RGB: ({}, {}, {})", base.r, base.g, base.b);
         std::println("Surface emission (linear RGB): ({}, {}, {})", emission.r, emission.g, emission.b);
         std::println("glTF transmission: {}", transmission);
+        if (const auto &through = surface->transmitted)
+        {
+            std::println("Transmitted background (linear RGB): ({}, {}, {})", through->x, through->y, through->z);
+        }
         const auto ambient = surface->ambient;
         std::println("Occlusion: {}  Surface ambient (linear RGB): ({}, {}, {})", occlusion, ambient.x, ambient.y,
                      ambient.z);

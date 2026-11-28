@@ -248,11 +248,6 @@ std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::pat
         check(parsed.error());
         auto &asset = parsed.get();
         check(fastgltf::validate(asset));
-        if (content == GltfContent::Materials &&
-            std::ranges::contains(asset.extensionsRequired, fastgltf::extensions::KHR_materials_transmission))
-        {
-            throw std::runtime_error("This model requires KHR_materials_transmission shading");
-        }
         ModelResources resources{asset, model.parent_path()};
         const auto scene_index = asset.defaultScene.value_or(0);
         if (scene_index >= asset.scenes.size())
@@ -272,6 +267,8 @@ std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::pat
             pending.push_back({root, fastgltf::math::nmat4x4{}});
         }
         GltfScene result;
+        result.requires_transmission =
+            std::ranges::contains(asset.extensionsRequired, fastgltf::extensions::KHR_materials_transmission);
         result.source_files_.push_back(model);
         // Protect referenced files even when only another scene or material in this asset uses them.
         const auto remember_files = [&](const auto &entries)
@@ -618,7 +615,15 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
 {
     const auto &mat = material(face);
     auto color = sample_base_color(mat, face, weights, gradients);
-    color.a = mat.alpha_mode == AlphaMode::Blend ? std::clamp(color.a, 0.0f, 1.0f) : 1.0f;
+    // A transmissive MASK layer is shaded after the depth-writing pass, including at its holes.
+    if (mat.alpha_mode == AlphaMode::Mask)
+    {
+        color.a = color.a >= mat.alpha_cutoff ? 1.0f : 0.0f;
+    }
+    else
+    {
+        color.a = mat.alpha_mode == AlphaMode::Blend ? std::clamp(color.a, 0.0f, 1.0f) : 1.0f;
+    }
     auto emission = mat.emission_multiplier;
     if (color.a > 0 && mat.emissive_texture)
     {

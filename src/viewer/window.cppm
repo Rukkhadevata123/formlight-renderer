@@ -95,6 +95,10 @@ void show_sample(const SampleDiagnostic &report)
         const auto ambient = surface->ambient;
         ImGui::Text("Occlusion   %.3g", occlusion);
         ImGui::Text("glTF transmission   %.3g", transmission);
+        if (const auto &through = surface->transmitted)
+        {
+            ImGui::Text("Transmitted background (linear RGB)   %.3g  %.3g  %.3g", through->x, through->y, through->z);
+        }
         ImGui::Text("Surface ambient (linear RGB)   %.3g  %.3g  %.3g", ambient.x, ambient.y, ambient.z);
         if (const auto &bounce = report.bounce_radiance)
         {

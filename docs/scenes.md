@@ -108,5 +108,12 @@ $cli = ".\build\release\formlight-renderer.exe"
   - 每个贴图槽独立选择 `TEXCOORD_0` / `TEXCOORD_1`、采样器与 `KHR_texture_transform`（按缩放 → 旋转 → 平移顺序变换坐标）。
   - 底色与自发光按 sRGB 解码到线性空间；金属度、粗糙度、AO 与法线贴图保持线性读取（法线 Mipmap 降采样后自动重新单位化）。
   - 光栅片元用精确解析屏幕导数选择 Mip 层级；当前路径命中固定采样第 0 层。
-  - `OPAQUE` 和通过阈值的 `MASK` 参与光栅主可见性、阴影与路径求交；`BLEND` 由光栅与混合模式逐像素排序合成。材质的 `doubleSided` 同时作用于主可见面与投影面。
-  - 像素诊断中的 **glTF transmission** 是 `transmissionFactor` 乘以透射纹理的线性 R 通道。Car Concept 的挡风玻璃可拾取到 1，车门为 0。当前可选透射材质按基础材质着色，声明必须支持透射的模型会在渲染加载时提示。后续将用挡风玻璃验证薄透射，用 A Beautiful Game 的兵顶圆球验证 `KHR_materials_volume` 厚玻璃。
+  - `OPAQUE` 和通过阈值的 `MASK` 参与主可见性。光栅与混合模式在最近的不透光表面之前逐像素排序，合成薄透射和 `BLEND` 层。`doubleSided` 同时作用于相机与投影面。
+
+### 光滑薄玻璃
+
+`raster` 和 `hybrid` 按光滑薄片近似 `KHR_materials_transmission`。沿同一相机子样本读取后方的线性颜色，计入玻璃的底色、非金属份额和 Fresnel 透射，再加上表面照明与自发光。粗糙透射目前也取清晰背景；阴影图与遮挡射线仍按原有覆盖规则判断遮挡。`path` 的玻璃使用路径材质设置，要求此 glTF 扩展的模型须使用光栅或混合模式。
+
+![同机位车窗对照，左图为基础材质，右图为光滑薄透射](images/car-concept-thin-transmission.png)
+
+用上面的通用模型预览打开 Car Concept，保持自动取景。拾取 (395, 275) 会选中挡风玻璃，**glTF transmission** 为 1，**Transmitted background** 显示座椅传入的线性 RGB。拾取 (314, 306) 的四个子样本均命中雨刷。图为 Formlight 两次实际渲染的相同裁切；模型和纹理由 Eric Chadwick 制作，© 2024 Darmstadt Graphics Group GmbH。[模型与标识署名](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/CarConcept#legal) · [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)

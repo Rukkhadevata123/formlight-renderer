@@ -12,7 +12,7 @@ $$
 
 - $L_e$ 是表面自身发射的辐亮度；
 - 积分在法线上半球 $\Omega^+$ 上累加所有入射方向 $\omega_i$ 的贡献；
-- BRDF $f_r$ 把沿 $\omega_i$ 到达的微分辐照度转化为朝向 $\omega_o$ 的出射辐亮度。白墙发红，本质是 $L_i$ 中携带了邻近红墙反射过来的光。玻璃透射与参与介质散射则由各自的采样分支处理。[PBRT 光传输方程](https://pbr-book.org/4ed/Light_Transport_I_Surface_Reflection/The_Light_Transport_Equation)
+- BRDF $f_r$ 把沿 $\omega_i$ 到达的微分辐照度转化为朝向 $\omega_o$ 的出射辐亮度。白墙发红，本质是 $L_i$ 中携带了邻近红墙反射过来的光。路径积分器另行采样实体玻璃的反射与折射，以及介质散射。[PBRT 光传输方程](https://pbr-book.org/4ed/Light_Transport_I_Surface_Reflection/The_Light_Transport_Equation)
 
 三种渲染模式共享同一套场景与线性图像，区别在于**主可见性来源**和**光照积分范围**：
 
@@ -21,6 +21,8 @@ $$
 | `raster` | 三角形裁剪、投影，按像素中心覆盖和深度选面 | glTF 材质直接着色；方向光支持阴影图（`pcf = true` 时做 3×3 深度过滤） |
 | `hybrid` | 复用同一套光栅主可见性 | 着色期经 BVH 发射遮挡射线；矩形面光源对多个灯面采样点求平均 |
 | `path` | 相机射线经 `SurfaceBvh` 求最近表面（若有介质则先竞争自由程） | 叠加自发光与显式矩形灯直接项，再迭代追踪多跳反弹；逃逸时读环境辐亮度 |
+
+光栅与混合模式的光滑薄玻璃沿视线取得后方颜色。若材质透射系数为 $t$，金属度为 $m$，则透射贡献为 $t(1-m)(1-F_v)\,\mathrm{baseColor}\,L_{\mathrm{behind}}$，颜色在线性空间逐通道相乘。$F_v$ 使用着色法线与观察方向的夹角计算 Schlick 反射率，默认 IOR 为 1.5，正入射时反射率为 0.04。直接光的漫反射项乘以 $1-t$，镜面高光沿用原 BRDF。[挡风玻璃对照](scenes.md#光滑薄玻璃)
 
 ### 直接光 BRDF 与路径漫反射续射的区分
 

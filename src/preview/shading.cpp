@@ -83,7 +83,7 @@ void PreviewRenderer::set_lighting(std::optional<PreviewLighting> lighting)
     lighting_ = std::move(lighting);
 }
 
-LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view,
+LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const PreviewView &view, LinearColor behind,
                                    const std::stop_token &stop, SampleDiagnostic *record) const
 {
     const auto &[id, weights, gradients] = hit.surface;
@@ -95,11 +95,12 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
     {
         return base;
     }
+    const Vec3 albedo{base.r, base.g, base.b};
+    const double transmitted_share = material.transmission * (1 - material.metallic);
     Vec3 ambient{};
     if (lighting_)
     {
-        const auto rgb = lighting_->ambient;
-        ambient = Vec3{base.r * rgb.x, base.g * rgb.y, base.b * rgb.z} * material.occlusion;
+        ambient = component_product(albedo, lighting_->ambient) * (material.occlusion * (1 - transmitted_share));
     }
     if (record)
     {
@@ -108,14 +109,12 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         record->surface =
             DiagnosticSurface{{hit.surface, hit.view_depth, hit.back_face}, face.material_index, material, ambient};
     }
-    if (!lighting_)
+    // With lighting disabled, the base-color preview supplies the local, non-transmitted light.
+    Vec3 radiance = lighting_ ? ambient : albedo * (1 - transmitted_share);
+    const bool has_direct = lighting_ && !lighting_->direct.empty();
+    if (!has_direct && transmitted_share == 0)
     {
-        // The no-light preview shows the base color at unit weight.
-        return material.outgoing_color({base.r, base.g, base.b});
-    }
-    if (lighting_->direct.empty())
-    {
-        return material.outgoing_color(ambient);
+        return material.outgoing_color(radiance);
     }
 
     const Vec3 normal = scene_.shading_normal(instance, face, weights, gradients, hit.back_face);
@@ -124,7 +123,24 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
         record->surface->shading_normal = normal;
     }
     const Vec3 to_eye = view.camera.ray_for_sample(pixel_center(pixel.x, pixel.y)).direction * -1;
-    const MetallicRoughnessBrdf brdf{material, normal, to_eye};
+    if (transmitted_share > 0)
+    {
+        // A smooth thin sheet transmits along the same camera ray after Fresnel reflection.
+        const double transmittance =
+            transmitted_share * (1 - dielectric_f0) * (1 - schlick_weight(dot(normal, to_eye)));
+        const auto through = component_product(albedo, {behind.r, behind.g, behind.b}) * transmittance;
+        radiance = radiance + through;
+        if (record)
+        {
+            record->surface->transmitted = through;
+        }
+    }
+    if (!has_direct)
+    {
+        return material.outgoing_color(radiance);
+    }
+
+    const MetallicRoughnessBrdf brdf{material, normal, to_eye, 1 - material.transmission};
     const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
     Vec3 direct{};
     for (std::size_t i = 0; i < lighting_->direct.size(); ++i)
@@ -143,7 +159,7 @@ LinearColor PreviewRenderer::shade(const RasterHit &hit, PixelCoord pixel, const
             light_record->direct = contribution;
         }
     }
-    return material.outgoing_color(ambient + direct);
+    return material.outgoing_color(radiance + direct);
 }
 
 Vec3 PreviewRenderer::shade_light(std::size_t index, const MetallicRoughnessBrdf &brdf, const MeshInstance &instance,

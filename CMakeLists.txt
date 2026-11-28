@@ -195,7 +195,8 @@ if(BUILD_TESTING)
 
     add_executable(blend_layers_test tests/blend_layers_test.cpp)
     target_link_libraries(blend_layers_test PRIVATE formlight_gltf)
-    add_test(NAME blend_layers COMMAND blend_layers_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BlendLayers.glb")
+    add_test(NAME blend_layers COMMAND blend_layers_test "${CMAKE_CURRENT_SOURCE_DIR}/assets/BlendLayers.glb"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/thin-glass.gltf")
 
     add_executable(ssaa_test tests/ssaa_test.cpp)
     target_link_libraries(ssaa_test PRIVATE formlight_gltf)

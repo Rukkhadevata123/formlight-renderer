@@ -29,17 +29,17 @@ namespace
 {
 constexpr LinearColor background{0.035f, 0.045f, 0.06f, 1.0f};
 
-struct BlendFragment
+struct LayerFragment
 {
     int column;
     RasterHit hit;
 };
-using BlendRows = std::vector<std::vector<BlendFragment>>;
+using LayerRows = std::vector<std::vector<LayerFragment>>;
 
 enum class SurfacePass
 {
     Solid,
-    Blend,
+    Layer,
     Cull
 };
 
@@ -53,19 +53,31 @@ SurfacePass surface_pass(const GltfScene &scene, const RasterTriangle &piece)
     {
         return SurfacePass::Cull;
     }
-    return material.alpha_mode == AlphaMode::Blend ? SurfacePass::Blend : SurfacePass::Solid;
+    return material.alpha_mode == AlphaMode::Blend || material.transmission_factor > 0 ? SurfacePass::Layer
+                                                                                       : SurfacePass::Solid;
 }
 
-bool in_front_of_solid(const RasterHit &hit, const std::optional<RasterHit> &solid)
+bool in_front_of_solid(const GltfScene &scene, const RasterHit &hit, const std::optional<RasterHit> &solid)
 {
-    return !solid || hit.view_depth < solid->view_depth;
+    if (!solid)
+    {
+        return true;
+    }
+    if (hit.view_depth != solid->view_depth)
+    {
+        return hit.view_depth < solid->view_depth;
+    }
+    // BLEND fragments require strictly nearer depth. OPAQUE and MASK retain the solid pass's ID tie-break.
+    const auto id = hit.surface.id;
+    const auto &face = scene.instance(id.instance).triangles[std::to_underlying(id.primitive)];
+    return id < solid->surface.id && scene.material(face).alpha_mode != AlphaMode::Blend;
 }
 
-BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, const SurfaceFilter &solid_filter,
+LayerRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, const SurfaceFilter &solid_filter,
                                VisibilityBuffer visible, std::stop_token stop)
 {
     const auto pieces = RasterTriangle::prepare(view.camera, scene.instances(), view.depth, stop);
-    std::vector<const RasterTriangle *> blended;
+    std::vector<const RasterTriangle *> layered;
     for (const auto &piece : pieces)
     {
         if (stop.stop_requested())
@@ -77,19 +89,19 @@ BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, 
         {
             piece.rasterize(visible, solid_filter);
         }
-        else if (pass == SurfacePass::Blend)
+        else if (pass == SurfacePass::Layer)
         {
-            blended.push_back(&piece);
+            layered.push_back(&piece);
         }
     }
 
-    if (blended.empty())
+    if (layered.empty())
     {
         return {};
     }
     const auto extent = view.camera.extent();
-    BlendRows rows(extent.height);
-    for (const auto *piece : blended)
+    LayerRows rows(extent.height);
+    for (const auto *piece : layered)
     {
         if (stop.stop_requested())
         {
@@ -97,7 +109,7 @@ BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, 
         }
         const auto collect = [&](int x, int y, const RasterHit &hit)
         {
-            if (in_front_of_solid(hit, visible[y, x]))
+            if (in_front_of_solid(scene, hit, visible[y, x]))
             {
                 rows[y].push_back({x, hit});
             }
@@ -107,10 +119,10 @@ BlendRows rasterize_visibility(const GltfScene &scene, const PreviewView &view, 
     return rows;
 }
 
-void composite_layers(std::span<LinearColor> row, std::span<BlendFragment> fragments, auto shade)
+void composite_layers(std::span<LinearColor> row, std::span<LayerFragment> fragments, auto shade)
 {
     // Sort each pixel back to front. At equal depth the smaller surface ID is on top.
-    const auto back_to_front = [](const BlendFragment &a, const BlendFragment &b)
+    const auto back_to_front = [](const LayerFragment &a, const LayerFragment &b)
     {
         if (a.column != b.column)
         {
@@ -121,10 +133,10 @@ void composite_layers(std::span<LinearColor> row, std::span<BlendFragment> fragm
     std::ranges::sort(fragments, back_to_front);
     for (const auto &[x, hit] : fragments)
     {
-        const auto src = shade(x, hit);
+        auto &dst = row[x];
+        const auto src = shade(x, hit, dst);
         if (src.a > 0)
         {
-            auto &dst = row[x];
             // The background and depth-writing surfaces are opaque, so the composite alpha stays one.
             dst = {std::lerp(dst.r, src.r, src.a), std::lerp(dst.g, src.g, src.a), std::lerp(dst.b, src.b, src.a), 1};
         }
@@ -176,10 +188,11 @@ ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::sto
     ColorImage image{extent, background};
     std::vector<std::optional<RasterHit>> pixels(static_cast<std::size_t>(extent.width) * extent.height);
     const VisibilityBuffer visible{pixels.data(), extent.height, extent.width};
-    auto blends = rasterize_visibility(scene_, view, solid_filter_, visible, stop);
+    auto layers = rasterize_visibility(scene_, view, solid_filter_, visible, stop);
     const auto shade_row = [&](int y)
     {
-        const auto shade_hit = [&](int x, const RasterHit &hit) { return shade(hit, {x, y}, view, stop); };
+        const auto shade_hit = [&](int x, const RasterHit &hit, LinearColor behind)
+        { return shade(hit, {x, y}, view, behind, stop); };
         if (stop.stop_requested())
         {
             throw std::runtime_error("Rendering cancelled");
@@ -188,12 +201,12 @@ ColorImage PreviewRenderer::render_sample_grid(const PreviewView &view, std::sto
         {
             if (const auto &hit = visible[y, x])
             {
-                image[y, x] = shade_hit(x, *hit);
+                image[y, x] = shade_hit(x, *hit, background);
             }
         }
-        if (!blends.empty())
+        if (!layers.empty())
         {
-            composite_layers({&image[y, 0], static_cast<std::size_t>(extent.width)}, blends[y], shade_hit);
+            composite_layers({&image[y, 0], static_cast<std::size_t>(extent.width)}, layers[y], shade_hit);
         }
     };
     oneapi::tbb::parallel_for(0, extent.height, shade_row, frame_tasks);
@@ -239,7 +252,7 @@ void PreviewRenderer::diagnose_sample(const PreviewView &view, PixelCoord pixel,
 {
     const auto center = pixel_center(pixel.x, pixel.y);
     std::optional<RasterHit> solid;
-    std::vector<BlendFragment> blends;
+    std::vector<LayerFragment> layers;
     for (const auto &piece : pieces)
     {
         if (stop.stop_requested())
@@ -253,19 +266,20 @@ void PreviewRenderer::diagnose_sample(const PreviewView &view, PixelCoord pixel,
             {
                 hit->keep_nearest(solid, solid_filter_);
             }
-            else if (pass == SurfacePass::Blend)
+            else if (pass == SurfacePass::Layer)
             {
-                blends.push_back({0, *hit});
+                layers.push_back({0, *hit});
             }
         }
     }
 
-    const auto shade_hit = [&](int, const RasterHit &hit) { return shade(hit, pixel, view, stop, &report); };
+    const auto shade_hit = [&](int, const RasterHit &hit, LinearColor behind)
+    { return shade(hit, pixel, view, behind, stop, &report); };
     if (solid)
     {
-        report.color = shade_hit(0, *solid);
+        report.color = shade_hit(0, *solid, background);
     }
-    std::erase_if(blends, [&](const auto &fragment) { return !in_front_of_solid(fragment.hit, solid); });
-    composite_layers({&report.color, 1}, blends, shade_hit);
+    std::erase_if(layers, [&](const auto &fragment) { return !in_front_of_solid(scene_, fragment.hit, solid); });
+    composite_layers({&report.color, 1}, layers, shade_hit);
 }
 } // namespace formlight

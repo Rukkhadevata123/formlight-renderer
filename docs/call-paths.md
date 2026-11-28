@@ -59,8 +59,8 @@ PreviewRenderer::render
 └─ render_sample_grid
    ├─ rasterize_visibility
    │  ├─ RasterTriangle::prepare → for_each_clipped → clip_and_project
-   │  ├─ Solid (OPAQUE / MASK): piece.rasterize → for_each_hit → keep_nearest
-   │  └─ Blend (半透明):         piece.for_each_hit → 收集实体前的透明片元到 BlendRows
+   │  ├─ Solid（无透射的 OPAQUE / MASK）：piece.rasterize → for_each_hit → keep_nearest
+   │  └─ Layer（薄透射 / BLEND）：piece.for_each_hit → 收集实体前的片元到 LayerRows
    ├─ oneTBB 按行并行着色：
    │  ├─ shade → surface_material / shading_normal → shade_light
    │  │  ├─ 方向光：raster 查 DirectionalShadowMap（含 PCF）；hybrid 查 TriangleBvh
@@ -71,7 +71,7 @@ PreviewRenderer::render
 ```
 
 - **裁剪、覆盖与精确导数**：`clip_and_project` 在相机空间裁剪近远平面，并让每个裁剪新顶点保留原三角形的重心权重；`ScreenTriangle` 按像素中心与 top-left 规则测试覆盖；`RasterTriangle::interpolate` 用逆视深恢复透视校正权重与解析屏幕导数，因此多套 UV、Mipmap 与法线贴图都能直接从原始三角形重建。[裁剪](../src/raster/clipping.cpp) · [覆盖](../src/raster/coverage.cppm) · [插值与导数](../src/raster/raster.cppm)
-- **透明合成与诊断复现**：主可见性由 `VisibilityBuffer` 保存最近的 `OPAQUE` / 通过阈值的 `MASK` 表面，随后按行并行着色，再把挡在实体前的 `BLEND` 片元按深度从后往前混合。`diagnose_sample` 在单像素位置执行完全相同的覆盖、深度、透明层与 `shade` 流程。[帧合成与诊断](../src/preview/compositing.cpp) · [着色与光照](../src/preview/shading.cpp) · [方向光阴影图](../src/raster/shadow_map.cppm)
+- **透明合成与诊断复现**：先着色最近的写深度表面，再从远到近处理可见的薄透射与 `BLEND` 片元。每层 `shade` 都能读取同一子样本后方已合成的线性颜色；薄玻璃按底色与 Fresnel 衰减透射光并保留镜面高光，最后应用本层的 alpha 覆盖。拾取在 `diagnose_sample` 中重放同一顺序，报告最前方被覆盖的表面及透过它的背景贡献。[帧合成与诊断](../src/preview/compositing.cpp) · [着色与光照](../src/preview/shading.cpp)
 - **矩形灯合流点**：在色溢房间里，`hybrid` 与 `path` 都会在 `AreaLighting::evaluate` 会合——经 `sample_area_light → integrate_rectangle_samples → evaluate_finite_light_sample` 逐个求值 Halton 灯面点。`SurfaceRayOrigin::to` 沿几何法线偏移起点并把灯面点放在射线参数 `t = 1` 处；整图渲染调用 `occluded`（遇阻即返回），像素诊断则改调 `intersect_surface` 以报告具体遮挡图元。[矩形灯与遮挡查询](../src/lighting/direct_lighting.cppm)
 
 ### 独立入口：可编程自定义 Shader
