@@ -10,6 +10,24 @@ Formlight Renderer 是一个用 C++23 编写的 CPU 渲染器。下图是光栅�
 
 材质可通过 `KHR_texture_transform` 为每个纹理绑定单独选择 UV0 或 UV1，然后依次缩放、旋转和平移。缩小过滤按变换后的纹理足迹选择 mip 层，镂空材质的主画面和投影也使用变换后的 UV。[Khronos 扩展说明](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform)
 
+### 无窗口构建
+
+在仓库根目录的 x64 Developer PowerShell 中运行以下命令。共享 preset `release` 从 `VCPKG_ROOT` 读取工具链。如果本机用 `release-local` 配置 vcpkg 路径和缓存，可在同一条配置命令中换用它。`FORMLIGHT_BUILD_VIEWER=OFF` 在独立构建目录中只安装核心依赖，SDL3 和 Dear ImGui 由可选的 viewer 引入。
+
+```powershell
+$headless = Join-Path $PWD 'build/headless'
+$vcpkgWork = "$headless/vcpkg_installed/vcpkg"
+cmake --preset release -B $headless -DFORMLIGHT_BUILD_VIEWER=OFF -DBUILD_TESTING=ON `
+    "-DVCPKG_INSTALL_OPTIONS=--x-buildtrees-root=$vcpkgWork/blds;--x-packages-root=$vcpkgWork/pkgs"
+cmake --build $headless --parallel 4
+ctest --test-dir $headless --output-on-failure
+
+$cli = Join-Path $headless 'formlight-renderer.exe'
+& $cli --scene scenes/path/cornell-glass.toml --output "$headless/cornell-glass.png"
+& $cli --preset many_balls --output "$headless/many-balls.png"
+& $cli --preset final_scene --output "$headless/final-scene.png"
+```
+
 ### 场景
 
 | 想观察什么 | 从哪个场景开始 |
