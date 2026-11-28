@@ -28,6 +28,14 @@ $cli = ".\build\release\formlight-renderer.exe"
 
 ## 2. 按观察目标选场景
 
+连续查看不同 GLB 时，在仓库根目录运行：
+
+```powershell
+.\build\release\formlight-viewer.exe --scene scenes/lighting/model-preview.toml
+```
+
+[通用模型预览](../scenes/lighting/model-preview.toml) 从镂空板开始，地面上的亮孔可以直接检查透明度阈值和投影。用 **Open Model...** 换入模型后，相机会自动取景。预设使用 800×600、2×2 SSAA 和 Reinhard 显示。两盏方向光从侧前方和背面照亮模型，主灯投射 3×3 PCF 阴影，环境光让背光处的底色与 AO 仍可辨认。点灯和矩形灯使用世界坐标，模型尺度相差很大时可单独调整灯位。要看矩形灯的软阴影，将模式切到 `hybrid`，打开矩形灯的 `shadows` 后点击 **Apply**；可把 `light_samples` 从 4 调到 16 观察半影。
+
 | 观察目标 | 场景配置 | 建议对照方式 |
 | --- | --- | --- |
 | 硬阴影与软阴影 | [方向光](../scenes/lighting/box-directional.toml)、[矩形灯](../scenes/lighting/box-area-light.toml) | 同机位切换 `raster` 与 `hybrid` 对比方向光阴影；矩形灯用 `--pixel 85 310` 重放半影（[方盒实验](box-shadows.md)） |
@@ -93,6 +101,7 @@ $cli = ".\build\release\formlight-renderer.exe"
 
 - **几何与切线**（[网格导入](../src/io/gltf/mesh.cppm)）：
   - 支持 `TRIANGLES`、`TRIANGLE_STRIP` 与 `TRIANGLE_FAN`，导入时统一展开为三角形列表。
+  - 当前导入静态网格。带蒙皮的网格节点或带 morph target 的图元会在加载时报错，即使模型只用固定权重变形。
   - 缺少 `NORMAL` 属性时，加载器按相邻三角形面积加权生成平滑顶点法线（注意：glTF 2.0 规范对此约定逐面平面法线，共享顶点的折面外观会略有不同，见 [glTF 几何规范](https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html#meshes-overview)）。
   - 法线贴图优先使用自带 `TANGENT`；缺失时按法线贴图所选 UV 集自动生成 MikkTSpace 切线。
 - **纹理与可见性**（[纹理变换](../src/io/gltf/texture_transform.cppm) · [纹理过滤](../src/texture.cppm) · [材质可见性](../src/io/gltf.cpp)）：
@@ -100,3 +109,4 @@ $cli = ".\build\release\formlight-renderer.exe"
   - 底色与自发光按 sRGB 解码到线性空间；金属度、粗糙度、AO 与法线贴图保持线性读取（法线 Mipmap 降采样后自动重新单位化）。
   - 光栅片元用精确解析屏幕导数选择 Mip 层级；当前路径命中固定采样第 0 层。
   - `OPAQUE` 和通过阈值的 `MASK` 参与光栅主可见性、阴影与路径求交；`BLEND` 由光栅与混合模式逐像素排序合成。材质的 `doubleSided` 同时作用于主可见面与投影面。
+  - 使用 `KHR_materials_transmission` 的车窗会按基础材质显示，例如 Car Concept 的挡风玻璃呈灰白色。A Beautiful Game 的兵顶圆球还使用了 `KHR_materials_volume`。这两种扩展均待支持。
