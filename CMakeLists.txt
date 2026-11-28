@@ -21,6 +21,7 @@ target_sources(formlight_renderer_core PUBLIC
         src/sampling.cppm
         src/path/emitter_sampling.cppm
         src/path/target_sampling.cppm
+        src/path/medium.cppm
         src/path/specular.cppm
         src/image.cppm
         src/texture.cppm
@@ -98,6 +99,10 @@ if(BUILD_TESTING)
     add_executable(thin_lens_test tests/thin_lens_test.cpp)
     target_link_libraries(thin_lens_test PRIVATE formlight_gltf)
     add_test(NAME thin_lens COMMAND thin_lens_test)
+
+    add_executable(medium_test tests/medium_test.cpp)
+    target_link_libraries(medium_test PRIVATE formlight_gltf formlight_io)
+    add_test(NAME homogeneous_medium COMMAND medium_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/absorbing-sphere.toml")
 
     add_executable(motion_blur_test tests/motion_blur_test.cpp)
     target_link_libraries(motion_blur_test PRIVATE formlight_gltf formlight_io)

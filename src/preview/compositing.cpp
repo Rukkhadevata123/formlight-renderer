@@ -258,8 +258,8 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
     const auto pixel_index = static_cast<std::uint64_t>(pixel.y) * view.camera.extent().width + pixel.x;
     const bool lens_open = view.lens.radius() > 0;
     const bool sample_time = view.shutter.open < view.shutter.close;
-    const bool sample_camera = lens_open || sample_time;
-    const auto count = sample_camera ? view.path_sampling.samples : 1u;
+    const bool sample_primary = lens_open || sample_time || !scene_.media.empty();
+    const auto count = sample_primary ? view.path_sampling.samples : 1u;
     if (count == 0)
     {
         throw std::invalid_argument("Path sample count must be positive");
@@ -274,7 +274,7 @@ LinearColor PreviewRenderer::trace_primary(const PreviewView &view, PixelCoord p
         auto path_key = pixel_index;
         auto sampling = view.path_sampling;
         ray.time = view.shutter.open;
-        if (sample_camera)
+        if (sample_primary)
         {
             PathSampler camera_sampler{sampling.seed, pixel_index, i};
             if (lens_open)
@@ -322,8 +322,8 @@ LinearColor PreviewRenderer::trace_camera_ray(const PreviewView &view, const Ray
                                std::nextafter((view.depth.far_depth - origin_depth) / depth_per_unit,
                                               std::numeric_limits<double>::infinity())};
     std::optional<PathHit> first;
-    const auto color =
-        path_->radiance(ray, interval, record ? &first : nullptr, path_key, view.area_light_pattern, stop, sampling);
+    const auto color = path_->radiance(ray, interval, record ? &first : nullptr, path_key, view.area_light_pattern,
+                                       stop, sampling, record ? &record->medium : nullptr);
     if (record && first)
     {
         const auto &hit = first->intersection;

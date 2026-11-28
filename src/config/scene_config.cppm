@@ -3,7 +3,7 @@ export module formlight.scene_config;
 import std;
 export import formlight.camera;
 export import formlight.specular;
-export import formlight.sphere;
+export import formlight.medium;
 export import formlight.lighting;
 export import formlight.direct_lighting;
 
@@ -155,6 +155,7 @@ struct SceneSettings
     std::uint64_t seed{42};
     Vec3 environment{};
     double metal_fuzz_max{0.5};
+    std::vector<HomogeneousMedium> media{};
 
     void fields(this auto &self, auto &&field)
     {
@@ -163,6 +164,7 @@ struct SceneSettings
         field("path_materials", self.path_materials);
         field("sampling_targets", self.sampling_targets);
         field("spheres", self.spheres);
+        field("media", self.media);
         field("preset", self.preset);
         field("environment", self.environment);
         if (self.preset != ScenePreset::None)
@@ -380,6 +382,7 @@ struct RenderRequest
     Vec3 environment{};
     ThinLens lens{};
     ShutterInterval shutter{};
+    std::vector<HomogeneousMedium> media{};
 };
 
 [[nodiscard]] ImageExtent sample_grid_extent(ImageExtent extent, int ssaa)
@@ -435,13 +438,21 @@ struct RenderRequest
     {
         throw std::invalid_argument("scene.environment requires three finite, nonnegative channels");
     }
-    if (scene.asset.empty() && scene.spheres.empty() && scene.preset == ScenePreset::None)
+    if (scene.asset.empty() && scene.spheres.empty() && scene.media.empty() && scene.preset == ScenePreset::None)
     {
-        throw std::invalid_argument("Scene requires a model path or a sphere");
+        throw std::invalid_argument("Scene requires a model, sphere or medium");
     }
     if ((!scene.spheres.empty() || scene.preset == ScenePreset::ManyBalls) && render.mode != RenderMode::Path)
     {
         throw std::invalid_argument("Analytic spheres require path mode");
+    }
+    if (!scene.media.empty() && render.mode != RenderMode::Path)
+    {
+        throw std::invalid_argument("Participating media require path mode");
+    }
+    for (const auto &medium : scene.media)
+    {
+        medium.validate();
     }
     const auto validate_fuzz = [](double fuzz)
     {
@@ -521,7 +532,8 @@ struct RenderRequest
                           scene.spheres,
                           scene.environment,
                           ThinLens{camera.lens.focus_distance, camera.lens.defocus_angle_degrees},
-                          shutter};
+                          shutter,
+                          scene.media};
     if (request.lens.radius() > 0 && render.mode != RenderMode::Path)
     {
         throw std::invalid_argument("Camera defocus requires path mode");

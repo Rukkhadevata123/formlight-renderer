@@ -26,6 +26,10 @@ void PreviewRenderer::configure(RenderMode mode, std::optional<PreviewLighting> 
     }
     else
     {
+        if (!scene_.media.empty())
+        {
+            throw std::invalid_argument("Participating media require path mode");
+        }
         if (!scene_.spheres().empty())
         {
             throw std::invalid_argument("Analytic spheres require path mode");

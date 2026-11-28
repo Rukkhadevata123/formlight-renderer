@@ -3,6 +3,7 @@ export module formlight.direct_lighting;
 import std;
 import formlight.lighting;
 import formlight.material;
+import formlight.medium;
 import formlight.ray_query;
 import formlight.sampling;
 
@@ -127,7 +128,8 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
                                             std::uint64_t pixel, const SurfaceBvh *blockers,
                                             AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
                                             std::vector<LightSample> *record = nullptr,
-                                            const std::stop_token &stop = {})
+                                            const std::stop_token &stop = {},
+                                            std::span<const HomogeneousMedium> media = {})
 {
     if (sampling.samples == 0)
     {
@@ -154,8 +156,11 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
         const double v = shifted_radical_inverse<3>(i, shift_v);
         const Vec3 sample = light.sample(u, v);
         const auto incident = light.incident(receiver.position(), sample);
-        const auto evaluated =
-            evaluate_finite_light_sample(brdf, incident, receiver, sample, blockers, record != nullptr);
+        auto evaluated = evaluate_finite_light_sample(brdf, incident, receiver, sample, blockers, record != nullptr);
+        if (!media.empty() && evaluated.direct != Vec3{})
+        {
+            evaluated.direct = evaluated.direct * medium_transmittance(media, receiver.to(sample), {0, 1});
+        }
         sum = sum + evaluated.direct;
         if (record)
         {
@@ -173,7 +178,8 @@ export struct AreaLighting
 
     [[nodiscard]] Vec3 evaluate(const SurfaceRayOrigin &receiver, const MetallicRoughnessBrdf &brdf,
                                 std::uint64_t pixel, const SurfaceBvh *blockers, AreaLightPattern pattern,
-                                DiagnosticLight *record, std::stop_token stop) const
+                                DiagnosticLight *record, std::stop_token stop,
+                                std::span<const HomogeneousMedium> media = {}) const
     {
         if (record)
         {
@@ -181,7 +187,7 @@ export struct AreaLighting
             record->sampling_seed = sampling.seed;
         }
         return sample_area_light(light, receiver, brdf, sampling, pixel, shadows ? blockers : nullptr, pattern,
-                                 record ? &record->samples : nullptr, stop);
+                                 record ? &record->samples : nullptr, stop, media);
     }
 };
 } // namespace formlight

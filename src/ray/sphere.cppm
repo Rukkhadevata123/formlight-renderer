@@ -50,8 +50,15 @@ struct SphereIntersection
     Vec3 outward_normal;
 };
 
-[[nodiscard]] inline std::optional<SphereIntersection> intersect_sphere(const Ray &ray, const Sphere &sphere,
-                                                                        RayInterval interval)
+// The two signed roots also delimit the interior of a spherical medium.
+struct SphereChord
+{
+    RayInterval roots;
+    Vec3 direction, cross_distance;
+    double half_chord;
+};
+
+[[nodiscard]] inline std::optional<SphereChord> sphere_chord(const Ray &ray, const Sphere &sphere)
 {
     const double speed = std::hypot(ray.direction.x, ray.direction.y, ray.direction.z);
     if (!(speed > 0 && std::isfinite(speed)))
@@ -70,7 +77,7 @@ struct SphereIntersection
     // Half-chord length in world units. The factored difference preserves near-tangent hits.
     const double half_chord = sphere.radius * std::sqrt(((sphere.radius - perpendicular) / sphere.radius) *
                                                         (1 + perpendicular / sphere.radius));
-    for (const double offset : {-half_chord, half_chord})
+    const auto root = [&](double offset)
     {
         double distance = projection + offset;
         if (std::abs(distance) < 0.5 * std::abs(offset))
@@ -80,14 +87,28 @@ struct SphereIntersection
             const double other = projection - offset;
             distance = (length - sphere.radius) * (length / other + sphere.radius / other);
         }
-        const double t = distance / speed;
-        if (t > interval.min && t < interval.max)
-        {
-            // Construct the normal about closest approach, avoiding cancellation for distant origins.
-            const Vec3 radial = cross(cross_distance, direction) + direction * offset;
-            return SphereIntersection{t, unit_vector(radial, "Invalid sphere intersection normal")};
-        }
+        return distance / speed;
+    };
+    return SphereChord{{root(-half_chord), root(half_chord)}, direction, cross_distance, half_chord};
+}
+
+[[nodiscard]] inline std::optional<SphereIntersection> intersect_sphere(const Ray &ray, const Sphere &sphere,
+                                                                        RayInterval interval)
+{
+    const auto chord = sphere_chord(ray, sphere);
+    if (!chord)
+    {
+        return std::nullopt;
     }
-    return std::nullopt;
+    const bool enter = chord->roots.min > interval.min && chord->roots.min < interval.max;
+    const double t = enter ? chord->roots.min : chord->roots.max;
+    if (!(t > interval.min && t < interval.max))
+    {
+        return std::nullopt;
+    }
+    // Construct the normal about closest approach, avoiding cancellation for distant origins.
+    const double offset = enter ? -chord->half_chord : chord->half_chord;
+    const Vec3 radial = cross(chord->cross_distance, chord->direction) + chord->direction * offset;
+    return SphereIntersection{t, unit_vector(radial, "Invalid sphere intersection normal")};
 }
 } // namespace formlight

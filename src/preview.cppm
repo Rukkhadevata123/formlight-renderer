@@ -99,6 +99,7 @@ export struct SampleDiagnostic
     std::optional<Vec3> bounce_radiance{};
     std::optional<Vec3> lens_origin{};
     std::optional<double> time{};
+    std::optional<MediumHit> medium{};
 
     // Selected surface's contribution to the final pixel, including opacity and the sample's share of the mean.
     [[nodiscard]] Vec3 sample_contribution(std::size_t light, std::size_t index) const
@@ -192,6 +193,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     }
     scene->add_spheres(request.spheres);
     scene->environment = request.environment;
+    scene->media = request.media;
     const auto subject = scene->bounds();
     auto bounds = subject;
     if (request.ground)

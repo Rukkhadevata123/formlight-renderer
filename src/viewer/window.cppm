@@ -103,6 +103,10 @@ void show_sample(const SampleDiagnostic &report)
             ImGui::Text("Front layer opacity   %.3g", base.a);
         }
     }
+    else if (report.medium)
+    {
+        ImGui::Text("Absorbed in medium %zu at ray t=%.6g", report.medium->index, report.medium->t);
+    }
     else
     {
         ImGui::TextUnformatted("Background");

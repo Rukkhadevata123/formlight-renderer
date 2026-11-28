@@ -69,13 +69,66 @@ export class PathIntegrator
     [[nodiscard]] LinearColor radiance(const Ray &ray, RayInterval interval, std::optional<PathHit> *record = nullptr,
                                        std::uint64_t pixel = 0,
                                        AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
-                                       std::stop_token stop = {}, PathSampling sampling = {}) const
+                                       std::stop_token stop = {}, PathSampling sampling = {},
+                                       std::optional<MediumHit> *medium_record = nullptr) const
     {
         if (sampling.samples == 0)
         {
             throw std::invalid_argument("Path sample count must be positive");
         }
         const auto hit = surfaces_->intersect_surface(ray, interval);
+        if (medium_record)
+        {
+            medium_record->reset();
+        }
+        if (scene_.media.empty())
+        {
+            return surface_radiance(ray, hit, record, pixel, pattern, stop, sampling);
+        }
+
+        if (hit)
+        {
+            interval.max = hit->t;
+        }
+        // Each independent primary free flight owns one continuation. Diagnostics describe sample zero.
+        const auto count = sampling.samples;
+        sampling.samples = 1;
+        Vec3 sum{};
+        double transparency = 0;
+        for (std::uint32_t i = 0; i < count; ++i)
+        {
+            if (stop.stop_requested())
+            {
+                throw std::runtime_error("Rendering cancelled");
+            }
+            PathSampler rng{sampling.seed, pixel, i};
+            if (const auto event = sample_free_flight(scene_.media, ray, interval, rng))
+            {
+                if (i == 0 && medium_record)
+                {
+                    *medium_record = event;
+                }
+                if (i == 0 && record)
+                {
+                    record->reset();
+                }
+                continue;
+            }
+            const auto color =
+                surface_radiance(ray, hit, i == 0 ? record : nullptr, rng.next_bits(), pattern, stop, sampling);
+            sum = sum + Vec3{color.r, color.g, color.b};
+            transparency += 1.0 - color.a;
+        }
+        return {static_cast<float>(sum.x / count), static_cast<float>(sum.y / count), static_cast<float>(sum.z / count),
+                static_cast<float>(1.0 - transparency / count)};
+    }
+
+  private:
+    [[nodiscard]] LinearColor surface_radiance(const Ray &ray, const std::optional<SurfaceHit> &hit,
+                                               std::optional<PathHit> *record, std::uint64_t pixel,
+                                               AreaLightPattern pattern, std::stop_token stop,
+                                               PathSampling sampling) const
+    {
         if (!hit)
         {
             if (record)
@@ -110,7 +163,6 @@ export class PathIntegrator
         return surface.material.outgoing_color(direct + bounced);
     }
 
-  private:
     struct Interaction
     {
         SurfaceMaterial material;
@@ -169,8 +221,8 @@ export class PathIntegrator
         for (const auto &[index, rectangle] : rectangles_)
         {
             auto *light_record = first ? &first->lights.emplace_back() : nullptr;
-            const Vec3 contribution =
-                rectangle.evaluate(surface.origin, brdf, pixel, blockers_.get(), pattern, light_record, stop);
+            const Vec3 contribution = rectangle.evaluate(surface.origin, brdf, pixel, blockers_.get(), pattern,
+                                                         light_record, stop, scene_.media);
             direct = direct + contribution;
             if (light_record)
             {
@@ -283,7 +335,16 @@ export class PathIntegrator
             const auto &weight = bounce->weight;
             throughput = component_product(throughput, weight);
             const Ray ray = bounce->ray;
-            const auto hit = surfaces_->intersect_surface(ray, {0, std::numeric_limits<double>::infinity()});
+            RayInterval interval{0, std::numeric_limits<double>::infinity()};
+            const auto hit = surfaces_->intersect_surface(ray, interval);
+            if (!scene_.media.empty())
+            {
+                interval.max = hit ? hit->t : interval.max;
+                if (sample_free_flight(scene_.media, ray, interval, sampler))
+                {
+                    break;
+                }
+            }
             if (!hit)
             {
                 radiance = radiance + component_product(throughput, scene_.environment);

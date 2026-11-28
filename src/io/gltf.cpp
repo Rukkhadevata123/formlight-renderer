@@ -377,6 +377,12 @@ Bounds3 GltfScene::bounds() const
         bounds.include(box.low);
         bounds.include(box.high);
     }
+    for (const auto &medium : media)
+    {
+        const auto box = medium.boundary.bounds();
+        bounds.include(box.low);
+        bounds.include(box.high);
+    }
     if (!(bounds.radius() > 0 && std::isfinite(bounds.radius())))
     {
         throw std::invalid_argument("The scene has no finite spatial extent");

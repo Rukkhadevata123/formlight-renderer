@@ -112,6 +112,10 @@ void print_sample(const SampleDiagnostic &report)
             }
         }
     }
+    else if (report.medium)
+    {
+        std::println("Absorbed in medium {} at ray t={:.9g}", report.medium->index, report.medium->t);
+    }
     else
     {
         std::println("Background");

@@ -136,7 +136,8 @@ void read_group(const toml::table &table, ConfigGroup auto &group, std::string_v
             }
             else if constexpr (std::same_as<T, std::vector<LightSettings>> ||
                                std::same_as<T, std::vector<PathMaterialSettings>> ||
-                               std::same_as<T, std::vector<SphereSettings>>)
+                               std::same_as<T, std::vector<SphereSettings>> ||
+                               std::same_as<T, std::vector<HomogeneousMedium>>)
             {
                 const auto *entries = node->as_array();
                 if (!entries)
@@ -195,7 +196,8 @@ toml::table write_group(const ConfigGroup auto &group, const Path &directory)
             }
             else if constexpr (std::same_as<T, std::vector<LightSettings>> ||
                                std::same_as<T, std::vector<PathMaterialSettings>> ||
-                               std::same_as<T, std::vector<SphereSettings>>)
+                               std::same_as<T, std::vector<SphereSettings>> ||
+                               std::same_as<T, std::vector<HomogeneousMedium>>)
             {
                 toml::array entries;
                 for (const auto &entry : value)
