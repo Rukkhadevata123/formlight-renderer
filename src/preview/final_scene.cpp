@@ -26,7 +26,6 @@ std::vector<Triangle> unit_cube()
     face(z, x, y);
     return mesh;
 }
-} // namespace
 
 void add_final_scene_ground(GltfScene &scene, std::uint64_t scene_seed)
 {
@@ -46,5 +45,30 @@ void add_final_scene_ground(GltfScene &scene, std::uint64_t scene_seed)
         }
     }
     scene.add_solid_mesh(unit_cube(), {0.48f, 0.83f, 0.53f, 1}, std::move(transforms));
+}
+void add_sphere_cluster(GltfScene &scene, std::uint64_t scene_seed)
+{
+    constexpr double angle = 15 * std::numbers::pi / 180;
+    const double c = std::cos(angle), s = std::sin(angle);
+    const AffineTransform placement{Basis3{{c, 0, -s}, {0, 1, 0}, {s, 0, c}}, {-100, 270, 395}};
+
+    std::vector<Sphere> cluster;
+    constexpr unsigned count = 1000;
+    cluster.reserve(count);
+    for (unsigned i = 0; i < count; ++i)
+    {
+        // Stream zero belongs to the ground grid. Each sphere has its own stream in the cluster.
+        PathSampler rng{scene_seed, i, 1};
+        const Vec3 local{165 * rng.uniform(), 165 * rng.uniform(), 165 * rng.uniform()};
+        cluster.push_back({placement.to_world_point(local), 10});
+    }
+    scene.add_diffuse_spheres(cluster, {0.73, 0.73, 0.73});
+}
+} // namespace
+
+void add_final_scene_geometry(GltfScene &scene, std::uint64_t scene_seed)
+{
+    add_final_scene_ground(scene, scene_seed);
+    add_sphere_cluster(scene, scene_seed);
 }
 } // namespace formlight

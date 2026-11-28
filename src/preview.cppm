@@ -175,7 +175,7 @@ export struct ScenePreview
     Bounds3 subject;
 };
 
-void add_final_scene_ground(GltfScene &scene, std::uint64_t scene_seed);
+void add_final_scene_geometry(GltfScene &scene, std::uint64_t scene_seed);
 
 export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
 {
@@ -195,7 +195,7 @@ export [[nodiscard]] ScenePreview load_preview(const RenderRequest &request)
     }
     if (request.final_scene_seed)
     {
-        add_final_scene_ground(*scene, *request.final_scene_seed);
+        add_final_scene_geometry(*scene, *request.final_scene_seed);
     }
     scene->add_spheres(request.spheres);
     scene->environment = request.environment;

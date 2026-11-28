@@ -97,6 +97,7 @@ export class GltfScene
     }
     [[nodiscard]] SurfaceMaterial surface_material(const SphereInstance &sphere, Vec3 outward_normal) const;
     void add_spheres(std::span<const SphereSettings> spheres);
+    void add_diffuse_spheres(const std::vector<Sphere> &shapes, Vec3 albedo);
     [[nodiscard]] std::span<const SphereInstance> spheres() const & noexcept
     {
         return spheres_;
@@ -129,6 +130,8 @@ export class GltfScene
 
   private:
     GltfScene() = default;
+    void reserve_sphere_instances(std::size_t count);
+    void append_sphere_instance(const Sphere &shape, std::size_t material_index, bool sampling_target);
     std::vector<std::filesystem::path> source_files_;
     [[nodiscard]] LinearColor sample(const TextureBinding &binding, const Triangle &face, Barycentrics weights,
                                      WeightGradients gradients) const;

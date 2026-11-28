@@ -347,10 +347,6 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     {
         return;
     }
-    if (node_instance_slots_.size() + additions.size() - 1 > std::numeric_limits<std::uint32_t>::max())
-    {
-        throw std::length_error("Sphere exceeds the instance ID range");
-    }
     auto slots = sphere_image_slots_;
     std::vector<TextureImage> textures;
     std::vector<MarbleTexture> marbles;
@@ -394,8 +390,7 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     }
 
     // Publish only after every image was decoded, so a failed batch can be retried on the same scene.
-    spheres_.reserve(spheres_.size() + additions.size());
-    node_instance_slots_.reserve(node_instance_slots_.size() + additions.size());
+    reserve_sphere_instances(additions.size());
     materials_.reserve(materials_.size() + additions.size());
     images_.reserve(images_.size() + textures.size());
     checker_textures_.reserve(checker_textures_.size() + checkers.size());
@@ -407,11 +402,52 @@ void GltfScene::add_spheres(std::span<const SphereSettings> additions)
     for (std::size_t i = 0; i < additions.size(); ++i)
     {
         const auto &sphere = additions[i];
-        const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
         materials_.emplace_back(materials[i]);
-        spheres_.push_back({id, sphere.shape, materials_.size() - 1, sphere.sampling_target});
-        node_instance_slots_.push_back(std::nullopt);
+        append_sphere_instance(sphere.shape, materials_.size() - 1, sphere.sampling_target);
     }
+}
+
+void GltfScene::add_diffuse_spheres(const std::vector<Sphere> &shapes, Vec3 albedo)
+{
+    if (shapes.empty())
+    {
+        return;
+    }
+    if (!finite_nonnegative_components(albedo) || std::max({albedo.x, albedo.y, albedo.z}) > 1)
+    {
+        throw std::invalid_argument("Sphere albedo must be in [0, 1]");
+    }
+    for (const auto &shape : shapes)
+    {
+        (void)shape.bounds();
+    }
+    reserve_sphere_instances(shapes.size());
+    const auto slot = materials_.size();
+    materials_.emplace_back(
+        GltfMaterial{.base_color_factor = {static_cast<float>(albedo.x), static_cast<float>(albedo.y),
+                                           static_cast<float>(albedo.z), 1},
+                     .metallic_factor = 0});
+    for (const auto &shape : shapes)
+    {
+        append_sphere_instance(shape, slot, false);
+    }
+}
+
+void GltfScene::reserve_sphere_instances(std::size_t count)
+{
+    if (!std::in_range<std::uint32_t>(node_instance_slots_.size() + count - 1))
+    {
+        throw std::length_error("Sphere exceeds the instance ID range");
+    }
+    spheres_.reserve(spheres_.size() + count);
+    node_instance_slots_.reserve(node_instance_slots_.size() + count);
+}
+
+void GltfScene::append_sphere_instance(const Sphere &shape, std::size_t material_index, bool sampling_target)
+{
+    const InstanceId id{static_cast<std::uint32_t>(node_instance_slots_.size())};
+    spheres_.push_back({id, shape, material_index, sampling_target});
+    node_instance_slots_.push_back(std::nullopt);
 }
 
 Bounds3 GltfScene::bounds() const

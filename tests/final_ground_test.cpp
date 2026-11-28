@@ -47,8 +47,9 @@ void check_ground(const ScenePreview &preview)
     {
         throw std::runtime_error("Exterior wall or ray outside the grid differs from the expected footprint");
     }
-    if (preview.bounds.low != Vec3{-1000, 0, -1000} || preview.bounds.high.x != 1000 || preview.bounds.high.z != 1000 ||
-        std::abs(preview.bounds.high.y - 100.86514990142061) > 1e-10)
+    const auto ground = world_bounds(instances);
+    if (ground.low != Vec3{-1000, 0, -1000} || ground.high.x != 1000 || ground.high.z != 1000 ||
+        std::abs(ground.high.y - 100.86514990142061) > 1e-10)
     {
         throw std::runtime_error("Seed 42 ground bounds differ from the reference grid");
     }

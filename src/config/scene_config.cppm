@@ -483,7 +483,7 @@ struct RenderRequest
     {
         throw std::invalid_argument("Scene requires a model, sphere or medium");
     }
-    if ((!scene.spheres.empty() || scene.preset == ScenePreset::ManyBalls) && render.mode != RenderMode::Path)
+    if ((!scene.spheres.empty() || scene.preset != ScenePreset::None) && render.mode != RenderMode::Path)
     {
         throw std::invalid_argument("Analytic spheres require path mode");
     }

@@ -118,10 +118,10 @@ build/release/formlight-renderer.exe --scene scenes/path/marble.toml --output bu
 build/release/formlight-renderer.exe --scene scenes/path/checker.toml --output build/release/checker.png
 ```
 
-[final_scene 场景](scenes/path/final-scene.toml) 目前包含 20×20 个地块。每个地块底面为 100×100，地面从 X、Z 的 −1000 延伸到 1000。地块共用一个闭合的立方体网格；每格的位置和高度由实例变换给出。`--scene-seed` 决定各格在 [1, 101) 内的高度，`--seed` 控制光照和路径采样。当前的俯视机位与矩形灯用于查看整个网格和相邻地块的高度差。
+[final_scene 场景](scenes/path/final-scene.toml) 目前包含 20×20 个地块和一组悬空的白球。每个地块底面为 100×100，地面从 X、Z 的 −1000 延伸到 1000。地块共用一个闭合的立方体网格；每格的位置和高度由实例变换给出。`--scene-seed` 决定各格在 [1, 101) 内的高度，`--seed` 控制光照和路径采样。千球群使用同一个布局种子和独立的随机流。1000 个局部球心分布在边长为 165 的立方体内，先绕 Y 轴旋转 15°，再平移 (−100, 270, 395)。所有球的半径均为 10，共用线性反照率为 (0.73, 0.73, 0.73) 的漫反射材质。生成场景时将球心一次性变换到世界坐标，解析球与地块随后共用同一棵 BVH。[球群几何回归](tests/final_cluster_test.cpp)
 
 ```powershell
-build/release/formlight-renderer.exe --preset final_scene --scene-seed 42 --output build/release/final-ground.png
+build/release/formlight-renderer.exe --preset final_scene --scene-seed 42 --output build/release/final-scene.png
 ```
 
 ### 自定义光栅 shader
