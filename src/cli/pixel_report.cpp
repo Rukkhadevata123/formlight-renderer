@@ -45,7 +45,7 @@ void print_sample(const SampleDiagnostic &report)
         std::println("Surface: instance {}, primitive {}, material slot {}, depth {:.9g}",
                      std::to_underlying(id.instance), std::to_underlying(id.primitive), surface->material_index,
                      surface->hit.view_depth);
-        const auto &[base, emission, metallic, roughness, occlusion] = surface->material;
+        const auto &[base, emission, metallic, roughness, occlusion, transmission] = surface->material;
         if (const auto &n = surface->shading_normal)
         {
             std::println("World shading normal: ({}, {}, {})", n->x, n->y, n->z);
@@ -71,6 +71,7 @@ void print_sample(const SampleDiagnostic &report)
         }
         std::println("Base linear RGB: ({}, {}, {})", base.r, base.g, base.b);
         std::println("Surface emission (linear RGB): ({}, {}, {})", emission.r, emission.g, emission.b);
+        std::println("glTF transmission: {}", transmission);
         const auto ambient = surface->ambient;
         std::println("Occlusion: {}  Surface ambient (linear RGB): ({}, {}, {})", occlusion, ambient.x, ambient.y,
                      ambient.z);

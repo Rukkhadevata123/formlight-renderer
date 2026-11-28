@@ -188,6 +188,19 @@ GltfMaterial read_material(const fastgltf::Material &material, TextureLoader &te
         result.occlusion_texture = textures.bind(*info, TextureUsage::Data);
         result.occlusion_strength = info->strength;
     }
+    if (const auto &transmission = material.transmission)
+    {
+        const auto factor = transmission->transmissionFactor;
+        if (!(factor >= 0 && factor <= 1))
+        {
+            throw std::runtime_error("transmissionFactor must be in [0, 1]");
+        }
+        result.transmission_factor = factor;
+        if (const auto &info = transmission->transmissionTexture)
+        {
+            result.transmission_texture = textures.bind(*info, TextureUsage::Data);
+        }
+    }
     if (const auto &info = material.emissiveTexture)
     {
         result.emissive_texture = textures.bind(*info, TextureUsage::Color);
@@ -228,12 +241,18 @@ std::expected<GltfScene, std::string> GltfScene::load(const std::filesystem::pat
             throw std::runtime_error("Could not open or read glTF model");
         }
         fastgltf::Parser parser{fastgltf::Extensions::KHR_materials_emissive_strength |
+                                fastgltf::Extensions::KHR_materials_transmission |
                                 fastgltf::Extensions::KHR_texture_transform};
         const auto model = std::filesystem::absolute(path);
         auto parsed = parser.loadGltf(file.get(), model.parent_path(), fastgltf::Options::GenerateMeshIndices);
         check(parsed.error());
         auto &asset = parsed.get();
         check(fastgltf::validate(asset));
+        if (content == GltfContent::Materials &&
+            std::ranges::contains(asset.extensionsRequired, fastgltf::extensions::KHR_materials_transmission))
+        {
+            throw std::runtime_error("This model requires KHR_materials_transmission shading");
+        }
         ModelResources resources{asset, model.parent_path()};
         const auto scene_index = asset.defaultScene.value_or(0);
         if (scene_index >= asset.scenes.size())
@@ -620,7 +639,12 @@ SurfaceMaterial GltfScene::surface_material(const Triangle &face, Barycentrics w
         const auto texel = sample(*binding, face, weights, gradients);
         occlusion = std::lerp(1.0, static_cast<double>(texel.r), mat.occlusion_strength);
     }
-    return {color, emission, metallic, roughness, occlusion};
+    double transmission = mat.transmission_factor;
+    if (const auto &binding = mat.transmission_texture)
+    {
+        transmission *= sample(*binding, face, weights, gradients).r;
+    }
+    return {color, emission, metallic, roughness, occlusion, transmission};
 }
 
 Vec3 GltfScene::shading_normal(const MeshInstance &instance, const Triangle &face, Barycentrics weights,

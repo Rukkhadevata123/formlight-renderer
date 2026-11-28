@@ -58,6 +58,8 @@ export struct GltfMaterial
     double normal_scale{1};
     std::optional<TextureBinding> occlusion_texture{};
     double occlusion_strength{1};
+    double transmission_factor{};
+    std::optional<TextureBinding> transmission_texture{};
     LinearColor emission_multiplier{};
     std::optional<TextureBinding> emissive_texture{};
     AlphaMode alpha_mode{AlphaMode::Opaque};

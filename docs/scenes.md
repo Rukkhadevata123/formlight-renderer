@@ -109,4 +109,4 @@ $cli = ".\build\release\formlight-renderer.exe"
   - 底色与自发光按 sRGB 解码到线性空间；金属度、粗糙度、AO 与法线贴图保持线性读取（法线 Mipmap 降采样后自动重新单位化）。
   - 光栅片元用精确解析屏幕导数选择 Mip 层级；当前路径命中固定采样第 0 层。
   - `OPAQUE` 和通过阈值的 `MASK` 参与光栅主可见性、阴影与路径求交；`BLEND` 由光栅与混合模式逐像素排序合成。材质的 `doubleSided` 同时作用于主可见面与投影面。
-  - 使用 `KHR_materials_transmission` 的车窗会按基础材质显示，例如 Car Concept 的挡风玻璃呈灰白色。A Beautiful Game 的兵顶圆球还使用了 `KHR_materials_volume`。这两种扩展均待支持。
+  - 像素诊断中的 **glTF transmission** 是 `transmissionFactor` 乘以透射纹理的线性 R 通道。Car Concept 的挡风玻璃可拾取到 1，车门为 0。当前可选透射材质按基础材质着色，声明必须支持透射的模型会在渲染加载时提示。后续将用挡风玻璃验证薄透射，用 A Beautiful Game 的兵顶圆球验证 `KHR_materials_volume` 厚玻璃。

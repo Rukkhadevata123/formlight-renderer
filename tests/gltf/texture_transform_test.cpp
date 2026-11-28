@@ -44,6 +44,9 @@ void check_bindings(const GltfScene &scene)
                 compare("metallic", actual.metallic, expected.metallic);
                 compare("roughness", actual.roughness, expected.roughness);
                 compare("occlusion", actual.occlusion, expected.occlusion);
+                // The baked occlusion binding reads the same linear red channel with pre-transformed UVs.
+                compare("transmission", actual.transmission, 0.5 * expected.occlusion);
+                compare("default transmission", expected.transmission, 0);
 
                 const auto n = scene.shading_normal(transformed, face, weights, gradients, false);
                 const auto ref = scene.shading_normal(baked, reference, weights, gradients, false);

@@ -78,7 +78,7 @@ void show_sample(const SampleDiagnostic &report)
             ImGui::Text("Primitive %u", std::to_underlying(id.primitive));
         }
         ImGui::Text("Material slot %zu", surface->material_index);
-        const auto &[base, emission, metallic, roughness, occlusion] = surface->material;
+        const auto &[base, emission, metallic, roughness, occlusion, transmission] = surface->material;
         if (const auto &n = surface->shading_normal)
         {
             ImGui::Text("World shading normal   %.3g  %.3g  %.3g", n->x, n->y, n->z);
@@ -94,6 +94,7 @@ void show_sample(const SampleDiagnostic &report)
         ImGui::Text("Surface emission (linear RGB)   %.3g  %.3g  %.3g", emission.r, emission.g, emission.b);
         const auto ambient = surface->ambient;
         ImGui::Text("Occlusion   %.3g", occlusion);
+        ImGui::Text("glTF transmission   %.3g", transmission);
         ImGui::Text("Surface ambient (linear RGB)   %.3g  %.3g  %.3g", ambient.x, ambient.y, ambient.z);
         if (const auto &bounce = report.bounce_radiance)
         {

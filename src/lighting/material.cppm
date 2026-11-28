@@ -12,6 +12,7 @@ struct SurfaceMaterial
     LinearColor emission;
     double metallic{1}, roughness{1};
     double occlusion{1};
+    double transmission{};
 
     [[nodiscard]] LinearColor outgoing_color(Vec3 reflected) const noexcept
     {

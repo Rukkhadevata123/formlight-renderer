@@ -128,6 +128,10 @@ void read_texcoords(ModelResources &resources, const fastgltf::Primitive &primit
         require("normalTexture", material.normalTexture);
         require("occlusionTexture", material.occlusionTexture);
         require("emissiveTexture", material.emissiveTexture);
+        if (material.transmission)
+        {
+            require("transmissionTexture", material.transmission->transmissionTexture);
+        }
     }
 }
 
