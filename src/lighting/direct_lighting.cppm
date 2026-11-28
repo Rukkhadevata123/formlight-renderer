@@ -123,13 +123,9 @@ template <std::uint32_t Base> double shifted_radical_inverse(std::uint32_t index
 }
 } // namespace
 
-export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const SurfaceRayOrigin &receiver,
-                                            const MetallicRoughnessBrdf &brdf, LightSampling sampling,
-                                            std::uint64_t pixel, const SurfaceBvh *blockers,
-                                            AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
-                                            std::vector<LightSample> *record = nullptr,
-                                            const std::stop_token &stop = {},
-                                            std::span<const HomogeneousMedium> media = {})
+export [[nodiscard]] Vec3 integrate_rectangle_samples(const RectangleLight &light, LightSampling sampling,
+                                                      std::uint64_t pixel, AreaLightPattern pattern,
+                                                      std::stop_token stop, auto evaluate)
 {
     if (sampling.samples == 0)
     {
@@ -154,20 +150,34 @@ export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const S
         }
         const double u = shifted_radical_inverse<2>(i, shift_u);
         const double v = shifted_radical_inverse<3>(i, shift_v);
-        const Vec3 sample = light.sample(u, v);
+        sum = sum + evaluate(light.sample(u, v));
+    }
+    return sum / count;
+}
+
+export [[nodiscard]] Vec3 sample_area_light(const RectangleLight &light, const SurfaceRayOrigin &receiver,
+                                            const MetallicRoughnessBrdf &brdf, LightSampling sampling,
+                                            std::uint64_t pixel, const SurfaceBvh *blockers,
+                                            AreaLightPattern pattern = AreaLightPattern::ShiftedHalton,
+                                            std::vector<LightSample> *record = nullptr,
+                                            const std::stop_token &stop = {},
+                                            std::span<const HomogeneousMedium> media = {})
+{
+    const auto evaluate = [&](Vec3 sample)
+    {
         const auto incident = light.incident(receiver.position(), sample);
         auto evaluated = evaluate_finite_light_sample(brdf, incident, receiver, sample, blockers, record != nullptr);
         if (!media.empty() && evaluated.direct != Vec3{})
         {
             evaluated.direct = evaluated.direct * medium_transmittance(media, receiver.to(sample), {0, 1});
         }
-        sum = sum + evaluated.direct;
         if (record)
         {
             record->push_back(evaluated);
         }
-    }
-    return sum / count;
+        return evaluated.direct;
+    };
+    return integrate_rectangle_samples(light, sampling, pixel, pattern, stop, evaluate);
 }
 
 export struct AreaLighting

@@ -82,10 +82,18 @@ build/release/formlight-renderer.exe --preset many_balls --focus-distance 10 --d
 build/release/formlight-renderer.exe --scene scenes/path/moving-sphere.toml --output build/release/moving-sphere.png
 ```
 
-[纯吸收介质示例](scenes/path/absorbing-sphere.toml) 在白色环境前放了一个半径为 1 的球形介质。每个 `[[scene.media]]` 用 `center`、`radius` 指定边界，可用 `displacement` 指定运动。`extinction` 是每单位世界距离的消光系数。在当前的纯吸收模型里，射线穿过距离 `d` 后仍能到达背景的概率为 `exp(-extinction * d)`。示例取 `extinction = 0.5`，中心射线穿过直径 2，透过率约为 36.8%。像素诊断可区分看见背景和被吸收的路径，并报告吸收事件的射线参数。
+[纯吸收介质示例](scenes/path/absorbing-sphere.toml) 在白色环境前放了一个半径为 1 的球形介质。每个 `[[scene.media]]` 用 `center`、`radius` 指定边界，可用 `displacement` 指定运动。`extinction` 是每单位世界距离的消光系数。在这个纯吸收示例中，射线穿过距离 `d` 后仍能到达背景的概率为 `exp(-extinction * d)`。示例取 `extinction = 0.5`，中心射线穿过直径 2，透过率约为 36.8%。像素诊断可区分看见背景和被吸收的路径，并报告吸收事件的射线参数。
 
 ```powershell
 build/release/formlight-renderer.exe --scene scenes/path/absorbing-sphere.toml --output build/release/absorbing-sphere.png
+```
+
+[蓝色玻璃球与全局雾](scenes/path/scattering-media.toml) 单独取出 `final_scene` 的两种介质，放在均匀白色环境中。局部玻璃球半径为 70，内部介质的 `scattering_albedo = [0.2, 0.4, 0.9]`；外层白雾半径为 5000，消光系数为 0.0001。玻璃表面负责折射，介质边界只限定自由程的采样区间。
+
+`scattering_albedo` 是每次碰撞后各颜色通道保留的比例，默认为零。散射方向在整个球面上均匀采样，每次继续传播占用一次 `max_bounces`。有矩形灯时，碰撞点还会采样灯面，计算遮挡和沿途介质的透过率。
+
+```powershell
+build/release/formlight-renderer.exe --scene scenes/path/scattering-media.toml --output build/release/scattering-media.png
 ```
 
 ### 自定义光栅 shader

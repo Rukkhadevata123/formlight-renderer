@@ -102,7 +102,9 @@ if(BUILD_TESTING)
 
     add_executable(medium_test tests/medium_test.cpp)
     target_link_libraries(medium_test PRIVATE formlight_gltf formlight_io)
-    add_test(NAME homogeneous_medium COMMAND medium_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/absorbing-sphere.toml")
+    add_test(NAME homogeneous_medium COMMAND medium_test
+        "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/absorbing-sphere.toml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/scenes/path/scattering-media.toml")
 
     add_executable(motion_blur_test tests/motion_blur_test.cpp)
     target_link_libraries(motion_blur_test PRIVATE formlight_gltf formlight_io)

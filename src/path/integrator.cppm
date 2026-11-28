@@ -112,6 +112,11 @@ export class PathIntegrator
                 {
                     record->reset();
                 }
+                if (event->scattering_albedo != Vec3{})
+                {
+                    sum = sum + medium_direct_light(*event, ray, rng.next_bits(), pattern, stop);
+                    sum = sum + trace_bounces(*event, ray, rng, sampling, pattern, stop);
+                }
                 continue;
             }
             const auto color =
@@ -153,7 +158,7 @@ export class PathIntegrator
         for (std::uint32_t i = 0; i < sampling.samples; ++i)
         {
             PathSampler sampler{sampling.seed, pixel, i};
-            sum = sum + trace_bounces(surface, ray.direction, sampler, sampling, pattern, stop);
+            sum = sum + trace_bounces(surface, ray, sampler, sampling, pattern, stop);
         }
         const Vec3 bounced = sum / sampling.samples;
         if (first)
@@ -231,6 +236,30 @@ export class PathIntegrator
             }
         }
         return direct;
+    }
+
+    [[nodiscard]] Vec3 medium_direct_light(const MediumHit &event, const Ray &ray, std::uint64_t pixel,
+                                           AreaLightPattern pattern, std::stop_token stop) const
+    {
+        const Vec3 position = ray.at(event.t);
+        Vec3 integrated_radiance{};
+        for (const auto &entry : rectangles_)
+        {
+            const auto &area = entry.second;
+            const auto evaluate = [&](Vec3 endpoint)
+            {
+                const auto incident = area.light.incident(position, endpoint);
+                const Ray connection{position, endpoint - position, ray.time};
+                if (incident.weight == Vec3{} || (area.shadows && blockers_->occluded(connection, {0, 1})))
+                {
+                    return Vec3{};
+                }
+                return incident.weight * medium_transmittance(scene_.media, connection, {0, 1});
+            };
+            integrated_radiance = integrated_radiance + integrate_rectangle_samples(area.light, area.sampling, pixel,
+                                                                                    pattern, stop, evaluate);
+        }
+        return component_product(integrated_radiance, event.scattering_albedo) / (4 * std::numbers::pi);
     }
 
     struct Bounce
@@ -317,7 +346,23 @@ export class PathIntegrator
         return Bounce{ray, diffuse * (cosine_pdf / mixture_pdf)};
     }
 
-    [[nodiscard]] Vec3 trace_bounces(Interaction surface, Vec3 incident, PathSampler &sampler,
+    using PathVertex = std::variant<Interaction, MediumHit>;
+
+    [[nodiscard]] std::optional<Bounce> sample_bounce(const PathVertex &vertex, const Ray &incident,
+                                                      PathSampler &sampler, BounceSampling method) const
+    {
+        if (const auto *surface = std::get_if<Interaction>(&vertex))
+        {
+            return sample_bounce(*surface, incident.direction, sampler, method);
+        }
+        const auto &event = std::get<MediumHit>(vertex);
+        const double u = sampler.uniform();
+        const Vec3 direction = uniform_sphere(u, sampler.uniform());
+        // The isotropic phase function and its sampling PDF are both 1/(4*pi).
+        return Bounce{{incident.at(event.t), direction, incident.time}, event.scattering_albedo};
+    }
+
+    [[nodiscard]] Vec3 trace_bounces(PathVertex vertex, Ray incident, PathSampler &sampler,
                                      const PathSampling &sampling, AreaLightPattern pattern, std::stop_token stop) const
     {
         Vec3 radiance{}, throughput{1, 1, 1};
@@ -327,7 +372,7 @@ export class PathIntegrator
             {
                 throw std::runtime_error("Rendering cancelled");
             }
-            const auto bounce = sample_bounce(surface, incident, sampler, sampling.method);
+            const auto bounce = sample_bounce(vertex, incident, sampler, sampling.method);
             if (!bounce)
             {
                 break;
@@ -340,9 +385,17 @@ export class PathIntegrator
             if (!scene_.media.empty())
             {
                 interval.max = hit ? hit->t : interval.max;
-                if (sample_free_flight(scene_.media, ray, interval, sampler))
+                if (const auto event = sample_free_flight(scene_.media, ray, interval, sampler))
                 {
-                    break;
+                    if (event->scattering_albedo == Vec3{})
+                    {
+                        break;
+                    }
+                    const auto direct = medium_direct_light(*event, ray, sampler.next_bits(), pattern, stop);
+                    radiance = radiance + component_product(throughput, direct);
+                    vertex = *event;
+                    incident = ray;
+                    continue;
                 }
             }
             if (!hit)
@@ -350,8 +403,8 @@ export class PathIntegrator
                 radiance = radiance + component_product(throughput, scene_.environment);
                 break;
             }
-            surface = interaction(*hit, ray);
-            incident = ray.direction;
+            incident = ray;
+            const auto &surface = vertex.emplace<Interaction>(interaction(*hit, ray));
             const auto &e = surface.material.emission;
             const Vec3 incoming = Vec3{e.r, e.g, e.b} + direct_light(surface, ray, sampler.next_bits(), pattern, stop);
             radiance = radiance + component_product(throughput, incoming);

@@ -1,0 +1,35 @@
+# Blue glass and the surrounding white fog from final_scene, isolated under a uniform sky.
+[scene]
+environment = [1, 1, 1]
+
+[[scene.spheres]]
+center = [360, 150, 145]
+radius = 70
+type = "dielectric"
+ior = 1.5
+
+[[scene.media]]
+center = [360, 150, 145]
+radius = 70
+extinction = 0.2
+scattering_albedo = [0.2, 0.4, 0.9]
+
+[[scene.media]]
+center = [0, 0, 0]
+radius = 5000
+extinction = 0.0001
+scattering_albedo = [1, 1, 1]
+
+[camera]
+auto_frame = false
+position = [360, 180, -160]
+target = [360, 150, 145]
+vertical_fov_degrees = 37
+
+[render]
+mode = "path"
+width = 151
+height = 101
+path_samples = 256
+max_bounces = 32
+seed = 7

@@ -105,7 +105,11 @@ void show_sample(const SampleDiagnostic &report)
     }
     else if (report.medium)
     {
-        ImGui::Text("Absorbed in medium %zu at ray t=%.6g", report.medium->index, report.medium->t);
+        const auto &event = *report.medium;
+        const auto albedo = event.scattering_albedo;
+        ImGui::Text("%s in medium %zu at ray t=%.6g", albedo == Vec3{} ? "Absorbed" : "Collision", event.index,
+                    event.t);
+        ImGui::Text("Scattering albedo   %.3g  %.3g  %.3g", albedo.x, albedo.y, albedo.z);
     }
     else
     {

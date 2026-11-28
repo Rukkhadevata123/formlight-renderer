@@ -114,7 +114,10 @@ void print_sample(const SampleDiagnostic &report)
     }
     else if (report.medium)
     {
-        std::println("Absorbed in medium {} at ray t={:.9g}", report.medium->index, report.medium->t);
+        const auto &event = *report.medium;
+        const auto albedo = event.scattering_albedo;
+        std::println("{} in medium {} at ray t={:.9g}, scattering albedo ({:.6g}, {:.6g}, {:.6g})",
+                     albedo == Vec3{} ? "Absorbed" : "Collision", event.index, event.t, albedo.x, albedo.y, albedo.z);
     }
     else
     {

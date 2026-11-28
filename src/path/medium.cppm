@@ -10,6 +10,7 @@ struct HomogeneousMedium
 {
     Sphere boundary;
     double extinction{1}; // Inverse world distance.
+    Vec3 scattering_albedo{}; // Per-channel fraction of extinct light scattered at a collision.
 
     void fields(this auto &self, auto &&field)
     {
@@ -17,6 +18,7 @@ struct HomogeneousMedium
         field("radius", self.boundary.radius);
         field("displacement", self.boundary.displacement);
         field("extinction", self.extinction);
+        field("scattering_albedo", self.scattering_albedo);
     }
 
     void validate() const
@@ -25,6 +27,13 @@ struct HomogeneousMedium
         if (!(extinction >= 0 && std::isfinite(extinction)))
         {
             throw std::invalid_argument("Medium extinction must be finite and nonnegative");
+        }
+        for (const double fraction : {scattering_albedo.x, scattering_albedo.y, scattering_albedo.z})
+        {
+            if (!(fraction >= 0 && fraction <= 1))
+            {
+                throw std::invalid_argument("Medium scattering_albedo must be in [0, 1]");
+            }
         }
     }
 
@@ -53,6 +62,7 @@ struct MediumHit
 {
     std::size_t index;
     double t;
+    Vec3 scattering_albedo{};
 };
 
 [[nodiscard]] inline std::optional<MediumHit> sample_free_flight(std::span<const HomogeneousMedium> media,
@@ -68,7 +78,7 @@ struct MediumHit
             const double t = inside->min + distance / speed;
             if (t < inside->max)
             {
-                nearest = MediumHit{i, t};
+                nearest = MediumHit{i, t, media[i].scattering_albedo};
                 interval.max = t;
             }
         }
