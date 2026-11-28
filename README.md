@@ -71,6 +71,8 @@ build/release/formlight-renderer.exe --preset final_scene --path-samples 128 --b
 
 点击 **Path samples** 旁的 **Cancel**，图像和计数会停在屏幕上最后一个完整批次。此时仍可调曝光、拾取像素。点击 **Resume** 或调高目标并点击 **Apply**，会从保留的样本数继续。移动相机后，viewer 会为新机位重新采样。
 
+要核对窗口颜色与导出的 PNG，在启用 viewer 的构建中运行 `ctest --preset release-local -R viewer_display_rgb8 -V`。回归在 SDL 软件后端按原尺寸读回场景纹理，逐像素比较同一采样数和显示设置下 CLI 输出的 PNG，覆盖渐进帧、降低一档曝光和切换 Reinhard。[显示像素回归](tests/viewer_display_test.cpp)
+
 Cornell 漫反射场景启用 `bounce_sampling = "light_mixture"`。在漫反射表面，各有一半概率采样余弦半球或发光网格。网格分支按实例变换后的三角形面积选灯面，再在面内均匀取点。两个分支都用同一混合概率密度计算路径权重，实际命中的表面由 BVH 决定。发光网格和额外采样目标均为空时使用纯余弦采样。命令行可用 `--bounce-sampling cosine` 或 `--bounce-sampling light_mixture` 在相同路径数下比较噪声。[采样器](src/path/emitter_sampling.cppm) · [积分对照](tests/cornell_diffuse_test.cpp)
 
 Cornell 房间的唯一光源是向下发光的天花板网格。一次反弹能让白墙直接看见灯，三次反弹还会带回侧墙的颜色。在同一机位运行：

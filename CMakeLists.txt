@@ -290,5 +290,13 @@ if(BUILD_TESTING)
         target_link_libraries(viewer_close_test PRIVATE formlight_viewer_window formlight_io SDL3::SDL3)
         add_test(NAME viewer_close_during_render COMMAND viewer_close_test "${CMAKE_CURRENT_SOURCE_DIR}/scenes/lighting/box-area-light.toml")
         set_tests_properties(viewer_close_during_render PROPERTIES TIMEOUT 20 ENVIRONMENT "SDL_VIDEO_DRIVER=dummy;SDL_RENDER_DRIVER=software")
+
+        add_executable(viewer_display_test tests/viewer_display_test.cpp)
+        target_link_libraries(viewer_display_test PRIVATE formlight_viewer_window formlight_io SDL3::SDL3 imgui::imgui)
+        add_dependencies(viewer_display_test formlight-renderer)
+        add_test(NAME viewer_display_rgb8 COMMAND "${CMAKE_COMMAND}"
+            "-DRENDERER=$<TARGET_FILE:formlight-renderer>" "-DCHECK=$<TARGET_FILE:viewer_display_test>"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/viewer_display.cmake")
+        set_tests_properties(viewer_display_rgb8 PROPERTIES TIMEOUT 30 ENVIRONMENT "SDL_VIDEO_DRIVER=dummy;SDL_RENDER_DRIVER=software")
     endif()
 endif()
