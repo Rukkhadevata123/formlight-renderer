@@ -26,43 +26,55 @@ $$
 
 在 `raster` 与 `hybrid` 预览中，glTF 的 `KHR_materials_transmission`、`KHR_materials_ior` 与 `KHR_materials_volume` 按以下四个环节计算：
 
-- **表面覆盖与薄片透光**：`alphaMode` 控制几何覆盖与透明混合，而完全覆盖像素的表面（如车窗）同样可以透光。透射份额 $t$ 取 `transmissionFactor` 乘透射贴图的线性 R 通道（无贴图时只取因子）。对光滑薄片，着色器沿同一相机子样本读取背景 $L_{\mathrm{behind}}$，在保留表面镜面高光、将直接漫反射乘以 $1 - t$ 的同时，按线性空间逐通道叠加透射贡献：
+#### 表面覆盖与薄片透光
 
-  $$
-  L_{\text{trans}} = t(1 - m)(1 - F_v)\, \mathrm{baseColor}\, L_{\mathrm{behind}}
-  $$
+`alphaMode` 控制几何覆盖与透明混合，而完全覆盖像素的表面（如车窗）同样可以透光。透射份额 $t$ 取 `transmissionFactor` 乘透射贴图的线性 R 通道（无贴图时只取因子）。对光滑薄片，着色器沿同一相机子样本读取背景 $L_{\mathrm{behind}}$，在保留表面镜面高光、将直接漫反射乘以 $1 - t$ 的同时，按线性空间逐通道叠加透射贡献：
 
-  其中 $m$ 为金属度、$F_v$ 为视角对应的界面反射率。[十二球对照](scenes.md#磨砂玻璃与彩色投影) · [Khronos 透射规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_transmission)
-- **磨砂模糊与彩色阴影**：
-  - 当粗糙度 $r > 0$ 时，预览对已完成的背景层做局部空间滤波，输出像素半径为：
+$$
+L_{\text{trans}} = t(1 - m)(1 - F_v)\, \mathrm{baseColor}\, L_{\mathrm{behind}}
+$$
 
-    $$
-    R_{\text{blur}} = r^2 \min\left(16,\, \frac{\min(w, h)}{48}\right)
-    $$
+其中 $m$ 为金属度、$F_v$ 为视角对应的界面反射率。[十二球对照](scenes.md#磨砂玻璃与彩色投影) · [Khronos 透射规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_transmission)
 
-    （SSAA 按子样本网格换算）；玻璃与透明片元从远到近分轮合成，每轮读取上一轮完成的颜色与深度，自动排除被前景遮住的邻域像素。
-  - 直射光穿过玻璃时同样会被染色：方向光阴影图在每个纹素内累乘各层玻璃的 RGB 透过率，3×3 PCF 对 9 个结果取均值；混合模式沿灯光射线逐层累乘，遇不透明物体即归零。例如两层正入射薄片各自透过 $(0.48, 0.96, 0.24)$ 时，接收面入射光乘以 $(0.2304, 0.9216, 0.0576)$。[方向光阴影图](../src/raster/shadow_map.cppm) · [阴影射线](../src/lighting/direct_lighting.cppm)
-- **折射率（IOR）与体积厚度**：正入射反射率由折射率 $n$ 决定：
+#### 磨砂模糊与彩色阴影
 
-  $$
-  F_0 = \left(\frac{n - 1}{n + 1}\right)^2
-  $$
+当粗糙度 $r > 0$ 时，预览对已完成的背景层做局部空间滤波，输出像素半径为：
 
-  其余入射角按 Schlick 近似求 $F_v$（CompareIor 左球 $n = 1.5$ 得 4%，右球 $n = 2.42$ 约 17.2%）。当材质带有网格厚度 $h$（`thicknessFactor` 乘厚度贴图线性 G 通道）时，预览按 Snell 定律求入射折射后的世界单位方向 $s$，沿该方向穿过节点线性变换 $M$ 后的世界路程为：
+$$
+R_{\text{blur}} = r^2 \min\left(16,\, \frac{\min(w, h)}{48}\right)
+$$
 
-  $$
-  d = \frac{h}{\lVert M^{-1} s \rVert}
-  $$
+（SSAA 按子样本网格换算）；玻璃与透明片元从远到近分轮合成，每轮读取上一轮完成的颜色与深度，自动排除被前景遮住的邻域像素。
 
-  再将估计的出射点投回背景层采样，从而在非均匀缩放下也能得到正确的折射位移。[双球实拍](scenes.md#两个-gltf-标志球) · [Khronos IOR 规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_ior)
-- **体积传播吸收**：每个线性颜色通道的透射率再乘以 Beer-Lambert 衰减因子：
+直射光穿过玻璃时同样会被染色：方向光阴影图在每个纹素内累乘各层玻璃的 RGB 透过率，3×3 PCF 对 9 个结果取均值；混合模式沿灯光射线逐层累乘，遇不透明物体即归零。例如两层正入射薄片各自透过 $(0.48, 0.96, 0.24)$ 时，接收面入射光乘以 $(0.2304, 0.9216, 0.0576)$。[方向光阴影图](../src/raster/shadow_map.cppm) · [阴影射线](../src/lighting/direct_lighting.cppm)
 
-  $$
-  T_{\text{vol}} = c^{d / D}
-  $$
+#### 折射率（IOR）与体积厚度
 
-  其中 $c$ 为 `attenuationColor`、$D$ 为世界单位 `attenuationDistance`（省略时默认无穷大，衰减因子为 `1`，例如黑棋兵的青绿色来自界面底色而非吸收）。在回归夹具中（$n = 2$、$c = (0.25, 0.5, 1)$、$D = 0.5$，正入射世界路程约 `0.502`），计入界面反射后白色背景透出线性 RGB `(0.2210, 0.4432, 0.8889)`。[棋兵实拍](scenes.md#棋兵的厚玻璃) · [解析值回归](../tests/blend_layers_test.cpp) · [Khronos 体积规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_volume)
-- **近似边界**：光栅/混合预览仅做单次入射折射估算（采样点落到视口外或邻域被前景挡住时退回当前像素背景；交叠透明层只能读取上一轮已完成的背景；阴影沿原灯光直线累乘透过率）。若要观察真实的双界面折射、内部全反射与焦散，请使用 `path` 模式的实体玻璃场景。[Cornell 玻璃场景](../scenes/path/cornell-glass.toml)
+正入射反射率由折射率 $n$ 决定：
+
+$$
+F_0 = \left(\frac{n - 1}{n + 1}\right)^2
+$$
+
+其余入射角按 Schlick 近似求 $F_v$（CompareIor 左球 $n = 1.5$ 得 4%，右球 $n = 2.42$ 约 17.2%）。当材质带有网格厚度 $h$（`thicknessFactor` 乘厚度贴图线性 G 通道）时，预览按 Snell 定律求入射折射后的世界单位方向 $s$，沿该方向穿过节点线性变换 $M$ 后的世界路程为：
+
+$$
+d = \frac{h}{\lVert M^{-1} s \rVert}
+$$
+
+再将估计的出射点投回背景层采样，从而在非均匀缩放下也能得到正确的折射位移。[双球实拍](scenes.md#两个-gltf-标志球) · [Khronos IOR 规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_ior)
+
+#### 体积传播吸收与近似边界
+
+每个线性颜色通道的透射率再乘以 Beer-Lambert 衰减因子：
+
+$$
+T_{\text{vol}} = c^{d / D}
+$$
+
+其中 $c$ 为 `attenuationColor`、$D$ 为世界单位 `attenuationDistance`（省略时默认无穷大，衰减因子为 `1`，例如黑棋兵的青绿色来自界面底色而非吸收）。在回归夹具中（$n = 2$、$c = (0.25, 0.5, 1)$、$D = 0.5$，正入射世界路程约 `0.502`），计入界面反射后白色背景透出线性 RGB `(0.2210, 0.4432, 0.8889)`。[棋兵实拍](scenes.md#棋兵的厚玻璃) · [解析值回归](../tests/blend_layers_test.cpp) · [Khronos 体积规范](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_materials_volume)
+
+光栅/混合预览仅做单次入射折射估算（采样点落到视口外或邻域被前景挡住时退回当前像素背景；交叠透明层只能读取上一轮已完成的背景；阴影沿原灯光直线累乘透过率）。若要观察真实的双界面折射、内部全反射与焦散，请使用 `path` 模式的实体玻璃场景。[Cornell 玻璃场景](../scenes/path/cornell-glass.toml)
 
 ### 直接光 BRDF 与路径漫反射续射的区分
 
@@ -116,13 +128,13 @@ $$
 - **纯余弦半球采样**：Lambertian BRDF 为 $f_d = \rho_d / \pi$（其中 $\rho_d = \text{albedo} \cdot (1 - \text{metallic})$），余弦采样密度 $p_{\cos}(\omega) = \cos\theta / \pi$。比值 $f_d \cos\theta / p_{\cos}(\omega)$ 中 $\cos\theta/\pi$ 约去，单步权重直接为 $\rho_d$。
 - **混合目标采样（`bounce_sampling = "light_mixture"`）**：场景存在发光网格或指定采样目标时，漫反射以各 1/2 概率在余弦半球与 `DirectionTargets` 之间二选一；无论哪支抽中，均用完整混合密度求权：
 
-  $$
-  p_{\text{mix}}(\omega) = \frac{p_{\cos}(\omega) + p_{\text{target}}(\omega)}{2}, \qquad w = \rho_d \cdot \frac{p_{\cos}(\omega)}{p_{\text{mix}}(\omega)}
-  $$
+$$
+p_{\text{mix}}(\omega) = \frac{p_{\cos}(\omega) + p_{\text{target}}(\omega)}{2}, \qquad w = \rho_d \cdot \frac{p_{\cos}(\omega)}{p_{\text{mix}}(\omega)}
+$$
 
-  - **发光三角网格**：按世界空间面积抽选三角形并在面内均匀取点，面积密度换算成立体角密度时乘 $r^2 / |\cos\theta_y|$；若同一方向穿过多个目标，密度对所有可能产生该方向的目标求和。
-  - **指定玻璃球目标**：按解析球或网格包围球张开的立体角抽方向，射线发射后仍由 BVH 真实求交并经历折射。
-  - 目标集为空时自动退回纯余弦半球。在 Cornell 白色后墙的固定探针上（128 路径、64 种子），启用混合采样后左侧一次反弹 RMS 误差由约 `0.098` 降至 `0.020`。[网格灯采样](../src/path/emitter_sampling.cppm) · [目标方向密度](../src/path/target_sampling.cppm) · [Cornell 数值对照](../tests/cornell_diffuse_test.cpp)
+- **发光三角网格**：按世界空间面积抽选三角形并在面内均匀取点，面积密度换算成立体角密度时乘 $r^2 / |\cos\theta_y|$；若同一方向穿过多个目标，密度对所有可能产生该方向的目标求和。
+- **指定玻璃球目标**：按解析球或网格包围球张开的立体角抽方向，射线发射后仍由 BVH 真实求交并经历折射。
+- **空目标回退与方差实测**：目标集为空时自动退回纯余弦半球。在 Cornell 白色后墙的固定探针上（128 路径、64 种子），启用混合采样后左侧一次反弹 RMS 误差由约 `0.098` 降至 `0.020`。[网格灯采样](../src/path/emitter_sampling.cppm) · [目标方向密度](../src/path/target_sampling.cppm) · [Cornell 数值对照](../tests/cornell_diffuse_test.cpp)
 
 ### 镜面、模糊金属与电介质玻璃
 
@@ -130,11 +142,11 @@ $$
 - **模糊金属（`Metal`）**：在理想反射方向上叠加长度为 `fuzz` 的均匀随机球面向量并归一化，权重乘 `albedo`；落到几何表面下方的样本直接丢弃。
 - **电介质玻璃（`Dielectric`）**：按非偏振 Fresnel 反射率 $F$ 随机决定反射或 Snell 折射，全内反射时必然反射；透射分支保留非对称辐亮度传输因子：
 
-  $$
-  w_{\text{transmit}} = \left(\frac{\eta_i}{\eta_t}\right)^2
-  $$
+$$
+w_{\text{transmit}} = \left(\frac{\eta_i}{\eta_t}\right)^2
+$$
 
-  [镜面与折射实现](../src/path/specular.cppm)
+[镜面与折射实现](../src/path/specular.cppm)
 
 ### 均匀参与介质（吸收与各向同性散射）
 
@@ -144,14 +156,15 @@ $$
 d = -\frac{\ln(1 - u)}{\sigma_t}
 $$
 
-- 若先发生介质碰撞：`scattering_albedo` 全零时按纯吸收终止路径；非零时以各向同性相函数采样全向球面方向（相函数与采样 PDF 均为 $\frac{1}{4\pi}$，恰好约去），路径权重乘 `scattering_albedo`，同时对显式矩形灯累加单次散射直接光。
-- 显式阴影线段穿过一个或多个重叠介质时，按 Beer-Lambert 定律计算确定性透过率：
+若先发生介质碰撞，`scattering_albedo` 全零时按纯吸收终止路径；非零时以各向同性相函数采样全向球面方向（相函数与采样 PDF 均为 $\frac{1}{4\pi}$，恰好约去），路径权重乘 `scattering_albedo`，同时对显式矩形灯累加单次散射直接光。
 
-  $$
-  T = \exp\left(-\sum_j \sigma_{t,j}\, d_j\right)
-  $$
+显式阴影线段穿过一个或多个重叠介质时，按 Beer-Lambert 定律计算确定性透过率：
 
-  [均匀介质实现](../src/path/medium.cppm)
+$$
+T = \exp\left(-\sum_j \sigma_{t,j}\, d_j\right)
+$$
+
+[均匀介质实现](../src/path/medium.cppm)
 
 ## 4. 同机位的直接光与间接光对照
 
